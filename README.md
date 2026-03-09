@@ -6,6 +6,8 @@
 
 同时，内部实现会保持“CLI 适配器抽象”：runtime 不关心到底是谁提供 server，只关心这个 CLI 适配器是否支持持久会话、如何发送 prompt、如何中断当前运行。
 
+飞书侧现在统一走官方 Python SDK `lark-oapi`，包括消息发送、事件订阅和长连接接入。
+
 ## 当前内置后端
 
 - `codex`：通过 `codex app-server` 复用原生 session
@@ -38,6 +40,7 @@ FEISHU_APP_ID=cli_xxx
 FEISHU_APP_SECRET=xxx
 FEISHU_CONNECTION_MODE=websocket
 FEISHU_VERIFY_TOKEN=
+FEISHU_ENCRYPT_KEY=
 FEISHU_BOT_OPEN_ID=ou_xxx
 FEISHU_STREAM_MODE=card
 FEISHU_GROUP_REPLY_ALL=false
@@ -56,6 +59,7 @@ CODEX_SESSIONS_DIR=~/.codex/sessions
 说明：
 
 - `FEISHU_VERIFY_TOKEN` 现在是可选的；如果飞书后台配置了 token，建议填上
+- `FEISHU_ENCRYPT_KEY` 用于飞书事件加密；只有你在开放平台开启了加密推送时才需要配置
 - `WORKSPACE_DIR` 是默认工作区；`MAIN_WORKSPACE_DIR` 和 `DEVELOP_WORKSPACE_DIR` 对应 `/main` 与 `/develop`
 - `MODEL_BACKEND` 当前内置只支持 `codex-cli`，但 runtime 已按 CLI 适配器抽象设计
 - `FEISHU_ALLOWED_OPEN_IDS` 与 `FEISHU_ADMIN_OPEN_IDS` 是 `openrelay` 新补的权限层

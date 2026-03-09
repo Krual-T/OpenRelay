@@ -4,7 +4,19 @@ import json
 import time
 from typing import Any
 
-from openrelay.feishu import FEISHU_BASE_URL, FeishuMessenger, _raise_api_error
+from lark_oapi.api.cardkit.v1 import (
+    Card,
+    ContentCardElementRequest,
+    ContentCardElementRequestBody,
+    CreateCardRequest,
+    CreateCardRequestBody,
+    UpdateCardElementRequest,
+    UpdateCardElementRequestBody,
+    UpdateCardRequest,
+    UpdateCardRequestBody,
+)
+
+from openrelay.feishu import FeishuMessenger, _read_text
 from openrelay.render import render_live_status_sections
 
 
@@ -99,78 +111,74 @@ class FeishuStreamingSession:
         if self.state is not None:
             return
         initial_sections = normalize_sections(render_live_status_sections({"heading": "正在启动 Codex", "status": "等待响应", "spinner_frame": 0}))
-        token = await self.messenger.get_tenant_access_token()
-        create_response = await self.messenger._client.post(
-            f"{FEISHU_BASE_URL}/cardkit/v1/cards",
-            headers={"Authorization": f"Bearer {token}"},
-            json={"type": "card_json", "data": json.dumps(build_card_json(initial_sections, streaming_mode=True), ensure_ascii=False)},
+        create_response = await self.messenger.client.cardkit.v1.card.acreate(
+            CreateCardRequest.builder().request_body(
+                CreateCardRequestBody.builder().type("card_json").data(json.dumps(build_card_json(initial_sections, streaming_mode=True), ensure_ascii=False)).build()
+            ).build()
         )
-        _raise_api_error(create_response)
-        create_payload = create_response.json()
-        card_id = create_payload.get("data", {}).get("card_id")
+        self.messenger.ensure_success(create_response, "Feishu create cardkit card")
+        card_id = _read_text(getattr(create_response.data, "card_id", ""))
         if not card_id:
-            raise RuntimeError(f"Create card failed: {create_payload}")
+            raise RuntimeError("Create card failed: missing card_id")
         card_content = json.dumps({"type": "card", "data": {"card_id": card_id}}, ensure_ascii=False)
         if reply_to_message_id:
             try:
-                reply_response = await self.messenger._client.post(
-                    f"{FEISHU_BASE_URL}/im/v1/messages/{reply_to_message_id}/reply",
-                    headers={"Authorization": f"Bearer {token}"},
-                    json={"msg_type": "interactive", "content": card_content, "reply_in_thread": True},
-                )
-                if reply_response.is_success and reply_response.json().get("code") == 0:
-                    payload = reply_response.json()
-                    self.state = {"card_id": card_id, "message_id": payload.get("data", {}).get("message_id", ""), "sequence": 1, "current_sections": initial_sections, "current_signature": sections_signature(initial_sections)}
-                    return
+                payload = await self.messenger.reply_message(reply_to_message_id, "interactive", card_content, reply_in_thread=True)
+                self.state = {
+                    "card_id": card_id,
+                    "message_id": _read_text(payload.get("data", {}).get("message_id")),
+                    "sequence": 1,
+                    "current_sections": initial_sections,
+                    "current_signature": sections_signature(initial_sections),
+                }
+                return
             except Exception:
                 pass
-        create_message_response = await self.messenger._client.post(
-            f"{FEISHU_BASE_URL}/im/v1/messages",
-            headers={"Authorization": f"Bearer {token}"},
-            params={"receive_id_type": "chat_id"},
-            json={"receive_id": receive_id, "msg_type": "interactive", "content": card_content, **({"root_id": root_id} if root_id else {})},
-        )
-        _raise_api_error(create_message_response)
-        payload = create_message_response.json()
-        self.state = {"card_id": card_id, "message_id": payload.get("data", {}).get("message_id", ""), "sequence": 1, "current_sections": initial_sections, "current_signature": sections_signature(initial_sections)}
+        payload = await self.messenger.create_message(receive_id, "interactive", card_content, root_id=root_id)
+        self.state = {
+            "card_id": card_id,
+            "message_id": _read_text(payload.get("data", {}).get("message_id")),
+            "sequence": 1,
+            "current_sections": initial_sections,
+            "current_signature": sections_signature(initial_sections),
+        }
         if self.log is not None:
             self.log(f"streaming card started: {card_id}")
 
     async def update_card_content(self, element_id: str, text: str) -> None:
         if self.state is None:
             return
-        token = await self.messenger.get_tenant_access_token()
         sequence = self.next_sequence()
-        response = await self.messenger._client.put(
-            f"{FEISHU_BASE_URL}/cardkit/v1/cards/{self.state['card_id']}/elements/{element_id}/content",
-            headers={"Authorization": f"Bearer {token}"},
-            json={"content": ensure_card_text(text), "sequence": sequence, "uuid": f"c_{self.state['card_id']}_{element_id}_{sequence}"},
+        response = await self.messenger.client.cardkit.v1.card_element.acontent(
+            ContentCardElementRequest.builder().card_id(self.state["card_id"]).element_id(element_id).request_body(
+                ContentCardElementRequestBody.builder().content(ensure_card_text(text)).sequence(sequence).uuid(f"c_{self.state['card_id']}_{element_id}_{sequence}").build()
+            ).build()
         )
-        _raise_api_error(response)
+        self.messenger.ensure_success(response, "Feishu update card element content")
 
     async def update_card_element(self, element_id: str, text: str) -> None:
         if self.state is None:
             return
-        token = await self.messenger.get_tenant_access_token()
         sequence = self.next_sequence()
-        response = await self.messenger._client.put(
-            f"{FEISHU_BASE_URL}/cardkit/v1/cards/{self.state['card_id']}/elements/{element_id}",
-            headers={"Authorization": f"Bearer {token}"},
-            json={"element": json.dumps(create_markdown_element(element_id, text), ensure_ascii=False), "sequence": sequence, "uuid": f"e_{self.state['card_id']}_{element_id}_{sequence}"},
+        response = await self.messenger.client.cardkit.v1.card_element.aupdate(
+            UpdateCardElementRequest.builder().card_id(self.state["card_id"]).element_id(element_id).request_body(
+                UpdateCardElementRequestBody.builder().element(json.dumps(create_markdown_element(element_id, text), ensure_ascii=False)).sequence(sequence).uuid(f"e_{self.state['card_id']}_{element_id}_{sequence}").build()
+            ).build()
         )
-        _raise_api_error(response)
+        self.messenger.ensure_success(response, "Feishu update card element")
 
     async def update_card(self, sections: dict[str, str], *, streaming_mode: bool = True, force_body: bool = False) -> None:
         if self.state is None:
             return
-        token = await self.messenger.get_tenant_access_token()
         sequence = self.next_sequence()
-        response = await self.messenger._client.put(
-            f"{FEISHU_BASE_URL}/cardkit/v1/cards/{self.state['card_id']}",
-            headers={"Authorization": f"Bearer {token}"},
-            json={"card": {"type": "card_json", "data": json.dumps(build_card_json(sections, streaming_mode=streaming_mode, force_body=force_body), ensure_ascii=False)}, "sequence": sequence, "uuid": f"u_{self.state['card_id']}_{sequence}"},
+        response = await self.messenger.client.cardkit.v1.card.aupdate(
+            UpdateCardRequest.builder().card_id(self.state["card_id"]).request_body(
+                UpdateCardRequestBody.builder().card(
+                    Card.builder().type("card_json").data(json.dumps(build_card_json(sections, streaming_mode=streaming_mode, force_body=force_body), ensure_ascii=False)).build()
+                ).sequence(sequence).uuid(f"u_{self.state['card_id']}_{sequence}").build()
+            ).build()
         )
-        _raise_api_error(response)
+        self.messenger.ensure_success(response, "Feishu update card")
 
     async def apply_sections(self, sections: dict[str, str], animate_body: bool = True) -> None:
         if self.state is None:

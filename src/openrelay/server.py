@@ -3,18 +3,24 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+
 from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response
 import uvicorn
 
 from openrelay.config import AppConfig, ConfigError, load_config
-from openrelay.feishu import FeishuMessenger, parse_webhook_body
+from openrelay.feishu import FeishuEventDispatcher, FeishuMessenger, build_raw_request
 from openrelay.feishu_ws import FeishuWebSocketClient
 from openrelay.runtime import AgentRuntime
 from openrelay.state import StateStore
 
 
 LOGGER = logging.getLogger("openrelay")
+
+
+
+def _should_use_validated_handler(config: AppConfig) -> bool:
+    return bool(config.feishu.verify_token)
 
 
 
@@ -28,13 +34,19 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
         store = StateStore(app_config)
         messenger = FeishuMessenger(app_config)
         runtime = AgentRuntime(app_config, store, messenger)
+        event_dispatcher = FeishuEventDispatcher(app_config, asyncio.get_running_loop(), runtime.dispatch_message)
         app.state.config = app_config
         app.state.store = store
         app.state.messenger = messenger
         app.state.runtime = runtime
+        app.state.event_handler = event_dispatcher.build()
         app.state.ws_client = None
+        try:
+            await messenger.resolve_bot_open_id()
+        except Exception as exc:
+            LOGGER.warning("failed to resolve Feishu bot open id: %s", exc)
         if app_config.feishu.connection_mode == "websocket":
-            ws_client = FeishuWebSocketClient(app_config, messenger, runtime.dispatch_message)
+            ws_client = FeishuWebSocketClient(app_config, app.state.event_handler)
             await ws_client.start()
             app.state.ws_client = ws_client
         LOGGER.info("openrelay listening on http://127.0.0.1:%s%s", app_config.port, app_config.webhook_path)
@@ -61,7 +73,7 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
         }
 
     @app.post(app_config.webhook_path)
-    async def feishu_webhook(request: Request) -> JSONResponse:
+    async def feishu_webhook(request: Request) -> Response:
         content_length = request.headers.get("content-length", "")
         if content_length:
             try:
@@ -76,16 +88,25 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
             body = json.loads(body_bytes.decode("utf-8")) if body_bytes else {}
         except json.JSONDecodeError as exc:
             raise HTTPException(status_code=400, detail=f"invalid json: {exc}") from exc
-        parsed = parse_webhook_body(app_config, body if isinstance(body, dict) else {})
-        if parsed.type == "challenge":
-            return JSONResponse({"challenge": parsed.challenge})
-        if parsed.type == "reject":
-            return JSONResponse(parsed.body or {"error": "rejected"}, status_code=parsed.status_code)
-        if parsed.type != "message" or parsed.message is None:
-            return JSONResponse({"ok": True, "ignored": True})
-        runtime: AgentRuntime = app.state.runtime
-        asyncio.create_task(runtime.dispatch_message(parsed.message))
-        return JSONResponse({"ok": True, "accepted": True})
+
+        event_handler = app.state.event_handler
+        if _should_use_validated_handler(app_config):
+            raw_request = build_raw_request(request.url.path, dict(request.headers.items()), body_bytes)
+            raw_response = event_handler.do(raw_request)
+            return Response(content=raw_response.content or b"", status_code=raw_response.status_code, headers=raw_response.headers)
+
+        webhook_type = body.get("type") if isinstance(body, dict) else ""
+        if webhook_type == "url_verification":
+            return JSONResponse({"challenge": body.get("challenge", "")})
+
+        try:
+            result = event_handler.do_without_validation(body_bytes)
+        except Exception as exc:
+            LOGGER.exception("failed handling Feishu webhook without validation")
+            return JSONResponse({"msg": str(exc)}, status_code=500)
+        if result is None:
+            return JSONResponse({"msg": "success"})
+        return JSONResponse(result)
 
     return app
 

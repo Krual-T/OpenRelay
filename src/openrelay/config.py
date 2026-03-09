@@ -20,6 +20,7 @@ class FeishuConfig:
     app_id: str
     app_secret: str
     verify_token: str = ""
+    encrypt_key: str = ""
     bot_open_id: str = ""
     connection_mode: str = "webhook"
     stream_mode: str = "off"
@@ -169,6 +170,7 @@ def load_config(cwd: str | Path | None = None) -> AppConfig:
             app_id=require_env("FEISHU_APP_ID"),
             app_secret=require_env("FEISHU_APP_SECRET"),
             verify_token=read_first("FEISHU_VERIFY_TOKEN", default=""),
+            encrypt_key=read_first("FEISHU_ENCRYPT_KEY", default=""),
             bot_open_id=read_first("FEISHU_BOT_OPEN_ID", default=""),
             connection_mode=read_first("FEISHU_CONNECTION_MODE", default="websocket").lower(),
             stream_mode=read_first("FEISHU_STREAM_MODE", default="card").lower(),

@@ -4,17 +4,23 @@ from dataclasses import dataclass
 import asyncio
 import json
 import re
-import time
-from typing import Any
+import logging
+import uuid
+from typing import Any, Awaitable, Callable
 
-import httpx
+import lark_oapi as lark
+from lark_oapi.api.im.v1 import ReplyMessageRequest, ReplyMessageRequestBody
+from lark_oapi.api.im.v1.model.p2_im_message_receive_v1 import P2ImMessageReceiveV1
+from lark_oapi.core.enum import AccessTokenType, HttpMethod, LogLevel
+from lark_oapi.core.model import BaseRequest, RawRequest
+from lark_oapi.event.callback.model.p2_card_action_trigger import P2CardActionTrigger, P2CardActionTriggerResponse
 
 from openrelay.config import AppConfig
 from openrelay.models import IncomingMessage
 
 
-FEISHU_BASE_URL = "https://open.feishu.cn/open-apis"
 MAX_TEXT_CHUNK = 3500
+LOGGER = logging.getLogger("openrelay.feishu")
 
 
 @dataclass(slots=True)
@@ -48,11 +54,32 @@ def _normalize_spaces(text: str) -> str:
 
 
 
-def strip_mentions(text: str, mentions: list[dict[str, Any]] | None = None) -> str:
+def _read_attr_text(value: object, name: str) -> str:
+    if isinstance(value, dict):
+        return _read_text(value.get(name))
+    return _read_text(getattr(value, name, ""))
+
+
+
+def _read_nested_attr_text(value: object, name: str, nested: str) -> str:
+    if isinstance(value, dict):
+        inner = value.get(name)
+    else:
+        inner = getattr(value, name, None)
+    return _read_attr_text(inner, nested)
+
+
+
+def _json_dumps(payload: Any) -> str:
+    return json.dumps(payload, ensure_ascii=False)
+
+
+
+def strip_mentions(text: str, mentions: list[object] | None = None) -> str:
     output = str(text or "")
     for mention in mentions or []:
-        key = _read_text(mention.get("key"))
-        name = _read_text(mention.get("name"))
+        key = _read_attr_text(mention, "key")
+        name = _read_attr_text(mention, "name")
         if key:
             output = output.replace(key, " ")
         if name:
@@ -62,41 +89,66 @@ def strip_mentions(text: str, mentions: list[dict[str, Any]] | None = None) -> s
 
 
 
-def is_bot_mentioned(bot_open_id: str, mentions: list[dict[str, Any]] | None = None) -> bool:
+def is_bot_mentioned(bot_open_id: str, mentions: list[object] | None = None) -> bool:
     if not bot_open_id:
         return False
     for mention in mentions or []:
-        mention_id = mention.get("id") if isinstance(mention, dict) else None
-        if isinstance(mention_id, dict) and mention_id.get("open_id") == bot_open_id:
+        mention_open_id = _read_nested_attr_text(mention, "id", "open_id")
+        if mention_open_id == bot_open_id:
             return True
     return False
 
 
 
-def parse_card_action_event(event: dict[str, Any]) -> ParsedWebhook:
-    action = event.get("action") if isinstance(event.get("action"), dict) else {}
-    value = action.get("value") if isinstance(action, dict) else {}
+def _event_header_attr(event: object, name: str) -> str:
+    header = getattr(event, "header", None)
+    return _read_attr_text(header, name)
+
+
+
+def _coerce_message_event(event: dict[str, Any] | P2ImMessageReceiveV1) -> P2ImMessageReceiveV1:
+    if isinstance(event, P2ImMessageReceiveV1):
+        return event
+    payload = event if "event" in event else {"event": event}
+    return P2ImMessageReceiveV1(payload)
+
+
+
+def _coerce_card_action_event(event: dict[str, Any] | P2CardActionTrigger) -> P2CardActionTrigger:
+    if isinstance(event, P2CardActionTrigger):
+        return event
+    payload = event if "event" in event else {"event": event}
+    return P2CardActionTrigger(payload)
+
+
+
+def parse_card_action_event(event: dict[str, Any] | P2CardActionTrigger) -> ParsedWebhook:
+    sdk_event = _coerce_card_action_event(event)
+    event_data = sdk_event.event
+    if event_data is None:
+        return ParsedWebhook(type="ignore")
+    action_value = event_data.action.value if event_data.action is not None and isinstance(event_data.action.value, dict) else {}
     text = ""
-    if isinstance(value, str):
-        text = value.strip()
-    elif isinstance(value, dict):
-        text = _read_text(value.get("command") or value.get("text"))
-    context = event.get("context") if isinstance(event.get("context"), dict) else {}
-    chat_id = _read_text(context.get("chat_id") or context.get("open_chat_id") or event.get("operator", {}).get("open_id"))
+    if isinstance(action_value, str):
+        text = action_value.strip()
+    elif isinstance(action_value, dict):
+        text = _read_text(action_value.get("command") or action_value.get("text"))
+    context = event_data.context
+    operator = event_data.operator
+    chat_id = _read_attr_text(context, "open_chat_id") or _read_attr_text(operator, "open_id")
     if not text or not chat_id:
         return ParsedWebhook(type="ignore")
-    token = _read_text(event.get("token")) or f"card-{int(time.time())}"
-    source_message_id = _read_text(context.get("open_message_id"))
-    action_value = value if isinstance(value, dict) else {}
+    token = _read_attr_text(event_data, "token") or f"card-{uuid.uuid4().hex[:12]}"
+    source_message_id = _read_attr_text(context, "open_message_id")
     return ParsedWebhook(
         type="message",
         message=IncomingMessage(
-            event_id=f"card-action-{token}",
+            event_id=_event_header_attr(sdk_event, "event_id") or f"card-action-{token}",
             message_id=source_message_id or f"card-action-{token}",
             reply_to_message_id=source_message_id,
             chat_id=chat_id,
-            chat_type="group" if _read_text(context.get("chat_id")) else "p2p",
-            sender_open_id=_read_text(event.get("operator", {}).get("open_id")),
+            chat_type="group" if _read_attr_text(context, "open_chat_id") else "p2p",
+            sender_open_id=_read_attr_text(operator, "open_id"),
             root_id=_read_text(action_value.get("root_id") or action_value.get("rootId")),
             thread_id=_read_text(action_value.get("thread_id") or action_value.get("threadId") or action_value.get("root_id") or action_value.get("rootId")),
             parent_id="",
@@ -109,35 +161,38 @@ def parse_card_action_event(event: dict[str, Any]) -> ParsedWebhook:
 
 
 
-def parse_message_event(config: AppConfig, event: dict[str, Any]) -> ParsedWebhook:
-    message = event.get("message") if isinstance(event, dict) else None
-    if not isinstance(message, dict):
+def parse_message_event(config: AppConfig, event: dict[str, Any] | P2ImMessageReceiveV1) -> ParsedWebhook:
+    sdk_event = _coerce_message_event(event)
+    event_data = sdk_event.event
+    message = event_data.message if event_data is not None else None
+    if message is None:
         return ParsedWebhook(type="ignore")
-    if not _read_text(message.get("message_id")) or not _read_text(message.get("chat_id")):
+    if not _read_attr_text(message, "message_id") or not _read_attr_text(message, "chat_id"):
         return ParsedWebhook(type="ignore")
-    if message.get("message_type") != "text":
+    if _read_attr_text(message, "message_type") != "text":
         return ParsedWebhook(type="ignore")
-    content = _safe_json_loads(message.get("content"))
-    mentions = message.get("mentions") if isinstance(message.get("mentions"), list) else []
+    mentions = list(getattr(message, "mentions", None) or [])
+    content = _safe_json_loads(_read_attr_text(message, "content"))
     text = strip_mentions(_read_text(content.get("text")), mentions)
-    chat_type = _read_text(message.get("chat_type")) or _read_text(event.get("chat", {}).get("chat_type") if isinstance(event.get("chat"), dict) else "") or "unknown"
-    sender = event.get("sender") if isinstance(event, dict) else None
-    sender_id = sender.get("sender_id") if isinstance(sender, dict) else None
-    sender_open_id = _read_text(sender_id.get("open_id")) if isinstance(sender_id, dict) else ""
+    sender = event_data.sender if event_data is not None else None
+    sender_open_id = _read_nested_attr_text(sender, "sender_id", "open_id")
+    chat_type = _read_attr_text(message, "chat_type") or "unknown"
     actionable = chat_type == "p2p" or config.feishu.group_reply_all or is_bot_mentioned(config.feishu.bot_open_id, mentions)
-    parsed = IncomingMessage(
-        event_id=_read_text(message.get("message_id")),
-        message_id=_read_text(message.get("message_id")),
-        chat_id=_read_text(message.get("chat_id")),
-        chat_type=chat_type,
-        sender_open_id=sender_open_id,
-        root_id=_read_text(message.get("root_id")),
-        thread_id=_read_text(message.get("thread_id")),
-        parent_id=_read_text(message.get("parent_id")),
-        text=text,
-        actionable=actionable,
+    return ParsedWebhook(
+        type="message",
+        message=IncomingMessage(
+            event_id=_event_header_attr(sdk_event, "event_id") or _read_attr_text(message, "message_id"),
+            message_id=_read_attr_text(message, "message_id"),
+            chat_id=_read_attr_text(message, "chat_id"),
+            chat_type=chat_type,
+            sender_open_id=sender_open_id,
+            root_id=_read_attr_text(message, "root_id"),
+            thread_id=_read_attr_text(message, "thread_id"),
+            parent_id=_read_attr_text(message, "parent_id"),
+            text=text,
+            actionable=actionable,
+        ),
     )
-    return ParsedWebhook(type="message", message=parsed)
 
 
 
@@ -152,16 +207,10 @@ def parse_webhook_body(config: AppConfig, body: dict[str, Any]) -> ParsedWebhook
         return ParsedWebhook(type="reject", status_code=403, body={"error": "invalid token"})
     event_type = _read_text(header.get("event_type") or body.get("event_type"))
     if event_type == "card.action.trigger":
-        parsed = parse_card_action_event(body.get("event") if isinstance(body.get("event"), dict) else {})
-        if parsed.message is not None:
-            parsed.message.event_id = _read_text(header.get("event_id")) or parsed.message.event_id
-        return parsed
+        return parse_card_action_event(P2CardActionTrigger(body))
     if event_type != "im.message.receive_v1":
         return ParsedWebhook(type="ignore")
-    parsed = parse_message_event(config, body.get("event") if isinstance(body.get("event"), dict) else {})
-    if parsed.message is not None:
-        parsed.message.event_id = _read_text(header.get("event_id")) or parsed.message.event_id
-    return parsed
+    return parse_message_event(config, P2ImMessageReceiveV1(body))
 
 
 
@@ -174,144 +223,141 @@ def split_text(text: str) -> list[str]:
 
 
 def build_markdown_post_content(text: str) -> str:
-    return json.dumps({
+    return _json_dumps({
         "zh_cn": {
             "content": [[{"tag": "md", "text": text}]],
         }
-    }, ensure_ascii=False)
+    })
 
 
 
-def _api_ok(response: httpx.Response) -> bool:
+def build_raw_request(uri: str, headers: dict[str, str], body: bytes) -> RawRequest:
+    request = RawRequest()
+    request.uri = uri
+    request.headers = headers
+    request.body = body
+    return request
+
+
+
+def _response_payload(response: object) -> dict[str, Any]:
+    raw = getattr(response, "raw", None)
+    if raw is None or getattr(raw, "content", None) is None:
+        return {}
     try:
-        payload = response.json()
+        return json.loads(bytes(raw.content).decode("utf-8"))
     except Exception:
-        return False
-    return response.is_success and payload.get("code") == 0
+        return {}
 
 
 
-def _raise_api_error(response: httpx.Response) -> None:
-    try:
-        payload = response.json()
-    except Exception:
-        response.raise_for_status()
-        raise RuntimeError("unexpected Feishu response")
-    if not response.is_success:
-        response.raise_for_status()
-    if payload.get("code") != 0:
-        raise RuntimeError(f"Feishu send failed: {payload}")
+def _ensure_success(response: object, label: str) -> None:
+    if hasattr(response, "success") and response.success():
+        return
+    payload = _response_payload(response)
+    code = getattr(response, "code", None)
+    message = _read_text(getattr(response, "msg", "")) or _read_text(payload.get("msg")) or _json_dumps(payload) or "unknown error"
+    raise RuntimeError(f"{label} failed: code={code} msg={message}")
+
 
 
 class FeishuMessenger:
     def __init__(self, config: AppConfig):
         self.config = config
-        self._token_value = ""
-        self._token_expires_at = 0.0
-        self._token_lock = asyncio.Lock()
-        self._client = httpx.AsyncClient(timeout=20.0)
+        self.client = lark.Client.builder().app_id(config.feishu.app_id).app_secret(config.feishu.app_secret).log_level(LogLevel.INFO).build()
 
     async def close(self) -> None:
-        await self._client.aclose()
+        return None
 
-    async def get_tenant_access_token(self) -> str:
-        now = time.time()
-        if self._token_value and now < self._token_expires_at:
-            return self._token_value
-        async with self._token_lock:
-            now = time.time()
-            if self._token_value and now < self._token_expires_at:
-                return self._token_value
-            response = await self._client.post(
-                f"{FEISHU_BASE_URL}/auth/v3/tenant_access_token/internal",
-                json={
-                    "app_id": self.config.feishu.app_id,
-                    "app_secret": self.config.feishu.app_secret,
-                },
-            )
-            response.raise_for_status()
-            data = response.json()
-            if data.get("code") != 0 or not _read_text(data.get("tenant_access_token")):
-                raise RuntimeError(f"Feishu auth failed: {data}")
-            self._token_value = _read_text(data.get("tenant_access_token"))
-            expires_in = int(data.get("expire", 7200) or 7200)
-            self._token_expires_at = time.time() + max(60, expires_in - 60)
-            return self._token_value
+    def ensure_success(self, response: object, label: str) -> None:
+        _ensure_success(response, label)
 
     async def resolve_bot_open_id(self) -> str:
-        token = await self.get_tenant_access_token()
-        response = await self._client.get(
-            f"{FEISHU_BASE_URL}/bot/v3/info",
-            headers={"Authorization": f"Bearer {token}"},
-        )
-        response.raise_for_status()
-        payload = response.json()
+        if self.config.feishu.bot_open_id:
+            return self.config.feishu.bot_open_id
+        request = BaseRequest.builder().http_method(HttpMethod.GET).uri("/open-apis/bot/v3/info").token_types({AccessTokenType.TENANT}).build()
+        response = await self.client.arequest(request)
+        _ensure_success(response, "Feishu bot info")
+        payload = _response_payload(response)
         bot_open_id = _read_text(payload.get("bot", {}).get("open_id") or payload.get("data", {}).get("bot", {}).get("open_id"))
         if not bot_open_id:
             raise RuntimeError(f"Feishu bot open_id missing: {payload}")
         self.config.feishu.bot_open_id = bot_open_id
         return bot_open_id
 
+    async def reply_message(self, message_id: str, msg_type: str, content: str, *, reply_in_thread: bool = True) -> dict[str, Any]:
+        request = ReplyMessageRequest.builder().message_id(message_id).request_body(
+            ReplyMessageRequestBody.builder().msg_type(msg_type).content(content).reply_in_thread(reply_in_thread).uuid(uuid.uuid4().hex).build()
+        ).build()
+        response = await self.client.im.v1.message.areply(request)
+        _ensure_success(response, f"Feishu reply {msg_type}")
+        return _response_payload(response)
+
+    async def create_message(self, chat_id: str, msg_type: str, content: str, *, root_id: str = "") -> dict[str, Any]:
+        body: dict[str, Any] = {
+            "receive_id": chat_id,
+            "msg_type": msg_type,
+            "content": content,
+            "uuid": uuid.uuid4().hex,
+        }
+        if root_id:
+            body["root_id"] = root_id
+        request = BaseRequest.builder().http_method(HttpMethod.POST).uri("/open-apis/im/v1/messages").token_types({AccessTokenType.TENANT, AccessTokenType.USER}).queries([("receive_id_type", "chat_id")]).headers({"Content-Type": "application/json; charset=utf-8"}).body(body).build()
+        response = await self.client.arequest(request)
+        _ensure_success(response, f"Feishu create {msg_type}")
+        return _response_payload(response)
+
     async def send_text(self, chat_id: str, text: str, *, reply_to_message_id: str = "", root_id: str = "", force_new_message: bool = False) -> None:
-        token = await self.get_tenant_access_token()
-        headers = {"Authorization": f"Bearer {token}"}
         for chunk in split_text(text):
             if reply_to_message_id and not force_new_message:
                 try:
-                    reply_response = await self._client.post(
-                        f"{FEISHU_BASE_URL}/im/v1/messages/{reply_to_message_id}/reply",
-                        headers=headers,
-                        json={
-                            "msg_type": "post",
-                            "content": build_markdown_post_content(chunk),
-                            "reply_in_thread": True,
-                        },
-                    )
-                    if _api_ok(reply_response):
-                        continue
+                    await self.reply_message(reply_to_message_id, "post", build_markdown_post_content(chunk), reply_in_thread=True)
+                    continue
                 except Exception:
-                    pass
-            response = await self._client.post(
-                f"{FEISHU_BASE_URL}/im/v1/messages",
-                headers=headers,
-                params={"receive_id_type": "chat_id"},
-                json={
-                    "receive_id": chat_id,
-                    "msg_type": "post",
-                    "content": build_markdown_post_content(chunk),
-                    **({"root_id": root_id} if root_id else {}),
-                },
-            )
-            _raise_api_error(response)
+                    LOGGER.exception("reply text failed for message_id=%s", reply_to_message_id)
+            await self.create_message(chat_id, "post", build_markdown_post_content(chunk), root_id=root_id)
 
     async def send_interactive_card(self, chat_id: str, card: dict[str, Any], *, reply_to_message_id: str = "", root_id: str = "", force_new_message: bool = False) -> None:
-        token = await self.get_tenant_access_token()
-        headers = {"Authorization": f"Bearer {token}"}
-        content = json.dumps(card, ensure_ascii=False)
+        content = _json_dumps(card)
         if reply_to_message_id and not force_new_message:
             try:
-                response = await self._client.post(
-                    f"{FEISHU_BASE_URL}/im/v1/messages/{reply_to_message_id}/reply",
-                    headers=headers,
-                    json={
-                        "content": content,
-                        "msg_type": "interactive",
-                        "reply_in_thread": True,
-                    },
-                )
-                if _api_ok(response):
-                    return
+                await self.reply_message(reply_to_message_id, "interactive", content, reply_in_thread=True)
+                return
             except Exception:
-                pass
-        response = await self._client.post(
-            f"{FEISHU_BASE_URL}/im/v1/messages",
-            headers=headers,
-            params={"receive_id_type": "chat_id"},
-            json={
-                "receive_id": chat_id,
-                "content": content,
-                "msg_type": "interactive",
-                **({"root_id": root_id} if root_id else {}),
-            },
-        )
-        _raise_api_error(response)
+                LOGGER.exception("reply interactive card failed for message_id=%s", reply_to_message_id)
+        await self.create_message(chat_id, "interactive", content, root_id=root_id)
+
+
+
+class FeishuEventDispatcher:
+    def __init__(
+        self,
+        config: AppConfig,
+        loop: asyncio.AbstractEventLoop,
+        dispatch_message: Callable[[IncomingMessage], Awaitable[None]],
+        log: logging.Logger | None = None,
+    ):
+        self.config = config
+        self.loop = loop
+        self.dispatch_message = dispatch_message
+        self.logger = log or LOGGER
+
+    def build(self) -> lark.EventDispatcherHandler:
+        builder = lark.EventDispatcherHandler.builder(self.config.feishu.encrypt_key, self.config.feishu.verify_token, LogLevel.INFO)
+        builder.register_p2_im_message_receive_v1(self._handle_message_event)
+        builder.register_p2_card_action_trigger(self._handle_card_action)
+        return builder.build()
+
+    def _schedule(self, message: IncomingMessage) -> None:
+        self.loop.call_soon_threadsafe(lambda: asyncio.create_task(self.dispatch_message(message)))
+
+    def _handle_message_event(self, event: P2ImMessageReceiveV1) -> None:
+        parsed = parse_message_event(self.config, event)
+        if parsed.type == "message" and parsed.message is not None:
+            self._schedule(parsed.message)
+
+    def _handle_card_action(self, event: P2CardActionTrigger) -> P2CardActionTriggerResponse:
+        parsed = parse_card_action_event(event)
+        if parsed.type == "message" and parsed.message is not None:
+            self._schedule(parsed.message)
+        return P2CardActionTriggerResponse()
