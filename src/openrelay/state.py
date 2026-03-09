@@ -1,0 +1,321 @@
+from __future__ import annotations
+
+from dataclasses import asdict
+import hashlib
+import json
+from pathlib import Path
+import sqlite3
+import time
+import uuid
+
+from openrelay.config import AppConfig
+from openrelay.models import SessionRecord, SessionSummary, utc_now
+from openrelay.release import infer_release_channel
+
+
+DEDUP_TTL_SECONDS = 48 * 60 * 60
+DB_FILENAME = "openrelay.sqlite3"
+LEGACY_DB_FILENAME = "agentmux.sqlite3"
+
+
+class StateStore:
+    def __init__(self, config: AppConfig):
+        self.config = config
+        self.config.data_dir.mkdir(parents=True, exist_ok=True)
+        self.db_path = self._resolve_db_path()
+        self.connection = sqlite3.connect(self.db_path, check_same_thread=False)
+        self.connection.row_factory = sqlite3.Row
+        self._init_schema()
+
+    def _resolve_db_path(self) -> Path:
+        db_path = self.config.data_dir / DB_FILENAME
+        legacy_db_path = self.config.data_dir / LEGACY_DB_FILENAME
+        if db_path.exists() or not legacy_db_path.exists():
+            return db_path
+        legacy_db_path.replace(db_path)
+        for suffix in ("-shm", "-wal"):
+            legacy_sidecar_path = Path(f"{legacy_db_path}{suffix}")
+            if legacy_sidecar_path.exists():
+                legacy_sidecar_path.replace(Path(f"{db_path}{suffix}"))
+        return db_path
+
+    def close(self) -> None:
+        self.connection.close()
+
+    def _init_schema(self) -> None:
+        self.connection.executescript(
+            """
+            PRAGMA journal_mode=WAL;
+            CREATE TABLE IF NOT EXISTS session_pointers (
+              base_key TEXT PRIMARY KEY,
+              active_session_id TEXT NOT NULL,
+              updated_at TEXT NOT NULL
+            );
+            CREATE TABLE IF NOT EXISTS sessions (
+              session_id TEXT PRIMARY KEY,
+              base_key TEXT NOT NULL,
+              backend TEXT NOT NULL,
+              cwd TEXT NOT NULL,
+              label TEXT NOT NULL DEFAULT '',
+              model_override TEXT NOT NULL DEFAULT '',
+              safety_mode TEXT NOT NULL,
+              native_session_id TEXT NOT NULL DEFAULT '',
+              release_channel TEXT NOT NULL DEFAULT 'main',
+              last_usage_json TEXT NOT NULL DEFAULT '{}',
+              created_at TEXT NOT NULL,
+              updated_at TEXT NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS idx_sessions_base_key_updated ON sessions(base_key, updated_at DESC);
+            CREATE TABLE IF NOT EXISTS messages (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              session_id TEXT NOT NULL,
+              role TEXT NOT NULL,
+              content TEXT NOT NULL,
+              created_at TEXT NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS idx_messages_session_id_id ON messages(session_id, id ASC);
+            CREATE TABLE IF NOT EXISTS dedup (
+              message_id TEXT PRIMARY KEY,
+              seen_at INTEGER NOT NULL
+            );
+            """
+        )
+        columns = {row["name"] for row in self.connection.execute("PRAGMA table_info(sessions)").fetchall()}
+        if "release_channel" not in columns:
+            self.connection.execute("ALTER TABLE sessions ADD COLUMN release_channel TEXT NOT NULL DEFAULT 'main'")
+        if "last_usage_json" not in columns:
+            self.connection.execute("ALTER TABLE sessions ADD COLUMN last_usage_json TEXT NOT NULL DEFAULT '{}'")
+        self.connection.commit()
+
+    def _new_session_id(self) -> str:
+        return f"s_{uuid.uuid4().hex[:12]}"
+
+    def _default_cwd(self, release_channel: str = "main") -> str:
+        from openrelay.release import get_release_workspace
+
+        return str(get_release_workspace(self.config, release_channel))
+
+    def _default_backend(self) -> str:
+        return self.config.backend.default_backend
+
+    def _default_model(self) -> str:
+        return self.config.backend.default_model
+
+    def _default_mode(self) -> str:
+        return self.config.backend.default_safety_mode
+
+    def _truncate_messages(self, session_id: str) -> None:
+        max_messages = self.config.max_session_messages
+        count = self.count_messages(session_id)
+        if count <= max_messages:
+            return
+        extra = count - max_messages
+        self.connection.execute(
+            "DELETE FROM messages WHERE id IN (SELECT id FROM messages WHERE session_id = ? ORDER BY id ASC LIMIT ?)",
+            (session_id, extra),
+        )
+
+    def _first_message(self, session_id: str, role: str) -> str:
+        row = self.connection.execute(
+            "SELECT content FROM messages WHERE session_id = ? AND role = ? ORDER BY id ASC LIMIT 1",
+            (session_id, role),
+        ).fetchone()
+        return (row["content"] if row else "") or ""
+
+    def _last_message(self, session_id: str, role: str) -> str:
+        row = self.connection.execute(
+            "SELECT content FROM messages WHERE session_id = ? AND role = ? ORDER BY id DESC LIMIT 1",
+            (session_id, role),
+        ).fetchone()
+        return (row["content"] if row else "") or ""
+
+    def count_messages(self, session_id: str) -> int:
+        row = self.connection.execute(
+            "SELECT COUNT(*) AS count FROM messages WHERE session_id = ?",
+            (session_id,),
+        ).fetchone()
+        return int(row["count"] or 0)
+
+    def remember_message(self, message_id: str) -> bool:
+        now = int(time.time())
+        cutoff = now - DEDUP_TTL_SECONDS
+        self.connection.execute("DELETE FROM dedup WHERE seen_at < ?", (cutoff,))
+        row = self.connection.execute("SELECT seen_at FROM dedup WHERE message_id = ?", (message_id,)).fetchone()
+        duplicate = row is not None and int(row["seen_at"] or 0) >= cutoff
+        self.connection.execute(
+            "INSERT INTO dedup(message_id, seen_at) VALUES(?, ?) ON CONFLICT(message_id) DO UPDATE SET seen_at = excluded.seen_at",
+            (message_id, now),
+        )
+        self.connection.commit()
+        return duplicate
+
+    def load_session(self, base_key: str) -> SessionRecord:
+        pointer = self.connection.execute(
+            "SELECT active_session_id FROM session_pointers WHERE base_key = ?",
+            (base_key,),
+        ).fetchone()
+        if pointer is None:
+            session = SessionRecord(
+                session_id=self._new_session_id(),
+                base_key=base_key,
+                backend=self._default_backend(),
+                cwd=self._default_cwd("main"),
+                model_override=self._default_model(),
+                safety_mode=self._default_mode(),
+                release_channel="main",
+                last_usage={},
+            )
+            self.save_session(session)
+            return session
+        return self.get_session(pointer["active_session_id"])
+
+    def get_session(self, session_id: str) -> SessionRecord:
+        row = self.connection.execute(
+            "SELECT * FROM sessions WHERE session_id = ?",
+            (session_id,),
+        ).fetchone()
+        if row is None:
+            raise KeyError(f"Unknown session: {session_id}")
+        payload = dict(row)
+        try:
+            payload["last_usage"] = json.loads(payload.pop("last_usage_json", "{}") or "{}")
+        except json.JSONDecodeError:
+            payload["last_usage"] = {}
+        record = SessionRecord(**payload)
+        if not record.release_channel:
+            record.release_channel = infer_release_channel(self.config, record)
+        return record
+
+    def save_session(self, session: SessionRecord) -> SessionRecord:
+        now = utc_now()
+        payload = asdict(session)
+        payload["updated_at"] = now
+        if not payload["created_at"]:
+            payload["created_at"] = now
+        if not payload["release_channel"]:
+            payload["release_channel"] = infer_release_channel(self.config, session)
+        payload["last_usage_json"] = json.dumps(payload.pop("last_usage", {}) or {}, ensure_ascii=False)
+        self.connection.execute(
+            """
+            INSERT INTO sessions(session_id, base_key, backend, cwd, label, model_override, safety_mode, native_session_id, release_channel, last_usage_json, created_at, updated_at)
+            VALUES(:session_id, :base_key, :backend, :cwd, :label, :model_override, :safety_mode, :native_session_id, :release_channel, :last_usage_json, :created_at, :updated_at)
+            ON CONFLICT(session_id) DO UPDATE SET
+              backend = excluded.backend,
+              cwd = excluded.cwd,
+              label = excluded.label,
+              model_override = excluded.model_override,
+              safety_mode = excluded.safety_mode,
+              native_session_id = excluded.native_session_id,
+              release_channel = excluded.release_channel,
+              last_usage_json = excluded.last_usage_json,
+              updated_at = excluded.updated_at
+            """,
+            payload,
+        )
+        self.connection.execute(
+            """
+            INSERT INTO session_pointers(base_key, active_session_id, updated_at)
+            VALUES(?, ?, ?)
+            ON CONFLICT(base_key) DO UPDATE SET active_session_id = excluded.active_session_id, updated_at = excluded.updated_at
+            """,
+            (session.base_key, session.session_id, now),
+        )
+        self.connection.commit()
+        return self.get_session(session.session_id)
+
+    def append_message(self, session_id: str, role: str, content: str) -> None:
+        self.connection.execute(
+            "INSERT INTO messages(session_id, role, content, created_at) VALUES(?, ?, ?, ?)",
+            (session_id, role, content, utc_now()),
+        )
+        self._truncate_messages(session_id)
+        self.connection.commit()
+
+    def list_messages(self, session_id: str) -> list[dict[str, str]]:
+        rows = self.connection.execute(
+            "SELECT role, content FROM messages WHERE session_id = ? ORDER BY id ASC",
+            (session_id,),
+        ).fetchall()
+        return [{"role": row["role"], "content": row["content"]} for row in rows]
+
+    def create_next_session(self, base_key: str, current: SessionRecord | None, label: str = "", **overrides: str) -> SessionRecord:
+        release_channel = overrides.get("release_channel") or (current.release_channel if current else "main")
+        session = SessionRecord(
+            session_id=self._new_session_id(),
+            base_key=base_key,
+            backend=overrides.get("backend") or (current.backend if current else self._default_backend()),
+            cwd=overrides.get("cwd") or (current.cwd if current else self._default_cwd(release_channel)),
+            label=label.strip() or "",
+            model_override=overrides.get("model_override") if overrides.get("model_override") is not None else (current.model_override if current else self._default_model()),
+            safety_mode=overrides.get("safety_mode") or (current.safety_mode if current else self._default_mode()),
+            release_channel=release_channel,
+            last_usage=current.last_usage if current else {},
+        )
+        return self.save_session(session)
+
+    def list_sessions(self, base_key: str, limit: int = 20) -> list[SessionSummary]:
+        pointer = self.connection.execute(
+            "SELECT active_session_id FROM session_pointers WHERE base_key = ?",
+            (base_key,),
+        ).fetchone()
+        active_id = pointer["active_session_id"] if pointer else ""
+        rows = self.connection.execute(
+            "SELECT * FROM sessions WHERE base_key = ? ORDER BY updated_at DESC LIMIT ?",
+            (base_key, limit),
+        ).fetchall()
+        summaries: list[SessionSummary] = []
+        for row in rows:
+            session_id = row["session_id"]
+            summaries.append(
+                SessionSummary(
+                    session_id=session_id,
+                    backend=row["backend"],
+                    label=row["label"] or "",
+                    cwd=row["cwd"],
+                    native_session_id=row["native_session_id"] or "",
+                    updated_at=row["updated_at"],
+                    active=session_id == active_id,
+                    release_channel=row["release_channel"] or "main",
+                    first_user_message=self._first_message(session_id, "user"),
+                    last_assistant_message=self._last_message(session_id, "assistant"),
+                    message_count=self.count_messages(session_id),
+                )
+            )
+        summaries.sort(key=lambda entry: (entry.active, entry.updated_at), reverse=True)
+        return summaries
+
+    def resume_session(self, base_key: str, target: str) -> SessionRecord | None:
+        target = target.strip()
+        pointer = self.connection.execute(
+            "SELECT active_session_id FROM session_pointers WHERE base_key = ?",
+            (base_key,),
+        ).fetchone()
+        active_id = pointer["active_session_id"] if pointer else ""
+        sessions = self.list_sessions(base_key, limit=50)
+        chosen: SessionSummary | None = None
+        if not target or target in {"latest", "prev", "previous"}:
+            chosen = next((entry for entry in sessions if entry.session_id != active_id), None)
+        else:
+            chosen = next((entry for entry in sessions if entry.session_id == target), None)
+        if chosen is None:
+            return None
+        self.connection.execute(
+            "UPDATE session_pointers SET active_session_id = ?, updated_at = ? WHERE base_key = ?",
+            (chosen.session_id, utc_now(), base_key),
+        )
+        self.connection.commit()
+        return self.get_session(chosen.session_id)
+
+    def clear_sessions(self, base_key: str) -> None:
+        rows = self.connection.execute("SELECT session_id FROM sessions WHERE base_key = ?", (base_key,)).fetchall()
+        ids = [row["session_id"] for row in rows]
+        self.connection.execute("DELETE FROM sessions WHERE base_key = ?", (base_key,))
+        self.connection.execute("DELETE FROM session_pointers WHERE base_key = ?", (base_key,))
+        if ids:
+            self.connection.executemany("DELETE FROM messages WHERE session_id = ?", [(session_id,) for session_id in ids])
+        self.connection.commit()
+
+
+
+def hash_key(value: str) -> str:
+    return hashlib.sha1(value.encode("utf-8")).hexdigest()
