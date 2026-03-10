@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 from asyncio.subprocess import PIPE, Process
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -13,7 +14,9 @@ from openrelay.models import BackendReply, SessionRecord
 
 DEFAULT_REQUEST_TIMEOUT_SECONDS: float | None = None
 DEFAULT_INTERRUPT_GRACE_SECONDS = 5.0
+DEFAULT_RESUME_TIMEOUT_SECONDS = 15.0
 STOP_INTERRUPT_REASON = "interrupted by /stop"
+LOGGER = logging.getLogger("openrelay.backends.codex")
 
 
 class InterruptedError(RuntimeError):
@@ -212,6 +215,7 @@ class CodexAppServerClient:
         *,
         request_timeout_seconds: float | None = DEFAULT_REQUEST_TIMEOUT_SECONDS,
         interrupt_grace_seconds: float = DEFAULT_INTERRUPT_GRACE_SECONDS,
+        resume_timeout_seconds: float = DEFAULT_RESUME_TIMEOUT_SECONDS,
     ):
         self.codex_path = codex_path
         self.workspace_root = workspace_root
@@ -220,6 +224,7 @@ class CodexAppServerClient:
         self.safety_mode = safety_mode
         self.request_timeout_seconds = self._normalize_request_timeout(request_timeout_seconds)
         self.interrupt_grace_seconds = interrupt_grace_seconds
+        self.resume_timeout_seconds = resume_timeout_seconds
         self.process: Process | None = None
         self.stderr_text: str = ""
         self.pending_requests: dict[int, asyncio.Future[Any]] = {}
@@ -442,16 +447,38 @@ class CodexAppServerClient:
         if session.native_session_id:
             thread_id = session.native_session_id
             if thread_id not in self.thread_registry:
-                await self.request(
-                    "thread/resume",
-                    {**params, "threadId": thread_id},
-                    cancel_event=context.cancel_event,
-                    reset_on_cancel=True,
-                )
-                self.thread_registry.add(thread_id)
-                if context.on_progress is not None:
-                    await context.on_progress({"type": "thread.started", "threadId": thread_id})
-            return thread_id
+                try:
+                    await asyncio.wait_for(
+                        self.request(
+                            "thread/resume",
+                            {**params, "threadId": thread_id},
+                            cancel_event=context.cancel_event,
+                            reset_on_cancel=True,
+                        ),
+                        timeout=self.resume_timeout_seconds,
+                    )
+                    self.thread_registry.add(thread_id)
+                    if context.on_progress is not None:
+                        await context.on_progress({"type": "thread.started", "threadId": thread_id})
+                except InterruptedError:
+                    raise
+                except asyncio.TimeoutError:
+                    LOGGER.warning(
+                        "thread/resume timed out for native_session_id=%s; resetting client and starting fresh thread",
+                        thread_id,
+                    )
+                    await self._reset(
+                        "Codex app-server thread/resume timed out after "
+                        f"{self._format_timeout(self.resume_timeout_seconds)}"
+                    )
+                except Exception as exc:
+                    LOGGER.warning(
+                        "thread/resume failed for native_session_id=%s; starting fresh thread: %s",
+                        thread_id,
+                        exc,
+                    )
+                else:
+                    return thread_id
         result = await self.request(
             "thread/start",
             params,
@@ -540,12 +567,14 @@ class CodexBackend(Backend):
         sqlite_home: Path,
         request_timeout_seconds: float | None = DEFAULT_REQUEST_TIMEOUT_SECONDS,
         interrupt_grace_seconds: float = DEFAULT_INTERRUPT_GRACE_SECONDS,
+        resume_timeout_seconds: float = DEFAULT_RESUME_TIMEOUT_SECONDS,
     ):
         self.codex_path = codex_path
         self.default_model = default_model
         self.sqlite_home = sqlite_home
         self.request_timeout_seconds = request_timeout_seconds
         self.interrupt_grace_seconds = interrupt_grace_seconds
+        self.resume_timeout_seconds = resume_timeout_seconds
 
     def _client_key(self, session: SessionRecord, context: BackendContext) -> tuple[str, str, str]:
         return (
@@ -566,6 +595,7 @@ class CodexBackend(Backend):
                 safety_mode=session.safety_mode,
                 request_timeout_seconds=self.request_timeout_seconds,
                 interrupt_grace_seconds=self.interrupt_grace_seconds,
+                resume_timeout_seconds=self.resume_timeout_seconds,
             )
             self._clients[key] = client
         return client
