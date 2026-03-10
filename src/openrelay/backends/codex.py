@@ -11,7 +11,7 @@ from openrelay.backends.base import Backend, BackendContext, build_subprocess_en
 from openrelay.models import BackendReply, SessionRecord
 
 
-DEFAULT_REQUEST_TIMEOUT_SECONDS = 30.0
+DEFAULT_REQUEST_TIMEOUT_SECONDS: float | None = None
 DEFAULT_INTERRUPT_GRACE_SECONDS = 5.0
 STOP_INTERRUPT_REASON = "interrupted by /stop"
 
@@ -209,14 +209,14 @@ class CodexAppServerClient:
         model: str,
         safety_mode: str,
         *,
-        request_timeout_seconds: float = DEFAULT_REQUEST_TIMEOUT_SECONDS,
+        request_timeout_seconds: float | None = DEFAULT_REQUEST_TIMEOUT_SECONDS,
         interrupt_grace_seconds: float = DEFAULT_INTERRUPT_GRACE_SECONDS,
     ):
         self.codex_path = codex_path
         self.workspace_root = workspace_root
         self.model = model
         self.safety_mode = safety_mode
-        self.request_timeout_seconds = request_timeout_seconds
+        self.request_timeout_seconds = self._normalize_request_timeout(request_timeout_seconds)
         self.interrupt_grace_seconds = interrupt_grace_seconds
         self.process: Process | None = None
         self.stderr_text: str = ""
@@ -230,6 +230,11 @@ class CodexAppServerClient:
         self._wait_task: asyncio.Task[None] | None = None
         self._lock = asyncio.Lock()
         self._reset_lock = asyncio.Lock()
+
+    def _normalize_request_timeout(self, seconds: float | None) -> float | None:
+        if seconds is None:
+            return None
+        return seconds if seconds > 0 else None
 
     def _format_timeout(self, seconds: float) -> str:
         if float(seconds).is_integer():
@@ -382,7 +387,12 @@ class CodexAppServerClient:
         payload = json.dumps({"id": request_id, "method": method, "params": params}, ensure_ascii=False) + "\n"
         self.process.stdin.write(payload.encode("utf-8"))
         await self.process.stdin.drain()
-        response_task = asyncio.create_task(asyncio.wait_for(asyncio.shield(future), timeout=self.request_timeout_seconds))
+        async def wait_for_response() -> Any:
+            if self.request_timeout_seconds is None:
+                return await future
+            return await asyncio.wait_for(asyncio.shield(future), timeout=self.request_timeout_seconds)
+
+        response_task = asyncio.create_task(wait_for_response())
         cancel_task: asyncio.Task[bool] | None = None
         if cancel_event is not None:
             cancel_task = asyncio.create_task(cancel_event.wait())
@@ -519,7 +529,7 @@ class CodexBackend(Backend):
         codex_path: str,
         default_model: str,
         *,
-        request_timeout_seconds: float = DEFAULT_REQUEST_TIMEOUT_SECONDS,
+        request_timeout_seconds: float | None = DEFAULT_REQUEST_TIMEOUT_SECONDS,
         interrupt_grace_seconds: float = DEFAULT_INTERRUPT_GRACE_SECONDS,
     ):
         self.codex_path = codex_path

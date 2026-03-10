@@ -38,6 +38,7 @@ class BackendConfig:
     default_safety_mode: str = "workspace-write"
     codex_cli_path: str = "codex"
     codex_sessions_dir: Path = Path.home() / ".codex" / "sessions"
+    codex_request_timeout_seconds: float | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -107,6 +108,17 @@ def read_int(name: str, default: int, minimum: int, maximum: int) -> int:
     except ValueError:
         return default
     return max(minimum, min(maximum, value))
+
+
+def read_optional_float(*names: str, default: float | None = None) -> float | None:
+    raw = read_first(*names, default="")
+    if raw == "":
+        return default
+    try:
+        value = float(raw)
+    except ValueError:
+        return default
+    return value if value > 0 else None
 
 
 
@@ -242,6 +254,7 @@ def load_config(cwd: str | Path | None = None) -> AppConfig:
             default_safety_mode=default_safety_mode,
             codex_cli_path=read_first("CODEX_CLI_PATH", "CODEX_PATH", default="codex"),
             codex_sessions_dir=Path(read_first("CODEX_SESSIONS_DIR", default=str(Path.home() / ".codex" / "sessions"))).expanduser().resolve(),
+            codex_request_timeout_seconds=read_optional_float("CODEX_REQUEST_TIMEOUT_SECONDS", default=None),
         ),
         directory_shortcuts=read_directory_shortcuts("DIRECTORY_SHORTCUTS"),
     )
