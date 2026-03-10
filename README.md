@@ -30,6 +30,7 @@
 - 当前回复还没结束时，继续发消息会自动排到下一轮；连续补充会合并成一轮 follow-up
 - `/ping`、`/status`、`/usage`、`/help`、`/panel` 这类诊断命令在当前回复尚未结束时也会立即返回，不再被同 session 串行锁静默卡住
 - 串行粒度现在按原生 `codex session` 收敛：同一个 native session 继续排队，不同 native session 可以并发
+- 飞书图片消息会先通过消息资源接口下载到本地临时文件，再作为图像 input 传给 `codex app-server`
 
 ## 环境变量
 

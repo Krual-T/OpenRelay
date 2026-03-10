@@ -37,6 +37,7 @@ from openrelay.session_ux import SessionUX
 
 DEFAULT_SYSTEMD_SERVICE_UNIT = "openrelay.service"
 NON_BLOCKING_ACTIVE_RUN_COMMANDS = {"/ping", "/status", "/usage", "/help", "/tools", "/panel", "/restart"}
+DEFAULT_IMAGE_PROMPT = "用户发送了图片。请先查看图片内容，再根据图片直接回答用户。"
 LOGGER = logging.getLogger("openrelay.runtime")
 
 
@@ -137,9 +138,24 @@ class AgentRuntime:
             return f"native:{native_session_id}"
         return f"session:{session_key}"
 
+    def _message_summary_text(self, message: IncomingMessage) -> str:
+        text = str(message.text or "").strip()
+        if text:
+            return text
+        if message.local_image_paths:
+            count = len(message.local_image_paths)
+            return "[图片]" if count == 1 else f"[图片 x{count}]"
+        return ""
+
+    def _build_backend_prompt(self, message: IncomingMessage) -> str:
+        text = str(message.text or "").strip()
+        if message.local_image_paths and text in {"", "[图片]"}:
+            return DEFAULT_IMAGE_PROMPT
+        return text
+
     async def dispatch_message(self, message: IncomingMessage) -> None:
         try:
-            if not message.text:
+            if not self._message_summary_text(message):
                 return
             if self.config.feishu.bot_open_id and message.sender_open_id == self.config.feishu.bot_open_id:
                 return
@@ -229,7 +245,9 @@ class AgentRuntime:
         async def cancel(_reason: str) -> None:
             cancel_event.set()
 
-        self.active_runs[execution_key] = ActiveRun(started_at=utc_now(), description=self.session_ux.shorten(message.text, 72), cancel=cancel)
+        message_summary = self._message_summary_text(message)
+        backend_prompt = self._build_backend_prompt(message)
+        self.active_runs[execution_key] = ActiveRun(started_at=utc_now(), description=self.session_ux.shorten(message_summary, 72), cancel=cancel)
         typing_state: dict[str, Any] | None = None
         streaming: FeishuStreamingSession | None = None
         streaming_broken = False
@@ -303,9 +321,9 @@ class AgentRuntime:
                     return
 
         try:
-            session = self.session_ux.label_session_if_needed(session, message.text)
+            session = self.session_ux.label_session_if_needed(session, message_summary)
             self.store.save_session(session)
-            self.store.append_message(session.session_id, "user", message.text)
+            self.store.append_message(session.session_id, "user", message_summary)
 
             if message.message_id and self.config.feishu.stream_mode != "off":
                 try:
@@ -331,9 +349,10 @@ class AgentRuntime:
 
             reply = await backend.run(
                 session,
-                message.text,
+                backend_prompt,
                 BackendContext(
                     workspace_root=get_session_workspace_root(self.config, session),
+                    local_image_paths=message.local_image_paths,
                     cancel_event=cancel_event,
                     on_partial_text=on_partial_text,
                     on_progress=on_progress,

@@ -87,6 +87,27 @@ def test_parse_message_event_p2p() -> None:
     assert parsed.message.thread_id == "thread_1"
 
 
+def test_parse_message_event_image() -> None:
+    config = make_config()
+    parsed = parse_message_event(
+        config,
+        {
+            "sender": {"sender_id": {"open_id": "ou_user"}},
+            "message": {
+                "message_id": "om_image_1",
+                "chat_id": "oc_2",
+                "chat_type": "p2p",
+                "message_type": "image",
+                "content": '{"image_key":"img_v2_123"}',
+            },
+        },
+    )
+    assert parsed.type == "message"
+    assert parsed.message is not None
+    assert parsed.message.actionable is True
+    assert parsed.message.text == "[图片]"
+    assert parsed.message.remote_image_keys == ("img_v2_123",)
+
 
 def test_parse_card_action_event() -> None:
     parsed = parse_card_action_event(

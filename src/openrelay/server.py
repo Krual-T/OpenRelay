@@ -34,7 +34,7 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
         store = StateStore(app_config)
         messenger = FeishuMessenger(app_config)
         runtime = AgentRuntime(app_config, store, messenger)
-        event_dispatcher = FeishuEventDispatcher(app_config, asyncio.get_running_loop(), runtime.dispatch_message)
+        event_dispatcher = FeishuEventDispatcher(app_config, asyncio.get_running_loop(), runtime.dispatch_message, messenger=messenger)
         app.state.config = app_config
         app.state.store = store
         app.state.messenger = messenger
