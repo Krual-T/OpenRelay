@@ -11,8 +11,17 @@ from openrelay.backends.base import Backend, BackendContext, build_subprocess_en
 from openrelay.models import BackendReply, SessionRecord
 
 
+DEFAULT_REQUEST_TIMEOUT_SECONDS = 30.0
+DEFAULT_INTERRUPT_GRACE_SECONDS = 5.0
+STOP_INTERRUPT_REASON = "interrupted by /stop"
+
+
 class InterruptedError(RuntimeError):
     pass
+
+
+def build_cancel_reset_reason(method: str) -> str:
+    return f"Codex app-server request {method} cancelled by /stop before response"
 
 
 @dataclass(slots=True, eq=False)
@@ -193,11 +202,22 @@ class CodexTurn:
 
 
 class CodexAppServerClient:
-    def __init__(self, codex_path: str, workspace_root: Path, model: str, safety_mode: str):
+    def __init__(
+        self,
+        codex_path: str,
+        workspace_root: Path,
+        model: str,
+        safety_mode: str,
+        *,
+        request_timeout_seconds: float = DEFAULT_REQUEST_TIMEOUT_SECONDS,
+        interrupt_grace_seconds: float = DEFAULT_INTERRUPT_GRACE_SECONDS,
+    ):
         self.codex_path = codex_path
         self.workspace_root = workspace_root
         self.model = model
         self.safety_mode = safety_mode
+        self.request_timeout_seconds = request_timeout_seconds
+        self.interrupt_grace_seconds = interrupt_grace_seconds
         self.process: Process | None = None
         self.stderr_text: str = ""
         self.pending_requests: dict[int, asyncio.Future[Any]] = {}
@@ -209,6 +229,45 @@ class CodexAppServerClient:
         self._stderr_task: asyncio.Task[None] | None = None
         self._wait_task: asyncio.Task[None] | None = None
         self._lock = asyncio.Lock()
+        self._reset_lock = asyncio.Lock()
+
+    def _format_timeout(self, seconds: float) -> str:
+        if float(seconds).is_integer():
+            return f"{int(seconds)}s"
+        return f"{seconds:.2f}s"
+
+    async def _terminate_process(self, process: Process | None) -> None:
+        if process is None:
+            return
+        if process.stdin is not None:
+            process.stdin.close()
+        try:
+            process.terminate()
+        except ProcessLookupError:
+            return
+        try:
+            await asyncio.wait_for(process.wait(), timeout=1.0)
+        except asyncio.TimeoutError:
+            process.kill()
+            await process.wait()
+
+    async def _reset(self, reason: str) -> None:
+        error = RuntimeError(reason)
+        async with self._reset_lock:
+            async with self._lock:
+                process = self.process
+                self.process = None
+                self._ready_task = None
+            self.thread_registry.clear()
+            for future in list(self.pending_requests.values()):
+                if not future.done():
+                    future.set_exception(error)
+            self.pending_requests.clear()
+            for turn in list(self.active_turns):
+                if turn.future is not None and not turn.future.done():
+                    turn.future.set_exception(error)
+            self.active_turns.clear()
+            await self._terminate_process(process)
 
     async def ensure_ready(self) -> None:
         async with self._lock:
@@ -298,7 +357,15 @@ class CodexAppServerClient:
             if turn.done:
                 self.active_turns.discard(turn)
 
-    async def request(self, method: str, params: dict[str, Any]) -> Any:
+    async def request(
+        self,
+        method: str,
+        params: dict[str, Any],
+        *,
+        cancel_event: asyncio.Event | None = None,
+        reset_on_cancel: bool = False,
+        cancel_reason: str = STOP_INTERRUPT_REASON,
+    ) -> Any:
         if self.process is None:
             await self.ensure_ready()
         if self.process is None or self.process.stdin is None:
@@ -308,10 +375,42 @@ class CodexAppServerClient:
         loop = asyncio.get_running_loop()
         future: asyncio.Future[Any] = loop.create_future()
         self.pending_requests[request_id] = future
+        if cancel_event is not None and cancel_event.is_set():
+            self.pending_requests.pop(request_id, None)
+            future.cancel()
+            raise InterruptedError(cancel_reason)
         payload = json.dumps({"id": request_id, "method": method, "params": params}, ensure_ascii=False) + "\n"
         self.process.stdin.write(payload.encode("utf-8"))
         await self.process.stdin.drain()
-        return await future
+        response_task = asyncio.create_task(asyncio.wait_for(asyncio.shield(future), timeout=self.request_timeout_seconds))
+        cancel_task: asyncio.Task[bool] | None = None
+        if cancel_event is not None:
+            cancel_task = asyncio.create_task(cancel_event.wait())
+        try:
+            if cancel_task is None:
+                return await response_task
+            done, _ = await asyncio.wait({response_task, cancel_task}, return_when=asyncio.FIRST_COMPLETED)
+            if response_task in done:
+                return await response_task
+            self.pending_requests.pop(request_id, None)
+            future.cancel()
+            response_task.cancel()
+            if reset_on_cancel:
+                await self._reset(build_cancel_reset_reason(method))
+            raise InterruptedError(cancel_reason)
+        except asyncio.TimeoutError as exc:
+            self.pending_requests.pop(request_id, None)
+            reason = f"Codex app-server request {method} timed out after {self._format_timeout(self.request_timeout_seconds)}"
+            await self._reset(reason)
+            raise RuntimeError(reason) from exc
+        except asyncio.CancelledError:
+            self.pending_requests.pop(request_id, None)
+            future.cancel()
+            raise
+        finally:
+            response_task.cancel()
+            if cancel_task is not None:
+                cancel_task.cancel()
 
     async def ensure_thread(self, session: SessionRecord, context: BackendContext) -> str:
         await self.ensure_ready()
@@ -325,12 +424,22 @@ class CodexAppServerClient:
         if session.native_session_id:
             thread_id = session.native_session_id
             if thread_id not in self.thread_registry:
-                await self.request("thread/resume", {**params, "threadId": thread_id})
+                await self.request(
+                    "thread/resume",
+                    {**params, "threadId": thread_id},
+                    cancel_event=context.cancel_event,
+                    reset_on_cancel=True,
+                )
                 self.thread_registry.add(thread_id)
                 if context.on_progress is not None:
                     await context.on_progress({"type": "thread.started", "threadId": thread_id})
             return thread_id
-        result = await self.request("thread/start", params)
+        result = await self.request(
+            "thread/start",
+            params,
+            cancel_event=context.cancel_event,
+            reset_on_cancel=True,
+        )
         thread_id = str(result.get("thread", {}).get("id") or "")
         if not thread_id:
             raise RuntimeError("Codex app-server returned no thread id")
@@ -345,14 +454,7 @@ class CodexAppServerClient:
         thread_id = await self.ensure_thread(session, context)
         turn = CodexTurn(thread_id=thread_id, on_partial_text=context.on_partial_text, on_progress=context.on_progress)
         self.active_turns.add(turn)
-
-        async def cancel_watcher() -> None:
-            if context.cancel_event is None:
-                return
-            await context.cancel_event.wait()
-            await turn.interrupt(self, "interrupted by /stop")
-
-        watcher = asyncio.create_task(cancel_watcher())
+        watcher: asyncio.Task[None] | None = None
         try:
             result = await self.request(
                 "turn/start",
@@ -363,14 +465,39 @@ class CodexAppServerClient:
                     **({"model": session.model_override} if session.model_override else {}),
                     "input": [{"type": "text", "text": prompt}],
                 },
+                cancel_event=context.cancel_event,
+                reset_on_cancel=True,
             )
             await turn.set_turn_id(self, str(result.get("turn", {}).get("id") or ""))
+
+            async def cancel_watcher() -> None:
+                if context.cancel_event is None:
+                    return
+                await context.cancel_event.wait()
+                await turn.interrupt(self, STOP_INTERRUPT_REASON)
+                if turn.future is None or turn.future.done():
+                    return
+                try:
+                    await asyncio.wait_for(asyncio.shield(turn.future), timeout=self.interrupt_grace_seconds)
+                except asyncio.TimeoutError:
+                    reason = (
+                        "Codex app-server did not stop after interrupt within "
+                        f"{self._format_timeout(self.interrupt_grace_seconds)}"
+                    )
+                    await self._reset(reason)
+                except Exception:
+                    return
+
+            if context.cancel_event is not None and context.cancel_event.is_set():
+                await turn.interrupt(self, STOP_INTERRUPT_REASON)
+            watcher = asyncio.create_task(cancel_watcher())
             reply = await turn.future
             if not reply.text.strip():
                 raise RuntimeError("Codex app-server returned no agent text")
             return reply
         finally:
-            watcher.cancel()
+            if watcher is not None:
+                watcher.cancel()
             self.active_turns.discard(turn)
 
     async def shutdown(self) -> None:
@@ -378,33 +505,33 @@ class CodexAppServerClient:
         self.process = None
         if process is None:
             return
-        if process.stdin is not None:
-            process.stdin.close()
-        try:
-            process.terminate()
-        except ProcessLookupError:
-            return
-        try:
-            await asyncio.wait_for(process.wait(), timeout=1.0)
-        except asyncio.TimeoutError:
-            process.kill()
-            await process.wait()
+        async with self._lock:
+            self._ready_task = None
+        await self._terminate_process(process)
 
 
 class CodexBackend(Backend):
     name = "codex"
-    _clients: dict[tuple[str, str, str, str], CodexAppServerClient] = {}
+    _clients: dict[tuple[str, str, str], CodexAppServerClient] = {}
 
-    def __init__(self, codex_path: str, default_model: str):
+    def __init__(
+        self,
+        codex_path: str,
+        default_model: str,
+        *,
+        request_timeout_seconds: float = DEFAULT_REQUEST_TIMEOUT_SECONDS,
+        interrupt_grace_seconds: float = DEFAULT_INTERRUPT_GRACE_SECONDS,
+    ):
         self.codex_path = codex_path
         self.default_model = default_model
+        self.request_timeout_seconds = request_timeout_seconds
+        self.interrupt_grace_seconds = interrupt_grace_seconds
 
-    def _client_key(self, session: SessionRecord, context: BackendContext) -> tuple[str, str, str, str]:
+    def _client_key(self, session: SessionRecord, context: BackendContext) -> tuple[str, str, str]:
         return (
             self.codex_path,
             str(context.workspace_root),
-            session.model_override or self.default_model,
-            session.safety_mode,
+            session.session_id,
         )
 
     def _get_client(self, session: SessionRecord, context: BackendContext) -> CodexAppServerClient:
@@ -416,6 +543,8 @@ class CodexBackend(Backend):
                 workspace_root=context.workspace_root,
                 model=session.model_override or self.default_model,
                 safety_mode=session.safety_mode,
+                request_timeout_seconds=self.request_timeout_seconds,
+                interrupt_grace_seconds=self.interrupt_grace_seconds,
             )
             self._clients[key] = client
         return client
