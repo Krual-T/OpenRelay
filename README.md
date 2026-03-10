@@ -108,7 +108,7 @@ http://your-host:3000/feishu/webhook
 - `/cwd [path]`、`/cd [path]` - 查看或切换当前目录
 - `/model [name|default]` - 查看或切换模型覆盖值
 - `/sandbox [read-only|workspace-write|danger-full-access]` - 查看或切换执行模式
-- `/tools`、`/help` - 查看帮助
+- `/tools`、`/help` - 查看当前会话阶段、优先操作建议、常用流程和命令速查
 
 ## 当前状态
 

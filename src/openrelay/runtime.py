@@ -6,7 +6,6 @@ from dataclasses import asdict
 import logging
 import os
 from pathlib import Path
-import signal
 import sys
 from typing import Any, Awaitable, Callable
 
@@ -35,12 +34,26 @@ from openrelay.session_ux import SessionUX
 
 
 ADMIN_ONLY_COMMANDS = {"/restart"}
+DEFAULT_SYSTEMD_SERVICE_UNIT = "openrelay.service"
 LOGGER = logging.getLogger("openrelay.runtime")
 
 
-def is_systemd_service_process(env: dict[str, str] | None = None) -> bool:
+def get_systemd_service_unit(env: dict[str, str] | None = None) -> str:
     current_env = os.environ if env is None else env
-    return bool(current_env.get("INVOCATION_ID") or current_env.get("SYSTEMD_EXEC_PID") or current_env.get("JOURNAL_STREAM"))
+    raw_unit = (current_env.get("OPENRELAY_SYSTEMD_UNIT") or "").strip()
+    return raw_unit or DEFAULT_SYSTEMD_SERVICE_UNIT
+
+
+def is_systemd_service_process(env: dict[str, str] | None = None, pid: int | None = None) -> bool:
+    current_env = os.environ if env is None else env
+    current_pid = os.getpid() if pid is None else pid
+    raw_exec_pid = (current_env.get("SYSTEMD_EXEC_PID") or "").strip()
+    if not raw_exec_pid:
+        return False
+    try:
+        return int(raw_exec_pid) == current_pid
+    except ValueError:
+        return False
 
 
 class AgentRuntime:
@@ -143,6 +156,8 @@ class AgentRuntime:
         streaming_broken = False
         last_live_text = ""
         spinner_task: asyncio.Task[None] | None = None
+        streaming_update_event = asyncio.Event()
+        streaming_dirty = False
         live_state = create_live_reply_state(session, self.session_ux.format_cwd)
         if session.backend != "codex":
             live_state["heading"] = "正在生成回复"
@@ -154,6 +169,13 @@ class AgentRuntime:
                 return
             spinner_task.cancel()
             spinner_task = None
+
+        def request_streaming_update() -> None:
+            nonlocal streaming_dirty
+            if self.config.feishu.stream_mode != "card" or streaming_broken:
+                return
+            streaming_dirty = True
+            streaming_update_event.set()
 
         async def update_streaming() -> None:
             nonlocal streaming, streaming_broken, last_live_text
@@ -183,9 +205,17 @@ class AgentRuntime:
                 LOGGER.exception("streaming update failed for session_key=%s", session_key)
 
         async def spinner_loop() -> None:
+            nonlocal streaming_dirty
             while True:
-                await asyncio.sleep(1)
-                live_state["spinner_frame"] = (int(live_state.get("spinner_frame", 0) or 0) + 1) % 3
+                try:
+                    await asyncio.wait_for(streaming_update_event.wait(), timeout=1.0)
+                    streaming_update_event.clear()
+                except asyncio.TimeoutError:
+                    live_state["spinner_frame"] = (int(live_state.get("spinner_frame", 0) or 0) + 1) % 3
+                    streaming_dirty = True
+                if not streaming_dirty:
+                    continue
+                streaming_dirty = False
                 try:
                     await update_streaming()
                 except Exception:
@@ -204,8 +234,8 @@ class AgentRuntime:
                 except Exception:
                     LOGGER.exception("typing start failed for message_id=%s", message.message_id)
 
-            await update_streaming()
             if self.config.feishu.stream_mode == "card":
+                await update_streaming()
                 spinner_task = asyncio.create_task(spinner_loop())
 
             async def on_partial_text(partial_text: str) -> None:
@@ -214,11 +244,11 @@ class AgentRuntime:
                 live_state["heading"] = "正在生成回复"
                 live_state["status"] = "正在输出内容"
                 live_state["partial_text"] = partial_text
-                await update_streaming()
+                request_streaming_update()
 
             async def on_progress(event: dict[str, Any]) -> None:
                 apply_live_progress(live_state, event)
-                await update_streaming()
+                request_streaming_update()
 
             reply = await backend.run(
                 session,
@@ -399,7 +429,7 @@ class AgentRuntime:
                     "\n".join([
                         f"cwd={self.session_ux.format_cwd(session.cwd, session)}",
                         "切换目录：/cwd <path> 或 /cd <path>",
-                        "下一条消息就会在这个目录进入 Codex；如果想保留当前上下文，请先 /new 名字。",
+                        "切目录时会创建一个新的空会话；旧会话历史仍可通过 /resume 找回。",
                     ]),
                     command_reply=True,
                     command_name=name,
@@ -419,7 +449,7 @@ class AgentRuntime:
                 "\n".join([
                     f"cwd 已切换到 {self.session_ux.format_cwd(next_session.cwd, next_session)}。",
                     "现在直接发消息，就会在这个目录进入 Codex。",
-                    "如果想保留当前会话历史，请先 /new 名字，再切目录。",
+                    "已创建新的空会话；原会话历史还在，想回来可以 /resume list。",
                 ]),
                 command_reply=True,
                 command_name=name,
@@ -458,7 +488,7 @@ class AgentRuntime:
             await self._reply(message, "当前没有进行中的回复。", command_reply=True)
             return
         await active.cancel("interrupted by /stop")
-        await self._reply(message, "已停止当前回复。", command_reply=True)
+        await self._reply(message, "已发送停止请求，正在中断当前回复。", command_reply=True)
 
     async def _switch_release_channel(
         self,
@@ -601,39 +631,159 @@ class AgentRuntime:
         )
 
     def _build_help_text(self, session: SessionRecord) -> str:
-        commands = [
-            "/panel",
-            "/ping",
-            "/stop",
-            "/restart",
-            "/main [reason]",
-            "/stable [reason]",
-            "/develop [reason]",
-            "/new [label]",
-            "/resume [list|latest|index|session_id]",
-            "/clear",
-            "/status",
-            "/usage",
-            "/cwd [path]",
-            "/cd [path]",
-            "/model [name|default]",
-            "/sandbox [read-only|workspace-write|danger-full-access]",
-            "/tools",
-            "/help",
+        available_backends = self.available_backend_names()
+        message_count = len(self.store.list_messages(session.session_id))
+        context_lines = self.session_ux.build_context_lines(session, limit=2)
+        context_preview = self.session_ux.build_context_preview(session, limit=2)
+        lines = [
+            "OpenRelay 帮助",
+            "",
+            "当前状态：",
+            f"- 会话：{session.label or '未命名会话'} ({session.session_id})",
+            f"- 会话阶段：{self._describe_help_session_phase(session, message_count)}",
+            f"- 通道：{format_release_channel(infer_release_channel(self.config, session))}",
+            f"- 目录：{self.session_ux.format_cwd(session.cwd, session)}",
+            f"- 后端：{session.backend}",
+            f"- 模型：{self.session_ux.effective_model(session)}",
+            f"- sandbox：{session.safety_mode}",
+            f"- 原生会话：{session.native_session_id or 'pending（直接发消息就会创建）'}",
+            f"- 上下文占用：{self.session_ux.format_context_usage(session)}",
+            f"- 本地消息数：{message_count}",
+            f"- 最近关注：{context_preview or '还没有可总结的本地上下文'}",
+            "",
+            "一句话判断：",
+            f"- {self._build_help_now_summary(session, message_count)}",
         ]
-        if len(self.backends) > 1:
-            commands.append(f"/backend [list|{'|'.join(self.available_backend_names())}]")
-        return "\n".join(
+        context_note = self._build_help_context_note(session)
+        if context_note:
+            lines.append(context_note)
+        lines.extend(
             [
-                f"MODEL_BACKEND={self.config.backend.default_backend}",
-                f"MODEL_NAME={self.session_ux.effective_model(session)}",
-                "tools=backend-native",
-                f"main_workspace={self.config.main_workspace_dir}",
-                f"develop_workspace={self.config.develop_workspace_dir}",
-                f"restart_script={self.config.cwd / 'scripts' / 'restart-server.sh'}",
-                f"commands: {' '.join(commands)}",
+                "",
+                "你现在最该做什么：",
+                *self._build_help_priority_actions(session, message_count),
+                "",
+                "下一条消息可以直接这样发：",
+                *self._build_help_prompt_examples(session, message_count),
+                "",
+                "什么时候该用命令：",
+                *self._build_help_command_guide(available_backends),
+                "",
+                "最近上下文：",
+                *context_lines,
+                "",
+                "提示：如果目标没变，别先发命令，直接补充任务、报错、文件路径，或明确让它继续下一步。",
             ]
         )
+        return "\n".join(lines)
+
+    def _describe_help_session_phase(self, session: SessionRecord, message_count: int) -> str:
+        if message_count == 0 and session.native_session_id:
+            return "仅原生会话（可继续发消息，但本地暂未缓存上下文）"
+        if message_count == 0:
+            return "未开始（还没发第一条真实需求）"
+        if session.native_session_id:
+            return "进行中（继续发消息会沿用当前原生会话）"
+        return "待启动（已有本地上下文，下一条真实消息会创建原生会话）"
+
+    def _build_help_now_summary(self, session: SessionRecord, message_count: int) -> str:
+        if message_count == 0 and session.native_session_id:
+            return "这是一个已连接原生会话但本地上下文为空的会话；直接发消息会继续原会话。"
+        if message_count == 0:
+            return "这是一个空会话；最有效的动作通常是直接发完整任务，而不是先试很多命令。"
+        if session.native_session_id:
+            return "这是一个进行中的会话；如果任务没变，直接补充信息最快。"
+        return "这是一个已有本地上下文但尚未重新连上原生执行的会话；下一条真实消息会自动接上。"
+
+    def _build_help_context_note(self, session: SessionRecord) -> str | None:
+        usage_ratio = self._help_context_usage_ratio(session)
+        if usage_ratio is None:
+            return None
+        if usage_ratio >= 0.85:
+            return "- 上下文提醒：当前上下文已经接近窗口上限；如果要开新任务，优先 /new，别继续混在这个会话里。"
+        if usage_ratio >= 0.65:
+            return "- 上下文提醒：当前上下文已经不短；如果话题要明显切换，建议先 /new 隔离。"
+        return None
+
+    def _help_context_usage_ratio(self, session: SessionRecord) -> float | None:
+        usage = session.last_usage if isinstance(session.last_usage, dict) else {}
+        total_tokens = usage.get("total_tokens")
+        model_context_window = usage.get("model_context_window")
+        try:
+            total_value = int(total_tokens)
+            window_value = int(model_context_window)
+        except (TypeError, ValueError):
+            return None
+        if window_value <= 0:
+            return None
+        return total_value / window_value
+
+    def _build_help_priority_actions(self, session: SessionRecord, message_count: int) -> list[str]:
+        if message_count == 0 and session.native_session_id:
+            return [
+                "- 想延续上个原生会话：直接发消息，不需要先补命令。",
+                "- 想改成新任务：先 /new <label>，再发新需求，避免旧上下文干扰。",
+                "- 想先确认目录、模型、通道和最近上下文，发 /status。",
+            ]
+        if message_count == 0:
+            return [
+                "- 先把目标说完整：要改什么、在哪个目录、是否要直接改代码。",
+                "- 有明确目录就先 /cwd <path>；没有就直接发任务，别把时间花在命令上。",
+                "- 如果这是稳定版本排障，用 /main；如果是实验性修复，用 /develop。",
+            ]
+        if session.native_session_id:
+            return [
+                "- 如果还是同一件事，直接追加信息：目标、报错、文件路径、验收标准。",
+                "- 如果你想让它立刻推进，直接说“继续，先做下一步并汇报改动”。",
+                "- 如果任务已经变了，先 /new <label>，不要把新需求继续塞进当前会话。",
+            ]
+        return [
+            "- 直接再发一条真实消息，系统会基于当前本地上下文重新接上执行。",
+            "- 如果现在其实是新任务，先 /new <label> 隔离上下文。",
+            "- 如果你要回到更早的某次对话，先 /resume list 再恢复。",
+        ]
+
+    def _build_help_prompt_examples(self, session: SessionRecord, message_count: int) -> list[str]:
+        if message_count == 0 and session.native_session_id:
+            return [
+                '- “继续刚才那个任务，先回顾当前进度，再直接往下做。”',
+                '- “不要开新话题，基于当前会话继续修这个问题：<描述>。”',
+                '- “先告诉我你准备怎么继续，然后直接开始。”',
+                '- “如果你判断这已经是新任务，提醒我先 /new，再继续。”',
+            ]
+        if message_count == 0:
+            return [
+                '- “先快速读一下这个仓库，告诉我入口、运行方式和关键目录。”',
+                '- “定位这个报错的根因：<贴报错>; 先解释判断，再直接修复。”',
+                '- “在 <path> 下实现 <需求>；先列计划，再按最小改动完成。”',
+                '- “先不要改代码，帮我梳理实现方案、风险和验收点。”',
+            ]
+        if session.native_session_id:
+            return [
+                '- “继续刚才的任务，下一步先检查 <file/path>，然后直接改。”',
+                '- “这个报错还在：<贴报错>; 结合当前上下文继续排查。”',
+                '- “基于现在的进度继续，不要重来；做完告诉我改了哪些文件。”',
+                '- “先别写代码，帮我总结当前进度、阻塞点和下一步。”',
+            ]
+        return [
+            '- “基于当前上下文继续，先总结你理解的现状，再直接往下做。”',
+            '- “把最近这个任务接上，先检查 <file/path>，然后继续实现。”',
+            '- “如果当前上下文不足以继续，请明确告诉我缺什么信息。”',
+            '- “先帮我整理当前上下文里的目标、已完成项和待做项。”',
+        ]
+
+    def _build_help_command_guide(self, available_backends: list[str]) -> list[str]:
+        lines = [
+            "- 同一任务继续干：通常不用命令，直接发消息。",
+            "- 开新任务或切话题：/new <label>；回旧会话：/resume list、/resume latest。",
+            "- 换执行位置：/cwd <path> 切目录；/main 回稳定工作区；/develop 进修复工作区。",
+            "- 看现场：/status 看会话、目录、最近上下文；/usage 看 token 和 context_usage。",
+            "- 控制运行：/stop 停止生成；/clear 清空当前上下文；/panel 打开会话面板。",
+            "- 环境与维护：/model 切模型；/sandbox 切执行模式；/ping 连通性检查；/restart 管理员用。",
+        ]
+        if len(available_backends) > 1:
+            lines.append(f"- 切后端：/backend [list|{'|'.join(available_backends)}]。")
+        return lines
 
     def available_backend_names(self) -> list[str]:
         return sorted(self.backends)
@@ -667,6 +817,43 @@ class AgentRuntime:
     async def _restart_process(self) -> None:
         await asyncio.sleep(0.4)
         if is_systemd_service_process():
-            os.kill(os.getpid(), signal.SIGTERM)
+            unit_name = get_systemd_service_unit()
+            try:
+                await self._restart_systemd_service(unit_name)
+                return
+            except Exception:
+                self._restart_started = False
+                LOGGER.exception("failed to restart %s via systemd", unit_name)
+                raise
+        try:
+            await CodexBackend.shutdown_all()
+        except Exception:
+            LOGGER.exception("failed shutting down backends before restart")
+        try:
+            os.execvpe(sys.executable, [sys.executable, "-m", "openrelay"], os.environ)
+        except Exception:
+            self._restart_started = False
+            LOGGER.exception("failed to restart openrelay process")
+            raise
+
+    async def _restart_systemd_service(self, unit_name: str) -> None:
+        process = await asyncio.create_subprocess_exec(
+            "systemctl",
+            "--user",
+            "--no-block",
+            "restart",
+            unit_name,
+            stdin=asyncio.subprocess.DEVNULL,
+            stdout=asyncio.subprocess.DEVNULL,
+            stderr=asyncio.subprocess.PIPE,
+            env=dict(os.environ),
+        )
+        stderr = b""
+        if process.stderr is not None:
+            stderr = await process.stderr.read()
+        exit_code = await process.wait()
+        if exit_code == 0:
             return
-        os.execvpe(sys.executable, [sys.executable, "-m", "openrelay"], os.environ)
+        detail = stderr.decode("utf-8", errors="replace").strip()
+        message = detail or f"systemctl --user restart exited with code {exit_code}"
+        raise RuntimeError(message)

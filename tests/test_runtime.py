@@ -1,13 +1,13 @@
+import asyncio
 from pathlib import Path
 import os
-import signal
 
 import pytest
 
 from openrelay.backends.base import Backend, BackendContext
 from openrelay.config import AppConfig, BackendConfig, FeishuConfig
 from openrelay.models import BackendReply, IncomingMessage, SessionRecord
-from openrelay.runtime import AgentRuntime, is_systemd_service_process
+from openrelay.runtime import AgentRuntime, get_systemd_service_unit, is_systemd_service_process
 from openrelay.session_ux import SessionUX
 from openrelay.state import StateStore
 
@@ -76,6 +76,46 @@ class FakeTypingManager:
     async def remove(self, state):
         self.removed.append(state)
 
+
+class ProgressBackend(Backend):
+    name = "fake"
+
+    async def run(self, session: SessionRecord, prompt: str, context: BackendContext) -> BackendReply:
+        if context.on_progress is not None:
+            await context.on_progress({"type": "run.started"})
+        if context.on_partial_text is not None:
+            await context.on_partial_text(f"partial: {prompt}")
+        if context.on_progress is not None:
+            await context.on_progress({"type": "assistant.partial", "text": f"partial: {prompt}"})
+        return BackendReply(text=f"done: {prompt}", native_session_id="native_2")
+
+
+class InterruptibleBackend(Backend):
+    name = "fake"
+
+    def __init__(self) -> None:
+        self.started = asyncio.Event()
+        self.cancelled = asyncio.Event()
+
+    async def run(self, session: SessionRecord, prompt: str, context: BackendContext) -> BackendReply:
+        self.started.set()
+        if context.cancel_event is None:
+            raise AssertionError("cancel_event is required for interruptible backend test")
+        await context.cancel_event.wait()
+        self.cancelled.set()
+        raise RuntimeError("interrupted by /stop")
+
+
+class BlockingStreamingSession(FakeStreamingSession):
+    def __init__(self, messenger):
+        super().__init__(messenger)
+        self.update_calls = 0
+
+    async def update(self, live_state: dict) -> None:
+        self.update_calls += 1
+        self.updates.append(dict(live_state))
+        if self.update_calls > 1:
+            await asyncio.Event().wait()
 
 
 
@@ -170,6 +210,50 @@ async def test_runtime_panel_command_sends_card(tmp_path: Path) -> None:
 
 
 @pytest.mark.asyncio
+async def test_runtime_help_command_shows_actionable_guidance(tmp_path: Path) -> None:
+    config = make_config(tmp_path)
+    config.workspace_root.mkdir(parents=True, exist_ok=True)
+    config.main_workspace_dir.mkdir(parents=True, exist_ok=True)
+    config.develop_workspace_dir.mkdir(parents=True, exist_ok=True)
+    store = StateStore(config)
+    messenger = FakeMessenger()
+    runtime = AgentRuntime(config, store, messenger, backends={"codex": FakeBackend()})
+
+    await runtime.dispatch_message(make_message("/help", event_suffix="help0"))
+    empty_help = messenger.messages[-1]
+    assert "OpenRelay 帮助" in empty_help
+    assert "当前状态：" in empty_help
+    assert "- 会话阶段：未开始（还没发第一条真实需求）" in empty_help
+    assert "- 原生会话：pending（直接发消息就会创建）" in empty_help
+    assert "一句话判断：" in empty_help
+    assert "这是一个空会话；最有效的动作通常是直接发完整任务，而不是先试很多命令。" in empty_help
+    assert "你现在最该做什么：" in empty_help
+    assert "先把目标说完整：要改什么、在哪个目录、是否要直接改代码。" in empty_help
+    assert "下一条消息可以直接这样发：" in empty_help
+    assert "在 <path> 下实现 <需求>；先列计划，再按最小改动完成。" in empty_help
+    assert "什么时候该用命令：" in empty_help
+    assert "/status 看会话、目录、最近上下文；/usage 看 token 和 context_usage。" in empty_help
+    assert "最近上下文：" in empty_help
+    assert "当前还没有上下文消息。发出第一条真实消息后，这里会显示最近上下文。" in empty_help
+
+    await runtime.dispatch_message(make_message("hello help", event_suffix="help1"))
+    await runtime.dispatch_message(make_message("/help", event_suffix="help2"))
+
+    help_text = messenger.messages[-1]
+    assert "- 会话阶段：进行中（继续发消息会沿用当前原生会话）" in help_text
+    assert "- 上下文占用：17.0% (170/1000)" in help_text
+    assert "- 最近关注：用户：hello help | 助手：echo: hello help" in help_text
+    assert "这是一个进行中的会话；如果任务没变，直接补充信息最快。" in help_text
+    assert "如果还是同一件事，直接追加信息：目标、报错、文件路径、验收标准。" in help_text
+    assert "基于现在的进度继续，不要重来；做完告诉我改了哪些文件。" in help_text
+    assert "同一任务继续干：通常不用命令，直接发消息。" in help_text
+    assert "最近上下文：" in help_text
+    assert "- 用户：hello help" in help_text
+    assert "- 助手：echo: hello help" in help_text
+    await runtime.shutdown()
+
+
+@pytest.mark.asyncio
 async def test_runtime_main_switch_creates_release_session(tmp_path: Path) -> None:
     config = make_config(tmp_path)
     config.workspace_root.mkdir(parents=True, exist_ok=True)
@@ -241,6 +325,67 @@ async def test_runtime_card_stream_mode_uses_streaming_session(tmp_path: Path) -
     assert sessions[0].final_text == "echo: hello stream"
     assert typing.added == ["om_stream"]
     assert typing.removed
+    await runtime.shutdown()
+
+
+@pytest.mark.asyncio
+async def test_runtime_streaming_update_does_not_block_backend_turn(tmp_path: Path) -> None:
+    config = make_config(tmp_path)
+    config.feishu.stream_mode = "card"
+    config.workspace_root.mkdir(parents=True, exist_ok=True)
+    config.main_workspace_dir.mkdir(parents=True, exist_ok=True)
+    config.develop_workspace_dir.mkdir(parents=True, exist_ok=True)
+    store = StateStore(config)
+    messenger = FakeMessenger()
+    typing = FakeTypingManager()
+    sessions: list[BlockingStreamingSession] = []
+
+    def factory(current_messenger):
+        session = BlockingStreamingSession(current_messenger)
+        sessions.append(session)
+        return session
+
+    runtime = AgentRuntime(
+        config,
+        store,
+        messenger,
+        backends={"codex": ProgressBackend()},
+        streaming_session_factory=factory,
+        typing_manager=typing,
+    )
+
+    await asyncio.wait_for(runtime.dispatch_message(make_message("hello blocked stream", event_suffix="blocked_stream")), timeout=1)
+
+    assert sessions
+    assert sessions[0].started is True
+    assert sessions[0].closed is True
+    assert sessions[0].final_text == "done: hello blocked stream"
+    session = store.load_session(runtime.build_session_key(make_message("hello blocked stream", event_suffix="blocked_stream")))
+    assert session.native_session_id == "native_2"
+    await runtime.shutdown()
+
+
+@pytest.mark.asyncio
+async def test_runtime_stop_interrupts_active_run(tmp_path: Path) -> None:
+    config = make_config(tmp_path)
+    config.workspace_root.mkdir(parents=True, exist_ok=True)
+    config.main_workspace_dir.mkdir(parents=True, exist_ok=True)
+    config.develop_workspace_dir.mkdir(parents=True, exist_ok=True)
+    store = StateStore(config)
+    messenger = FakeMessenger()
+    backend = InterruptibleBackend()
+    runtime = AgentRuntime(config, store, messenger, backends={"codex": backend})
+
+    run_task = asyncio.create_task(runtime.dispatch_message(make_message("long running", event_suffix="run")))
+    await asyncio.wait_for(backend.started.wait(), timeout=1)
+
+    await runtime.dispatch_message(make_message("/stop", event_suffix="stop"))
+    await asyncio.wait_for(run_task, timeout=1)
+
+    assert backend.cancelled.is_set() is True
+    assert "已发送停止请求，正在中断当前回复。" in messenger.messages
+    assert "已停止当前回复。" in messenger.messages
+    assert len(runtime.active_runs) == 0
     await runtime.shutdown()
 
 
@@ -366,15 +511,57 @@ async def test_runtime_usage_command_shows_context_usage(tmp_path: Path) -> None
     await runtime.shutdown()
 
 
-def test_is_systemd_service_process_detects_service_env() -> None:
+def test_get_systemd_service_unit_prefers_override() -> None:
+    assert get_systemd_service_unit({}) == "openrelay.service"
+    assert get_systemd_service_unit({"OPENRELAY_SYSTEMD_UNIT": "custom.service"}) == "custom.service"
+
+
+def test_is_systemd_service_process_requires_matching_exec_pid() -> None:
+    current_pid = os.getpid()
     assert is_systemd_service_process({}) is False
-    assert is_systemd_service_process({"INVOCATION_ID": "abc"}) is True
-    assert is_systemd_service_process({"SYSTEMD_EXEC_PID": "1"}) is True
-    assert is_systemd_service_process({"JOURNAL_STREAM": "9:9"}) is True
+    assert is_systemd_service_process({"INVOCATION_ID": "abc"}) is False
+    assert is_systemd_service_process({"JOURNAL_STREAM": "9:9"}) is False
+    assert is_systemd_service_process({"SYSTEMD_EXEC_PID": str(current_pid)}) is True
+    assert is_systemd_service_process({"SYSTEMD_EXEC_PID": str(current_pid + 1)}) is False
 
 
 @pytest.mark.asyncio
-async def test_runtime_restart_process_execs_outside_systemd(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_runtime_restart_process_uses_systemd_restart_when_service_managed(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    config = make_config(tmp_path)
+    store = StateStore(config)
+    messenger = FakeMessenger()
+    runtime = AgentRuntime(config, store, messenger, backends={"codex": FakeBackend()})
+
+    async def fake_sleep(_seconds: float) -> None:
+        return None
+
+    systemd_calls: list[str] = []
+    shutdown_calls: list[str] = []
+
+    async def fake_restart_systemd_service(unit_name: str) -> None:
+        systemd_calls.append(unit_name)
+
+    async def fake_shutdown_all() -> None:
+        shutdown_calls.append("shutdown")
+
+    def fake_execvpe(_file: str, _argv: list[str], _env: dict[str, str]) -> None:
+        raise AssertionError("execvpe should not be called for systemd-managed restart")
+
+    monkeypatch.setattr("openrelay.runtime.asyncio.sleep", fake_sleep)
+    monkeypatch.setattr("openrelay.runtime.is_systemd_service_process", lambda env=None, pid=None: True)
+    monkeypatch.setattr(runtime, "_restart_systemd_service", fake_restart_systemd_service)
+    monkeypatch.setattr("openrelay.runtime.CodexBackend.shutdown_all", fake_shutdown_all)
+    monkeypatch.setattr("openrelay.runtime.os.execvpe", fake_execvpe)
+
+    await runtime._restart_process()
+
+    assert systemd_calls == ["openrelay.service"]
+    assert shutdown_calls == []
+    await runtime.shutdown()
+
+
+@pytest.mark.asyncio
+async def test_runtime_restart_process_execs_and_shuts_down_backends(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     config = make_config(tmp_path)
     store = StateStore(config)
     messenger = FakeMessenger()
@@ -384,46 +571,27 @@ async def test_runtime_restart_process_execs_outside_systemd(tmp_path: Path, mon
         return None
 
     exec_calls: list[tuple[str, list[str], dict[str, str]]] = []
+    shutdown_calls: list[str] = []
 
     def fake_execvpe(file: str, argv: list[str], env: dict[str, str]) -> None:
         exec_calls.append((file, argv, env))
 
+    async def fake_shutdown_all() -> None:
+        shutdown_calls.append("shutdown")
+
+    async def fake_restart_systemd_service(_unit_name: str) -> None:
+        raise AssertionError("systemd restart should not be used outside service-managed mode")
+
     monkeypatch.setattr("openrelay.runtime.asyncio.sleep", fake_sleep)
-    monkeypatch.setattr("openrelay.runtime.is_systemd_service_process", lambda env=None: False)
+    monkeypatch.setattr("openrelay.runtime.is_systemd_service_process", lambda env=None, pid=None: False)
+    monkeypatch.setattr(runtime, "_restart_systemd_service", fake_restart_systemd_service)
     monkeypatch.setattr("openrelay.runtime.os.execvpe", fake_execvpe)
+    monkeypatch.setattr("openrelay.runtime.CodexBackend.shutdown_all", fake_shutdown_all)
 
     await runtime._restart_process()
 
+    assert shutdown_calls == ["shutdown"]
     assert exec_calls
     assert exec_calls[0][0]
     assert exec_calls[0][1][-2:] == ["-m", "openrelay"]
-    await runtime.shutdown()
-
-
-@pytest.mark.asyncio
-async def test_runtime_restart_process_uses_sigterm_under_systemd(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    config = make_config(tmp_path)
-    store = StateStore(config)
-    messenger = FakeMessenger()
-    runtime = AgentRuntime(config, store, messenger, backends={"codex": FakeBackend()})
-
-    async def fake_sleep(_seconds: float) -> None:
-        return None
-
-    kill_calls: list[tuple[int, signal.Signals]] = []
-
-    def fake_kill(pid: int, sig: signal.Signals) -> None:
-        kill_calls.append((pid, sig))
-
-    def fake_execvpe(_file: str, _argv: list[str], _env: dict[str, str]) -> None:
-        raise AssertionError("execvpe should not be called under systemd")
-
-    monkeypatch.setattr("openrelay.runtime.asyncio.sleep", fake_sleep)
-    monkeypatch.setattr("openrelay.runtime.is_systemd_service_process", lambda env=None: True)
-    monkeypatch.setattr("openrelay.runtime.os.kill", fake_kill)
-    monkeypatch.setattr("openrelay.runtime.os.execvpe", fake_execvpe)
-
-    await runtime._restart_process()
-
-    assert kill_calls == [(os.getpid(), signal.SIGTERM)]
     await runtime.shutdown()
