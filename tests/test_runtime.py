@@ -210,6 +210,35 @@ async def test_runtime_panel_command_sends_card(tmp_path: Path) -> None:
 
 
 @pytest.mark.asyncio
+async def test_runtime_resume_list_uses_local_session_ids(tmp_path: Path) -> None:
+    config = make_config(tmp_path)
+    config.workspace_root.mkdir(parents=True, exist_ok=True)
+    config.main_workspace_dir.mkdir(parents=True, exist_ok=True)
+    config.develop_workspace_dir.mkdir(parents=True, exist_ok=True)
+    store = StateStore(config)
+    messenger = FakeMessenger()
+    runtime = AgentRuntime(config, store, messenger, backends={"codex": FakeBackend()})
+
+    older = store.load_session("p2p:oc_1")
+    older.label = "older"
+    older.native_session_id = "native_old"
+    store.save_session(older)
+    current = store.create_next_session(older.base_key, older, "current")
+    current.native_session_id = "native_current"
+    store.save_session(current)
+
+    await runtime.dispatch_message(make_message("/resume list", event_suffix="resume_list"))
+    resume_list = messenger.messages[-1]
+    assert f"id={older.session_id}" in resume_list
+    assert "native=native_old" in resume_list
+
+    await runtime.dispatch_message(make_message(f"/resume {older.session_id}", event_suffix="resume_old"))
+    assert messenger.messages[-1].startswith("已恢复会话：older")
+    assert f"session_id={older.session_id}" in messenger.messages[-1]
+    await runtime.shutdown()
+
+
+@pytest.mark.asyncio
 async def test_runtime_help_command_shows_actionable_guidance(tmp_path: Path) -> None:
     config = make_config(tmp_path)
     config.workspace_root.mkdir(parents=True, exist_ok=True)
