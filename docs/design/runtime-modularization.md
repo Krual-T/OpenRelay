@@ -67,13 +67,19 @@
 
 这一步应晚于 runtime 与 session 边界收敛，否则只会把复杂度平移。
 
-## 本轮落地
+## 当前进展
 
-本轮先执行 Phase 1：
+已完成 Phase 1：
 - 新增 `src/openrelay/help_renderer.py`
 - 把 `/help` 文本构造从 `AgentRuntime` 移出
 - `AgentRuntime` 只负责调用帮助渲染器
 - 增加针对帮助渲染器的独立测试
+
+本轮继续推进 Phase 2 的第一刀：
+- 新增 `src/openrelay/session_browser.py`
+- 把会话列表查询、原生会话合并和恢复决策从 `SessionUX` 移出
+- `SessionUX` 收敛为会话列表文本 / 面板展示格式化
+- 为 `/resume` 卡片化和分页排序保留稳定的数据入口与测试落点
 
 ## 预期结果
 

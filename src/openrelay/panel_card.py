@@ -73,7 +73,7 @@ def build_panel_card(info: dict[str, Any]) -> dict[str, Any]:
         elements.append({"tag": "div", "text": {"tag": "lark_md", "content": "**最近会话**"}})
         for entry in sessions:
             elements.append({"tag": "div", "text": {"tag": "lark_md", "content": _session_text(entry)}})
-            elements.append({"tag": "action", "actions": [_button("继续此会话" if entry.get("active") else "恢复此会话", f"/resume {entry.get('session_id')}", "primary" if entry.get("active") else "default", action_context)]})
+            elements.append({"tag": "action", "actions": [_button("继续此会话" if entry.get("active") else "恢复此会话", f"/resume {entry.get('resume_token') or entry.get('session_id')}", "primary" if entry.get("active") else "default", action_context)]})
 
     elements.append({"tag": "action", "actions": [_button("状态", "/status", "default", action_context), _button("当前目录", "/cwd", "default", action_context), _button("重启服务", "/restart", "default", action_context), _button("帮助", "/help", "default", action_context)]})
     return {

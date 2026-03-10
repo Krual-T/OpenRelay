@@ -19,10 +19,10 @@
 - **关闭条件**：
   - [x] 独立 design note 明确目标边界、拆分顺序和本轮不做的事情。
   - [x] `/help` 展示逻辑从 `runtime.py` 抽成独立模块，并保持现有行为。
-  - [ ] 会话列表查询 / 恢复与展示格式化拆层，为 `/resume` 卡片分页排序预留稳定接口。
+  - [x] 会话列表查询 / 恢复与展示格式化拆层，为 `/resume` 卡片分页排序预留稳定接口。
   - [ ] 命令路由继续从 `AgentRuntime` 主类中收敛，减少单文件分支密度。
   - [x] 至少一条针对新模块的测试落地，并完成最小回归验证。
-- **已完成证据**：`docs/design/runtime-modularization.md`、`src/openrelay/help_renderer.py`、`src/openrelay/runtime.py`、`tests/test_help_renderer.py`。
+- **已完成证据**：`docs/design/runtime-modularization.md`、`src/openrelay/help_renderer.py`、`src/openrelay/session_browser.py`、`src/openrelay/runtime.py`、`src/openrelay/session_ux.py`、`tests/test_help_renderer.py`、`tests/test_session_browser.py`。
 - **后续 follow-up**：
   - [ ] 拆出 `/panel` 与 `/resume` 的独立会话列表 / 卡片模块。
   - [ ] 为会话浏览引入更清晰的数据结构，减少 `dict[str, object]` 传递。

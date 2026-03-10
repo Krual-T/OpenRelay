@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import asyncio
 from collections import defaultdict
-from dataclasses import asdict
 import logging
 import os
 from pathlib import Path
@@ -31,6 +30,7 @@ from openrelay.release import (
 )
 from openrelay.state import StateStore
 from openrelay.runtime_live import apply_live_progress, build_reply_card, create_live_reply_state
+from openrelay.session_browser import SessionBrowser
 from openrelay.session_ux import SessionUX
 
 
@@ -79,6 +79,7 @@ class AgentRuntime:
         self.active_runs: dict[str, ActiveRun] = {}
         self.streaming_session_factory = streaming_session_factory or (lambda current_messenger: FeishuStreamingSession(current_messenger))
         self.typing_manager = typing_manager or FeishuTypingManager(messenger)
+        self.session_browser = SessionBrowser(config, store)
         self.session_ux = SessionUX(config, store)
         self.help_renderer = HelpRenderer(config, store, self.session_ux)
         self._restart_started = False
@@ -374,13 +375,13 @@ class AgentRuntime:
             return True
 
         if name == "/resume":
-            merged_sessions = self.session_ux.build_merged_session_list(session_key, session, limit=20)
+            merged_sessions = self.session_browser.list_entries(session_key, session, limit=20)
             if not arg_text or arg_text.lower() == "list":
                 await self._reply(
                     message,
                     "\n".join([
                         "最近会话：",
-                        self.session_ux.format_merged_session_list(merged_sessions),
+                        self.session_ux.format_session_list(merged_sessions),
                         "",
                         "使用 /resume <序号|session_id|latest> 恢复。想在指定目录进入 Codex：先 /cwd <path>，再发消息。",
                     ]),
@@ -388,11 +389,11 @@ class AgentRuntime:
                     command_name=name,
                 )
                 return True
-            resumed = self.session_ux.resume_local_or_native(session_key, session, arg_text, merged_sessions)
+            resumed = self.session_browser.resume(session_key, session, arg_text, merged_sessions)
             if resumed is None:
-                await self._reply(message, f"恢复失败。可用会话：\n{self.session_ux.format_merged_session_list(merged_sessions)}", command_reply=True)
+                await self._reply(message, f"恢复失败。可用会话：\n{self.session_ux.format_session_list(merged_sessions)}", command_reply=True)
                 return True
-            await self._reply(message, self.session_ux.format_resume_success(resumed), command_reply=True)
+            await self._reply(message, self.session_ux.format_resume_success(resumed.session, imported=resumed.imported, entry=resumed.entry), command_reply=True)
             return True
 
         if name == "/reset":
@@ -560,7 +561,7 @@ class AgentRuntime:
         )
 
     async def _send_panel(self, message: IncomingMessage, session_key: str, session: SessionRecord) -> None:
-        entries = self.session_ux.build_merged_session_list(session_key, session, limit=6)
+        entries = self.session_browser.list_entries(session_key, session, limit=6)
         context = {
             "rootId": message.root_id,
             "threadId": message.thread_id or message.root_id,
@@ -570,7 +571,7 @@ class AgentRuntime:
         card = build_panel_card(
             {
                 "session_id": session.session_id,
-                "current_title": self.session_ux.build_session_title({"label": session.label, "session_id": session.session_id}),
+                "current_title": self.session_ux.build_session_title(session.label, session.session_id),
                 "channel": format_release_channel(infer_release_channel(self.config, session)),
                 "cwd": self.session_ux.format_cwd(session.cwd, session),
                 "model": self.session_ux.effective_model(session),
@@ -579,7 +580,7 @@ class AgentRuntime:
                 "context_usage": self.session_ux.format_context_usage(session),
                 "context_preview": self.session_ux.build_context_preview(session),
                 "action_context": context,
-                "sessions": entries,
+                "sessions": self.session_ux.build_session_display_entries(entries),
             }
         )
         try:
@@ -591,7 +592,7 @@ class AgentRuntime:
                 force_new_message=self._is_top_level_p2p_command(message),
             )
         except Exception:
-            await self._reply(message, self.session_ux.build_panel_text(session) + "\n\n" + self.session_ux.format_merged_session_list(entries), command_reply=True)
+            await self._reply(message, self.session_ux.build_panel_text(session) + "\n\n" + self.session_ux.format_session_list(entries), command_reply=True)
 
 
     async def _send_reply_card(self, message: IncomingMessage, text: str, title: str = "openrelay 回复") -> None:
