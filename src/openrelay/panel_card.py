@@ -2,25 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
-
-
-def _build_button_value(command: str, context: dict[str, str]) -> dict[str, str]:
-    value = {"command": command}
-    for key in ["rootId", "threadId", "sessionKey", "sessionOwnerOpenId"]:
-        entry = str(context.get(key) or "").strip()
-        if entry:
-            value[key] = entry
-    return value
-
-
-
-def _button(label: str, command: str, button_type: str = "default", context: dict[str, str] | None = None) -> dict[str, Any]:
-    return {
-        "tag": "button",
-        "type": button_type,
-        "text": {"tag": "plain_text", "content": label},
-        "value": _build_button_value(command, context or {}),
-    }
+from openrelay.card_actions import build_button
 
 
 
@@ -59,13 +41,13 @@ def build_panel_card(info: dict[str, Any]) -> dict[str, Any]:
                     f"> 目录：`{cwd}`",
                     f"> 模型：`{model}` · Provider：`{provider}`",
                     f"> Sandbox：`{sandbox}`",
-                    *([f"> 上下文使用：`{info.get('context_usage')}`" ] if info.get("context_usage") else []),
-                    *([f"> 最近上下文：{info.get('context_preview')}" ] if info.get("context_preview") else []),
+                    *([f"> 上下文使用：`{info.get('context_usage')}`"] if info.get("context_usage") else []),
+                    *([f"> 最近上下文：{info.get('context_preview')}"] if info.get("context_preview") else []),
                 ]),
             },
         },
-        {"tag": "action", "actions": [_button("切到 main", "/main", "primary", action_context), _button("切到 develop", "/develop", "default", action_context), _button("会话列表", "/resume", "default", action_context)]},
-        {"tag": "action", "actions": [_button("恢复上一条", "/resume latest", "default", action_context), _button("新会话", "/new", "default", action_context), _button("稳定版", "/stable", "default", action_context)]},
+        {"tag": "action", "actions": [build_button("切到 main", "/main", "primary", action_context), build_button("切到 develop", "/develop", "default", action_context), build_button("会话列表", "/resume list", "default", action_context)]},
+        {"tag": "action", "actions": [build_button("恢复上一条", "/resume latest", "default", action_context), build_button("新会话", "/new", "default", action_context), build_button("稳定版", "/stable", "default", action_context)]},
         {"tag": "div", "text": {"tag": "lark_md", "content": "> 想在指定目录进入 Codex：先发送 `/cwd path/to/dir`，再发消息；若要强制切回稳定可运行版本，发送 `/main 原因` 或 `/stable 原因`。"}},
     ]
 
@@ -73,9 +55,9 @@ def build_panel_card(info: dict[str, Any]) -> dict[str, Any]:
         elements.append({"tag": "div", "text": {"tag": "lark_md", "content": "**最近会话**"}})
         for entry in sessions:
             elements.append({"tag": "div", "text": {"tag": "lark_md", "content": _session_text(entry)}})
-            elements.append({"tag": "action", "actions": [_button("继续此会话" if entry.get("active") else "恢复此会话", f"/resume {entry.get('resume_token') or entry.get('session_id')}", "primary" if entry.get("active") else "default", action_context)]})
+            elements.append({"tag": "action", "actions": [build_button("继续此会话" if entry.get("active") else "恢复此会话", f"/resume {entry.get('resume_token') or entry.get('session_id')}", "primary" if entry.get("active") else "default", action_context)]})
 
-    elements.append({"tag": "action", "actions": [_button("状态", "/status", "default", action_context), _button("当前目录", "/cwd", "default", action_context), _button("重启服务", "/restart", "default", action_context), _button("帮助", "/help", "default", action_context)]})
+    elements.append({"tag": "action", "actions": [build_button("状态", "/status", "default", action_context), build_button("当前目录", "/cwd", "default", action_context), build_button("重启服务", "/restart", "default", action_context), build_button("帮助", "/help", "default", action_context)]})
     return {
         "config": {"wide_screen_mode": True, "enable_forward": True, "update_multi": True},
         "header": {"template": "blue", "title": {"tag": "plain_text", "content": "openrelay"}},
