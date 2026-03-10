@@ -75,15 +75,19 @@
 - `AgentRuntime` 只负责调用帮助渲染器
 - 增加针对帮助渲染器的独立测试
 
-本轮继续推进 Phase 2 的第一刀：
+本轮继续推进 Phase 2 与 Phase 3：
 - 新增 `src/openrelay/session_browser.py`
 - 把会话列表查询、原生会话合并和恢复决策从 `SessionUX` 移出
 - `SessionUX` 收敛为会话列表文本 / 面板展示格式化
 - 为 `/resume` 卡片化和分页排序保留稳定的数据入口与测试落点
+- 新增 `src/openrelay/runtime_commands.py`
+- 把 `_handle_command` 的主分支树从 `AgentRuntime` 收敛到独立命令路由层
+- `runtime.py` 只保留命令相关协作入口与少量状态密切相关的 helper
 
 ## 预期结果
 
-完成这一轮后，收益主要有三点：
-- `runtime.py` 直接减重，帮助逻辑不再继续堆在主编排类里。
+完成这一轮后，收益主要有四点：
+- `runtime.py` 直接减重，帮助逻辑和主命令分支不再继续堆在主编排类里。
 - `/help` 的文本版与后续卡片版有共同落点。
-- 后续继续拆 `/resume` 与 `/panel` 时，可以沿同样模式推进，而不是再次回到“大文件里塞新分支”的路径。
+- 会话浏览已经有稳定的数据入口，可继续承接 `/resume` 与 `/panel` 的分页、排序和卡片交互。
+- 后续继续拆 `/resume`、`/panel` 或命令细节时，可以沿同样模式推进，而不是再次回到“大文件里塞新分支”的路径。
