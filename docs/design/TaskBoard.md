@@ -56,6 +56,7 @@
   - [x] 独立 design note 已明确样式层级、状态语义和组件映射规则。
   - [x] 主回复卡片与运行中卡片都接入统一主题语义，并分别落地到 `build_reply_card()` 与 live sections / final sections。
   - [x] 渲染实现已收敛到共享 theme shell 与状态语义，不再在多处重复 header/config 特判。
+  - [x] 在实际端上观察到 header template 着色不稳定后，状态元信息已进一步收敛到正文 hero / markdown panel，而不是继续依赖 header 颜色。
   - [x] 文档已说明 CLI 视觉特征的保留项与主动舍弃项。
 - **后续 follow-up**：
   - [ ] 评估是否把 diff / 日志 / 命令输出再拆成更细粒度的卡片组件映射。

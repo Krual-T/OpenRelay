@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any, Callable
 
-from openrelay.card_theme import build_card_shell, infer_final_tone
+from openrelay.card_theme import build_card_shell, build_note_bar, build_section_block, build_status_hero, divider_block, infer_final_tone, status_badge
 from openrelay.models import SessionRecord, utc_now
 
 
@@ -104,8 +104,29 @@ def apply_live_progress(state: LiveReplyState, event: dict[str, Any] | None) -> 
 
 def build_reply_card(text: str, title: str = "openrelay") -> dict[str, object]:
     content = text.strip() or "回复为空。"
+    tone = infer_final_tone(content)
+    if tone == "error":
+        summary = "本次处理没有成功完成；错误细节放在正文里。"
+    elif tone == "cancelled":
+        summary = "当前回复已停止；你可以直接在线程里继续补充下一步。"
+    else:
+        summary = "正文与结论放在下方；如果要继续推进，直接在线程里追问即可。"
+    elements: list[dict[str, Any]] = [
+        *build_status_hero(
+            title,
+            tone=tone,
+            summary=summary,
+            facts=[("状态", status_badge(tone)), ("类型", "`最终回复`")],
+            notes=["`openrelay`", "继续追问时直接回复当前线程即可"],
+        ),
+        divider_block(),
+        build_section_block("回复内容", [content], emoji="📝"),
+    ]
+    follow_up_note = build_note_bar(["如果目标没变，不用先发命令，直接补充任务 / 报错 / 文件路径。"])
+    if follow_up_note is not None:
+        elements.append(follow_up_note)
     return build_card_shell(
         title,
-        [{"tag": "div", "text": {"tag": "lark_md", "content": content}}],
-        tone=infer_final_tone(content),
+        elements,
+        tone=tone,
     )

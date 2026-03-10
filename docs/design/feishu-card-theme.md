@@ -11,12 +11,14 @@
 - 静态卡片统一复用 `src/openrelay/card_theme.py` 提供的 card shell。
 - 统一收敛 `wide_screen_mode / enable_forward / update_multi`。
 - header template 只承担状态语义，不承载过多信息密度。
+- 如果客户端对 header template 着色不明显，优先依赖正文里的 hero / markdown panel，而不是继续把可读性押在 header 上。
 
 ### 2. 内容层
 
 - 标题保持短、直接、可扫描。
 - 命令、路径、会话 ID 等继续使用反引号，保留 CLI 的 monospace 心智。
 - 状态提示不依赖大段解释，而是靠稳定 badge + 标题语义表达当前阶段。
+- 需要更强层次时，优先用 markdown panel（例如代码块底板）承载状态元信息，而不是继续堆叠 blockquote。
 
 ### 3. 运行中层
 
@@ -35,7 +37,7 @@
 - `cancelled`：灰色外壳 / 已取消 badge
 - `info`：蓝色外壳 / 信息 badge
 
-运行中 CardKit 卡片受平台能力限制，不额外模拟终端式大面积颜色，而是保留状态 badge、emoji 和结构层级；最终态和静态卡片则使用 header template 承担更明确的颜色语义。
+运行中 CardKit 卡片受平台能力限制，不额外模拟终端式大面积颜色，而是保留状态 badge、emoji、markdown panel 和结构层级；最终态和静态卡片也不再把颜色反馈完全押在 header template 上。
 
 ## 组件映射
 

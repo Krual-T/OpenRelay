@@ -59,6 +59,73 @@ def build_card_shell(title: str, elements: list[dict[str, Any]], tone: str = "in
     }
 
 
+def markdown_block(content: str) -> dict[str, Any]:
+    return {"tag": "div", "text": {"tag": "lark_md", "content": str(content or "").strip()}}
+
+
+def divider_block() -> dict[str, Any]:
+    return {"tag": "hr"}
+
+
+def build_code_panel(lines: list[object], *, language: str = "text") -> dict[str, Any] | None:
+    normalized_lines = [str(line or "").strip() for line in lines if str(line or "").strip()]
+    if not normalized_lines:
+        return None
+    return markdown_block(f"```{language}\n" + "\n".join(normalized_lines) + "\n```")
+
+
+def build_fact_panel(items: list[tuple[str, object]]) -> dict[str, Any] | None:
+    lines: list[str] = []
+    for label, value in items:
+        normalized_label = str(label or "").strip()
+        normalized_value = str(value or "").replace("**", "").strip()
+        normalized_value = " | ".join(part.strip() for part in normalized_value.splitlines() if part.strip())
+        if not normalized_label or not normalized_value:
+            continue
+        lines.append(f"{normalized_label}：{normalized_value}")
+    return build_code_panel(lines)
+
+
+def build_note_bar(items: list[object]) -> dict[str, Any] | None:
+    elements = [{"tag": "lark_md", "content": str(item).strip()} for item in items if str(item or "").strip()]
+    if not elements:
+        return None
+    return {"tag": "note", "elements": elements}
+
+
+def build_status_hero(
+    title: str,
+    *,
+    tone: str,
+    summary: str = "",
+    facts: list[tuple[str, object]] | None = None,
+    notes: list[object] | None = None,
+) -> list[dict[str, Any]]:
+    lines = [build_status_heading(tone, title)]
+    if str(summary or "").strip():
+        lines.append(f"> {str(summary).strip()}")
+    elements = [markdown_block("\n".join(lines))]
+    facts_block = build_fact_panel(facts or [])
+    if facts_block is not None:
+        elements.append(facts_block)
+    note_block = build_note_bar(notes or [])
+    if note_block is not None:
+        elements.append(note_block)
+    return elements
+
+
+def build_section_block(title: str, lines: list[object], *, emoji: str = "", summary: str = "") -> dict[str, Any]:
+    heading = f"**{emoji} {title}**" if emoji else f"**{title}**"
+    content_lines = [heading]
+    if str(summary or "").strip():
+        content_lines.append(f"> {str(summary).strip()}")
+    for line in lines:
+        normalized = str(line or "").strip()
+        if normalized:
+            content_lines.append(normalized)
+    return markdown_block("\n".join(content_lines))
+
+
 def infer_final_tone(text: object) -> str:
     value = str(text or "").strip()
     if not value:

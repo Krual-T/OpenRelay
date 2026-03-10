@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import Any
 
 from openrelay.card_actions import build_button
-from openrelay.card_theme import build_card_shell
+from openrelay.card_theme import build_card_shell, build_note_bar, build_section_block, build_status_hero, divider_block
 from openrelay.session_browser import SESSION_SORT_ACTIVE, SESSION_SORT_UPDATED
 
 
@@ -40,27 +40,23 @@ def build_session_list_card(info: dict[str, Any]) -> dict[str, Any]:
     next_sort_label = "切到当前优先" if sort_mode == SESSION_SORT_UPDATED else "切到最近更新"
 
     elements: list[dict[str, Any]] = [
-        {
-            "tag": "div",
-            "text": {
-                "tag": "lark_md",
-                "content": "\n".join(
-                    [
-                        "**会话列表**",
-                        f"> 当前会话：{current_title}",
-                        f"> session_id：`{current_session_id}`",
-                        f"> 排序：`{sort_label}` · 第 `{page}` 页",
-                        "> 导航：分页与排序按钮会优先原地更新当前卡片。",
-                        "> 点击按钮即可恢复；也可以继续手动输入 `/resume <编号|session_id|latest>`。",
-                    ]
-                ),
-            },
-        }
+        *build_status_hero(
+            "会话列表",
+            tone="info",
+            summary="先选排序和页码，再决定恢复哪条会话；分页与排序会优先原地更新当前卡片。",
+            facts=[
+                ("当前会话", f"{current_title}\n`{current_session_id}`"),
+                ("排序", f"`{sort_label}`"),
+                ("页码", f"第 `{page}` 页"),
+            ],
+            notes=["点击按钮即可恢复；也可以直接手输 `/resume <编号|session_id|latest>`"],
+        ),
+        divider_block(),
     ]
 
     if sessions:
         for entry in sessions:
-            elements.append({"tag": "div", "text": {"tag": "lark_md", "content": _session_text(entry)}})
+            elements.append(build_section_block("会话条目", [_session_text(entry)], emoji="🗂️"))
             elements.append(
                 {
                     "tag": "action",
@@ -79,13 +75,16 @@ def build_session_list_card(info: dict[str, Any]) -> dict[str, Any]:
                 }
             )
     else:
-        elements.append({"tag": "div", "text": {"tag": "lark_md", "content": "> 当前没有可恢复的会话。"}})
+        elements.append(build_section_block("会话条目", ["> 当前没有可恢复的会话。"], emoji="🗂️"))
 
     controls = [build_button(next_sort_label, build_resume_list_command("list", page=1, sort_mode=next_sort), "default", action_context)]
     if has_previous:
         controls.insert(0, build_button("上一页", build_resume_list_command("list", page=page - 1, sort_mode=sort_mode), "default", action_context))
     if has_next:
         controls.append(build_button("下一页", build_resume_list_command("list", page=page + 1, sort_mode=sort_mode), "primary", action_context))
+    footer_note = build_note_bar(["排序切换不会改变恢复语义；真正执行仍统一走 `/resume` 主路径。"])
+    if footer_note is not None:
+        elements.append(footer_note)
     elements.append({"tag": "action", "actions": controls})
     elements.append({"tag": "action", "actions": [build_button("恢复上一条", build_resume_list_command("latest", page=page, sort_mode=sort_mode), "default", action_context), build_button("面板", "/panel", "default", action_context), build_button("帮助", "/help", "default", action_context)]})
 
