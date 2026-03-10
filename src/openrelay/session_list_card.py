@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Any
 
 from openrelay.card_actions import build_button
+from openrelay.card_theme import build_card_shell
 from openrelay.session_browser import SESSION_SORT_ACTIVE, SESSION_SORT_UPDATED
 
 
@@ -87,8 +88,4 @@ def build_session_list_card(info: dict[str, Any]) -> dict[str, Any]:
     elements.append({"tag": "action", "actions": controls})
     elements.append({"tag": "action", "actions": [build_button("恢复上一条", build_resume_list_command("latest", page=page, sort_mode=sort_mode), "default", action_context), build_button("面板", "/panel", "default", action_context), build_button("帮助", "/help", "default", action_context)]})
 
-    return {
-        "config": {"wide_screen_mode": True, "enable_forward": True, "update_multi": True},
-        "header": {"template": "blue", "title": {"tag": "plain_text", "content": "openrelay sessions"}},
-        "elements": elements,
-    }
+    return build_card_shell("openrelay sessions", elements, tone="info")

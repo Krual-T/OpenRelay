@@ -112,6 +112,33 @@ def test_parse_card_action_event() -> None:
     assert parsed.message.text == "/resume list --page 2 --sort active-first"
 
 
+def test_parse_card_action_event_accepts_help_card_context_keys() -> None:
+    parsed = parse_card_action_event(
+        {
+            "token": "tok_help_1",
+            "operator": {"open_id": "ou_user"},
+            "action": {
+                "value": {
+                    "command": "/status",
+                    "rootId": "root_help_1",
+                    "threadId": "thread_help_1",
+                    "sessionKey": "p2p:oc_1:thread:root_help_1",
+                    "sessionOwnerOpenId": "ou_user",
+                }
+            },
+            "context": {"open_chat_id": "oc_1", "open_message_id": "om_help_card_1"},
+        }
+    )
+    assert parsed.type == "message"
+    assert parsed.message is not None
+    assert parsed.message.reply_to_message_id == "om_help_card_1"
+    assert parsed.message.root_id == "root_help_1"
+    assert parsed.message.thread_id == "thread_help_1"
+    assert parsed.message.session_key == "p2p:oc_1:thread:root_help_1"
+    assert parsed.message.session_owner_open_id == "ou_user"
+    assert parsed.message.text == "/status"
+
+
 
 def test_parse_webhook_without_verify_token() -> None:
     config = make_config()

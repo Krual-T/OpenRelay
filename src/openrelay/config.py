@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+import json
 from pathlib import Path
 import os
 
@@ -39,6 +40,13 @@ class BackendConfig:
     codex_sessions_dir: Path = Path.home() / ".codex" / "sessions"
 
 
+@dataclass(frozen=True, slots=True)
+class DirectoryShortcut:
+    name: str
+    path: str
+    channels: tuple[str, ...] = ("all",)
+
+
 @dataclass(slots=True)
 class AppConfig:
     cwd: Path
@@ -52,9 +60,11 @@ class AppConfig:
     max_session_messages: int
     feishu: FeishuConfig
     backend: BackendConfig
+    directory_shortcuts: tuple[DirectoryShortcut, ...] = ()
 
 
 BOOL_TRUE = {"1", "true", "yes", "on"}
+DIRECTORY_SHORTCUT_CHANNELS = {"all", "main", "develop"}
 
 
 class ConfigError(RuntimeError):
@@ -137,6 +147,53 @@ def resolve_env_path(base: Path, *names: str, default: str = "") -> Path:
     return (base / raw).resolve() if raw else base.resolve()
 
 
+def _normalize_shortcut_channels(raw: str) -> tuple[str, ...]:
+    tokens = [part.strip().lower() for part in raw.split(",") if part.strip()]
+    if not tokens:
+        return ("all",)
+    if any(token not in DIRECTORY_SHORTCUT_CHANNELS for token in tokens):
+        invalid = ", ".join(sorted({token for token in tokens if token not in DIRECTORY_SHORTCUT_CHANNELS}))
+        raise ConfigError(f"Unsupported directory shortcut channel: {invalid}")
+    if "all" in tokens:
+        return ("all",)
+    return tuple(dict.fromkeys(tokens))
+
+
+def _shortcut_channels_overlap(left: tuple[str, ...], right: tuple[str, ...]) -> bool:
+    if "all" in left or "all" in right:
+        return True
+    return bool(set(left) & set(right))
+
+
+def read_directory_shortcuts(*names: str) -> tuple[DirectoryShortcut, ...]:
+    raw = read_first(*names, default="")
+    if not raw:
+        return ()
+    try:
+        payload = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        raise ConfigError("DIRECTORY_SHORTCUTS must be valid JSON") from exc
+    if not isinstance(payload, list):
+        raise ConfigError("DIRECTORY_SHORTCUTS must be a JSON array")
+    shortcuts: list[DirectoryShortcut] = []
+    for index, item in enumerate(payload, start=1):
+        if not isinstance(item, dict):
+            raise ConfigError(f"DIRECTORY_SHORTCUTS[{index}] must be an object")
+        name = str(item.get("name") or "").strip()
+        path = str(item.get("path") or "").strip()
+        channels = _normalize_shortcut_channels(str(item.get("channels") or item.get("channel") or "all"))
+        if not name:
+            raise ConfigError(f"DIRECTORY_SHORTCUTS[{index}] missing name")
+        if not path:
+            raise ConfigError(f"DIRECTORY_SHORTCUTS[{index}] missing path")
+        next_shortcut = DirectoryShortcut(name=name, path=path, channels=channels)
+        for existing in shortcuts:
+            if existing.name == next_shortcut.name and _shortcut_channels_overlap(existing.channels, next_shortcut.channels):
+                raise ConfigError(f"Duplicate directory shortcut name with overlapping channels: {name}")
+        shortcuts.append(next_shortcut)
+    return tuple(shortcuts)
+
+
 
 def load_config(cwd: str | Path | None = None) -> AppConfig:
     base = Path(cwd or os.getcwd()).resolve()
@@ -186,4 +243,5 @@ def load_config(cwd: str | Path | None = None) -> AppConfig:
             codex_cli_path=read_first("CODEX_CLI_PATH", "CODEX_PATH", default="codex"),
             codex_sessions_dir=Path(read_first("CODEX_SESSIONS_DIR", default=str(Path.home() / ".codex" / "sessions"))).expanduser().resolve(),
         ),
+        directory_shortcuts=read_directory_shortcuts("DIRECTORY_SHORTCUTS"),
     )

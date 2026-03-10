@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import shlex
 from pathlib import Path
 from typing import Any
 
@@ -65,6 +66,38 @@ class SessionUX:
             raise ValueError(f"path does not exist: {relative_path}")
         if not target.is_dir():
             raise ValueError(f"not a directory: {relative_path}")
+        return target
+
+    def build_directory_shortcut_entries(self, session: SessionRecord, limit: int = 4) -> list[dict[str, str]]:
+        channel = infer_release_channel(self.config, session)
+        workspace_root = get_session_workspace_root(self.config, session).resolve()
+        entries: list[dict[str, str]] = []
+        for shortcut in self.config.directory_shortcuts:
+            if "all" not in shortcut.channels and channel not in shortcut.channels:
+                continue
+            target = self._resolve_directory_shortcut_target(shortcut.path, workspace_root)
+            if target is None:
+                continue
+            entries.append(
+                {
+                    "label": shortcut.name,
+                    "display_path": self.format_cwd(str(target), None, channel),
+                    "command": f"/cwd {shlex.quote(str(target))}",
+                }
+            )
+            if len(entries) >= limit:
+                break
+        return entries
+
+    def _resolve_directory_shortcut_target(self, raw_path: str, workspace_root: Path) -> Path | None:
+        requested = Path(str(raw_path or "").strip()).expanduser()
+        if not requested:
+            return None
+        target = requested.resolve() if requested.is_absolute() else (workspace_root / requested).resolve()
+        if target != workspace_root and workspace_root not in target.parents:
+            return None
+        if not target.exists() or not target.is_dir():
+            return None
         return target
 
     def build_session_title(self, label: str, session_id: str, first_user_message: str = "") -> str:
@@ -234,16 +267,20 @@ class SessionUX:
         return lines
 
     def build_panel_text(self, session: SessionRecord) -> str:
-        return "\n".join(
-            [
-                "OpenRelay 面板",
-                f"当前会话={self.shorten(session.label or session.session_id, 40)}",
-                f"session_id={session.session_id}",
-                f"channel={format_release_channel(infer_release_channel(self.config, session))}",
-                f"cwd={self.format_cwd(session.cwd, session)}",
-                f"model={self.effective_model(session)}",
-                f"sandbox={session.safety_mode}",
-                "提示：先 /cwd <path> 再发消息，就会在目标目录进入 Codex；如需强制切回稳定版本，发送 /main 原因。",
-                "commands: /restart /main /stable /develop /new /resume /resume latest /cwd <path> /cd <path> /status /model [name|default] /sandbox [mode] /clear",
-            ]
-        )
+        lines = [
+            "OpenRelay 面板",
+            f"当前会话={self.shorten(session.label or session.session_id, 40)}",
+            f"session_id={session.session_id}",
+            f"channel={format_release_channel(infer_release_channel(self.config, session))}",
+            f"cwd={self.format_cwd(session.cwd, session)}",
+            f"model={self.effective_model(session)}",
+            f"sandbox={session.safety_mode}",
+            "提示：先 /cwd <path> 再发消息，就会在目标目录进入 Codex；如需强制切回稳定版本，发送 /main 原因。",
+        ]
+        shortcut_entries = self.build_directory_shortcut_entries(session)
+        if shortcut_entries:
+            lines.append("常用目录：")
+            lines.extend([f"- {entry['label']} -> {entry['display_path']}" for entry in shortcut_entries])
+            lines.append("面板里的快捷目录按钮会直接执行稳定的 /cwd 切换。")
+        lines.append("commands: /restart /main /stable /develop /new /resume /resume latest /cwd <path> /cd <path> /status /model [name|default] /sandbox [mode] /clear")
+        return "\n".join(lines)

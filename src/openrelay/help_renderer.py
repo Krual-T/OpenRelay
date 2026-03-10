@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+from typing import Any
+
+from openrelay.card_actions import build_button
+from openrelay.card_theme import build_card_shell
 from openrelay.config import AppConfig
 from openrelay.models import SessionRecord
 from openrelay.release import format_release_channel, infer_release_channel
@@ -49,7 +53,7 @@ class HelpRenderer:
                 *self.build_prompt_examples(session, message_count),
                 "",
                 "什么时候该用命令：",
-                *self.build_command_guide(available_backends),
+                *self.build_command_guide(session, available_backends),
                 "",
                 "最近上下文：",
                 *context_lines,
@@ -58,6 +62,73 @@ class HelpRenderer:
             ]
         )
         return "\n".join(lines)
+
+    def build_card(self, session: SessionRecord, available_backends: list[str], action_context: dict[str, str] | None = None) -> dict[str, Any]:
+        message_count = len(self.store.list_messages(session.session_id))
+        context_preview = self.session_ux.build_context_preview(session, limit=2)
+        actions_context = action_context or {}
+        elements: list[dict[str, Any]] = [
+            {
+                "tag": "div",
+                "text": {
+                    "tag": "lark_md",
+                    "content": "\n".join([
+                        "**当前状态**",
+                        f"> 会话：{session.label or '未命名会话'} (`{session.session_id}`)",
+                        f"> 会话阶段：{self.describe_session_phase(session, message_count)}",
+                        f"> 通道：`{format_release_channel(infer_release_channel(self.config, session))}`",
+                        f"> 目录：`{self.session_ux.format_cwd(session.cwd, session)}`",
+                        f"> 后端：`{session.backend}` · 模型：`{self.session_ux.effective_model(session)}`",
+                        f"> Sandbox：`{session.safety_mode}` · 原生会话：`{session.native_session_id or 'pending'}`",
+                        f"> 上下文占用：`{self.session_ux.format_context_usage(session)}` · 本地消息数：`{message_count}`",
+                        f"> 最近关注：{context_preview or '还没有可总结的本地上下文'}",
+                        f"> 一句话判断：{self.build_now_summary(session, message_count)}",
+                    ]),
+                },
+            }
+        ]
+        context_note = self.build_context_note(session)
+        if context_note:
+            elements.append({"tag": "div", "text": {"tag": "lark_md", "content": context_note}})
+        elements.extend(
+            [
+                {
+                    "tag": "div",
+                    "text": {
+                        "tag": "lark_md",
+                        "content": "\n".join([
+                            "**你现在最该做什么**",
+                            *self.build_priority_actions(session, message_count),
+                        ]),
+                    },
+                },
+                {
+                    "tag": "div",
+                    "text": {
+                        "tag": "lark_md",
+                        "content": "\n".join([
+                            "**下一条消息可以直接这样发**",
+                            *self.build_prompt_examples(session, message_count),
+                        ]),
+                    },
+                },
+                {
+                    "tag": "div",
+                    "text": {
+                        "tag": "lark_md",
+                        "content": "\n".join([
+                            "**什么时候该用命令**",
+                            *self.build_command_guide(session, available_backends),
+                            "",
+                            "> 点击下面按钮即可直接执行对应命令；如果任务没变，直接发消息通常更快。",
+                        ]),
+                    },
+                },
+            ]
+        )
+        for group in self.build_command_button_groups(available_backends, actions_context):
+            elements.append({"tag": "action", "actions": group})
+        return build_card_shell("openrelay help", elements, tone="info")
 
     def describe_session_phase(self, session: SessionRecord, message_count: int) -> str:
         if message_count == 0 and session.native_session_id:
@@ -116,6 +187,7 @@ class HelpRenderer:
         if session.native_session_id:
             return [
                 "- 如果还是同一件事，直接追加信息：目标、报错、文件路径、验收标准。",
+                "- 当前回复还没结束时，继续发消息会自动排到下一轮；连续补充会合并处理。",
                 "- 如果你想让它立刻推进，直接说“继续，先做下一步并汇报改动”。",
                 "- 如果任务已经变了，先 /new <label>，不要把新需求继续塞进当前会话。",
             ]
@@ -144,6 +216,7 @@ class HelpRenderer:
             return [
                 '- “继续刚才的任务，下一步先检查 <file/path>，然后直接改。”',
                 '- “这个报错还在：<贴报错>; 结合当前上下文继续排查。”',
+                '- “先记住这条补充，等你输出完上一条后继续处理：<补充信息>。”',
                 '- “基于现在的进度继续，不要重来；做完告诉我改了哪些文件。”',
                 '- “先别写代码，帮我总结当前进度、阻塞点和下一步。”',
             ]
@@ -154,15 +227,30 @@ class HelpRenderer:
             '- “先帮我整理当前上下文里的目标、已完成项和待做项。”',
         ]
 
-    def build_command_guide(self, available_backends: list[str]) -> list[str]:
+    def build_command_guide(self, session: SessionRecord, available_backends: list[str]) -> list[str]:
+        shortcut_entries = self.session_ux.build_directory_shortcut_entries(session)
         lines = [
             "- 同一任务继续干：通常不用命令，直接发消息。",
+            "- 当前回复还在跑时，继续发消息会进入下一轮；连续补充会自动合并。",
             "- 开新任务或切话题：/new <label>；回旧会话：/resume list、/resume latest。",
             "- 换执行位置：/cwd <path> 切目录；/main 回稳定工作区；/develop 进修复工作区。",
             "- 看现场：/status 看会话、目录、最近上下文；/usage 看 token 和 context_usage。",
             "- 控制运行：/stop 停止生成；/clear 清空当前上下文；/panel 打开会话面板。",
             "- 环境与维护：/model 切模型；/sandbox 切执行模式；/ping 连通性检查；/restart 管理员用。",
         ]
+        if shortcut_entries:
+            lines.insert(4, "- 常用目录：如果 `/panel` 已显示快捷目录，优先直接点按钮；这些入口会稳定复用 `/cwd` 主路径。")
         if len(available_backends) > 1:
             lines.append(f"- 切后端：/backend [list|{'|'.join(available_backends)}]。")
         return lines
+
+    def build_command_button_groups(self, available_backends: list[str], action_context: dict[str, str]) -> list[list[dict[str, Any]]]:
+        groups: list[list[tuple[str, str, str]]] = [
+            [("状态", "/status", "primary"), ("用量", "/usage", "default"), ("面板", "/panel", "default")],
+            [("新会话", "/new", "primary"), ("会话列表", "/resume list", "default"), ("清空上下文", "/clear", "default")],
+            [("当前目录", "/cwd", "default"), ("切到 main", "/main", "default"), ("切到 develop", "/develop", "default")],
+            [("模型", "/model", "default"), ("Sandbox", "/sandbox", "default"), ("停止", "/stop", "default")],
+        ]
+        if len(available_backends) > 1:
+            groups[-1].insert(2, ("后端", "/backend list", "default"))
+        return [[build_button(label, command, button_type, action_context) for label, command, button_type in group] for group in groups]

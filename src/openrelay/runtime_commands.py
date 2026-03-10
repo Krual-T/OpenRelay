@@ -18,6 +18,7 @@ ADMIN_ONLY_COMMANDS = {"/restart"}
 RESUME_USAGE = "使用 /resume [list|latest|<序号>|<session_id>] [--page N] [--sort updated-desc|active-first]。"
 
 ReplyHook = Callable[..., Awaitable[None]]
+SendHelpHook = Callable[[IncomingMessage, str, SessionRecord], Awaitable[None]]
 SendPanelHook = Callable[[IncomingMessage, str, SessionRecord], Awaitable[None]]
 SendSessionListHook = Callable[[IncomingMessage, str, SessionRecord, int, SessionSortMode], Awaitable[None]]
 SwitchReleaseHook = Callable[[IncomingMessage, str, SessionRecord, str, str, str], Awaitable[None]]
@@ -30,6 +31,7 @@ AvailableBackendsHook = Callable[[], list[str]]
 @dataclass(slots=True)
 class RuntimeCommandHooks:
     reply: ReplyHook
+    send_help: SendHelpHook
     send_panel: SendPanelHook
     send_session_list: SendSessionListHook
     switch_release_channel: SwitchReleaseHook
@@ -82,7 +84,7 @@ class RuntimeCommandRouter:
             return True
 
         if name in {"/help", "/tools"}:
-            await self.hooks.reply(message, self.help_renderer.build_text(session, self.hooks.available_backend_names()), command_reply=True)
+            await self.hooks.send_help(message, session_key, session)
             return True
 
         if name == "/panel":
