@@ -10,7 +10,7 @@ from openrelay.config import AppConfig, BackendConfig, DirectoryShortcut, Feishu
 from openrelay.feishu import parse_card_action_event
 from openrelay.follow_up import MERGED_FOLLOW_UP_INTRO
 from openrelay.models import BackendReply, IncomingMessage, SessionRecord
-from openrelay.runtime import AgentRuntime, get_systemd_service_unit, is_systemd_service_process
+from openrelay.runtime import AgentRuntime, DEFAULT_IMAGE_PROMPT, get_systemd_service_unit, is_systemd_service_process
 from openrelay.session_ux import SessionUX
 from openrelay.state import StateStore
 
@@ -268,6 +268,19 @@ class NativeSessionConcurrencyBackend(Backend):
         started.set()
         await released.wait()
         return BackendReply(text=f"done: {prompt}", native_session_id=session.native_session_id or f"native_{prompt}")
+
+
+class ImageAwareBackend(Backend):
+    name = "fake"
+
+    def __init__(self) -> None:
+        self.prompts: list[str] = []
+        self.image_paths: list[tuple[str, ...]] = []
+
+    async def run(self, session: SessionRecord, prompt: str, context: BackendContext) -> BackendReply:
+        self.prompts.append(prompt)
+        self.image_paths.append(context.local_image_paths)
+        return BackendReply(text="done: image", native_session_id="native_image")
 
 
 
@@ -1044,6 +1057,39 @@ async def test_runtime_allows_parallel_messages_for_different_native_sessions(tm
     second_released.set()
     await asyncio.wait_for(first_task, timeout=1)
     await asyncio.wait_for(second_task, timeout=1)
+    await runtime.shutdown()
+
+
+@pytest.mark.asyncio
+async def test_runtime_uses_local_images_as_backend_input(tmp_path: Path) -> None:
+    config = make_config(tmp_path)
+    config.workspace_root.mkdir(parents=True, exist_ok=True)
+    config.main_workspace_dir.mkdir(parents=True, exist_ok=True)
+    config.develop_workspace_dir.mkdir(parents=True, exist_ok=True)
+    store = StateStore(config)
+    messenger = FakeMessenger()
+    backend = ImageAwareBackend()
+    runtime = AgentRuntime(config, store, messenger, backends={"codex": backend})
+
+    image_path = tmp_path / "sample.png"
+    image_path.write_bytes(b"fake-image")
+    message = IncomingMessage(
+        event_id="evt_image_runtime",
+        message_id="om_image_runtime",
+        chat_id="oc_image",
+        chat_type="p2p",
+        sender_open_id="ou_user",
+        text="[图片]",
+        local_image_paths=(str(image_path),),
+        actionable=True,
+    )
+
+    await runtime.dispatch_message(message)
+
+    assert backend.prompts == [DEFAULT_IMAGE_PROMPT]
+    assert backend.image_paths == [(str(image_path),)]
+    session = store.load_session(runtime.build_session_key(message))
+    assert store.list_messages(session.session_id)[0]["content"] == "[图片]"
     await runtime.shutdown()
 
 

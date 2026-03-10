@@ -1,10 +1,13 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 import asyncio
 import json
+import mimetypes
 import re
 import logging
+from pathlib import Path
+import tempfile
 import uuid
 from typing import Any, Awaitable, Callable
 
@@ -20,6 +23,7 @@ from openrelay.models import IncomingMessage
 
 
 MAX_TEXT_CHUNK = 3500
+IMAGE_MESSAGE_PLACEHOLDER = "[图片]"
 LOGGER = logging.getLogger("openrelay.feishu")
 
 
@@ -169,11 +173,18 @@ def parse_message_event(config: AppConfig, event: dict[str, Any] | P2ImMessageRe
         return ParsedWebhook(type="ignore")
     if not _read_attr_text(message, "message_id") or not _read_attr_text(message, "chat_id"):
         return ParsedWebhook(type="ignore")
-    if _read_attr_text(message, "message_type") != "text":
+    message_type = _read_attr_text(message, "message_type")
+    if message_type not in {"text", "image"}:
         return ParsedWebhook(type="ignore")
     mentions = list(getattr(message, "mentions", None) or [])
     content = _safe_json_loads(_read_attr_text(message, "content"))
-    text = strip_mentions(_read_text(content.get("text")), mentions)
+    text = strip_mentions(_read_text(content.get("text")), mentions) if message_type == "text" else IMAGE_MESSAGE_PLACEHOLDER
+    remote_image_keys: tuple[str, ...] = ()
+    if message_type == "image":
+        image_key = _read_text(content.get("image_key"))
+        if not image_key:
+            return ParsedWebhook(type="ignore")
+        remote_image_keys = (image_key,)
     sender = event_data.sender if event_data is not None else None
     sender_open_id = _read_nested_attr_text(sender, "sender_id", "open_id")
     chat_type = _read_attr_text(message, "chat_type") or "unknown"
@@ -190,6 +201,7 @@ def parse_message_event(config: AppConfig, event: dict[str, Any] | P2ImMessageRe
             thread_id=_read_attr_text(message, "thread_id"),
             parent_id=_read_attr_text(message, "parent_id"),
             text=text,
+            remote_image_keys=remote_image_keys,
             actionable=actionable,
         ),
     )
@@ -248,6 +260,29 @@ def _response_payload(response: object) -> dict[str, Any]:
         return json.loads(bytes(raw.content).decode("utf-8"))
     except Exception:
         return {}
+
+
+def _response_bytes(response: object) -> bytes:
+    raw = getattr(response, "raw", None)
+    if raw is None or getattr(raw, "content", None) is None:
+        return b""
+    return bytes(raw.content)
+
+
+def _response_headers(response: object) -> dict[str, str]:
+    raw = getattr(response, "raw", None)
+    headers = getattr(raw, "headers", None) if raw is not None else None
+    if isinstance(headers, dict):
+        return {str(key).lower(): str(value) for key, value in headers.items()}
+    try:
+        return {str(key).lower(): str(value) for key, value in dict(headers or {}).items()}
+    except Exception:
+        return {}
+
+
+def _guess_file_suffix(content_type: str) -> str:
+    guessed = mimetypes.guess_extension(content_type or "", strict=False) or ""
+    return guessed if guessed else ".img"
 
 
 
@@ -315,6 +350,24 @@ class FeishuMessenger:
         _ensure_success(response, f"Feishu update {msg_type}")
         return _response_payload(response)
 
+    async def download_message_resource_to_file(self, message_id: str, file_key: str, *, resource_type: str = "image") -> str:
+        request = BaseRequest.builder().http_method(HttpMethod.GET).uri(
+            f"/open-apis/im/v1/messages/{message_id}/resources/{file_key}"
+        ).token_types({AccessTokenType.TENANT}).queries([("type", resource_type)]).build()
+        response = await self.client.arequest(request)
+        _ensure_success(response, f"Feishu download {resource_type} resource")
+        content = _response_bytes(response)
+        if not content:
+            raise RuntimeError(f"Feishu download {resource_type} resource failed: empty content")
+        headers = _response_headers(response)
+        content_type = headers.get("content-type", "").split(";", 1)[0].strip().lower()
+        suffix = _guess_file_suffix(content_type)
+        media_dir = (self.config.data_dir / "feishu-media").resolve()
+        media_dir.mkdir(parents=True, exist_ok=True)
+        with tempfile.NamedTemporaryFile(prefix="feishu-inbound-", suffix=suffix, dir=media_dir, delete=False) as handle:
+            handle.write(content)
+            return str(Path(handle.name).resolve())
+
     async def send_text(self, chat_id: str, text: str, *, reply_to_message_id: str = "", root_id: str = "", force_new_message: bool = False) -> None:
         for chunk in split_text(text):
             if reply_to_message_id and not force_new_message:
@@ -358,11 +411,13 @@ class FeishuEventDispatcher:
         config: AppConfig,
         loop: asyncio.AbstractEventLoop,
         dispatch_message: Callable[[IncomingMessage], Awaitable[None]],
+        messenger: FeishuMessenger | None = None,
         log: logging.Logger | None = None,
     ):
         self.config = config
         self.loop = loop
         self.dispatch_message = dispatch_message
+        self.messenger = messenger
         self.logger = log or LOGGER
 
     def build(self) -> lark.EventDispatcherHandler:
@@ -371,8 +426,26 @@ class FeishuEventDispatcher:
         builder.register_p2_card_action_trigger(self._handle_card_action)
         return builder.build()
 
+    async def _dispatch_with_media_resolution(self, message: IncomingMessage) -> None:
+        if self.messenger is not None and message.remote_image_keys:
+            local_image_paths: list[str] = []
+            for image_key in message.remote_image_keys:
+                try:
+                    image_path = await self.messenger.download_message_resource_to_file(message.message_id, image_key, resource_type="image")
+                except Exception:
+                    self.logger.exception(
+                        "failed to download inbound Feishu image message_id=%s image_key=%s",
+                        message.message_id,
+                        image_key,
+                    )
+                    continue
+                local_image_paths.append(image_path)
+            if local_image_paths:
+                message = replace(message, remote_image_keys=(), local_image_paths=tuple(local_image_paths))
+        await self.dispatch_message(message)
+
     def _schedule(self, message: IncomingMessage) -> None:
-        self.loop.call_soon_threadsafe(lambda: asyncio.create_task(self.dispatch_message(message)))
+        self.loop.call_soon_threadsafe(lambda: asyncio.create_task(self._dispatch_with_media_resolution(message)))
 
     def _handle_message_event(self, event: P2ImMessageReceiveV1) -> None:
         parsed = parse_message_event(self.config, event)

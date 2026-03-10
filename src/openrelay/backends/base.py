@@ -24,6 +24,7 @@ ENV_WHITELIST = {
 @dataclass(slots=True)
 class BackendContext:
     workspace_root: Path
+    local_image_paths: tuple[str, ...] = ()
     on_partial_text: Callable[[str], Awaitable[None]] | None = None
     on_progress: Callable[[dict[str, object]], Awaitable[None]] | None = None
     cancel_event: asyncio.Event | None = None

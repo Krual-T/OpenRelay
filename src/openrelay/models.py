@@ -24,6 +24,8 @@ class IncomingMessage:
     session_key: str = ""
     session_owner_open_id: str = ""
     text: str = ""
+    remote_image_keys: tuple[str, ...] = ()
+    local_image_paths: tuple[str, ...] = ()
     actionable: bool = False
 
 

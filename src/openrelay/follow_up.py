@@ -12,10 +12,15 @@ MERGED_FOLLOW_UP_INTRO = "用户在上一条回复完成前连续补充了下面
 class QueuedFollowUp:
     anchor_message: IncomingMessage
     prompts: list[str] = field(default_factory=list)
+    local_image_paths: list[str] = field(default_factory=list)
 
     @classmethod
     def from_message(cls, message: IncomingMessage) -> QueuedFollowUp:
-        return cls(anchor_message=message, prompts=[message.text])
+        return cls(
+            anchor_message=message,
+            prompts=[message.text],
+            local_image_paths=list(message.local_image_paths),
+        )
 
     @property
     def message_count(self) -> int:
@@ -24,6 +29,7 @@ class QueuedFollowUp:
     def merge(self, message: IncomingMessage) -> None:
         self.anchor_message = message
         self.prompts.append(message.text)
+        self.local_image_paths.extend(message.local_image_paths)
 
     def acknowledgement_text(self) -> str:
         if self.message_count == 1:
@@ -32,7 +38,7 @@ class QueuedFollowUp:
 
     def to_message(self) -> IncomingMessage:
         prompt = self.prompts[0] if self.message_count == 1 else self._build_merged_prompt()
-        return replace(self.anchor_message, text=prompt)
+        return replace(self.anchor_message, text=prompt, local_image_paths=tuple(self.local_image_paths))
 
     def _build_merged_prompt(self) -> str:
         parts = [MERGED_FOLLOW_UP_INTRO]

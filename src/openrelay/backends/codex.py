@@ -508,7 +508,7 @@ class CodexAppServerClient:
                     "cwd": session.cwd,
                     "approvalPolicy": safety_to_codex_approval(session.safety_mode),
                     **({"model": session.model_override} if session.model_override else {}),
-                    "input": [{"type": "text", "text": prompt}],
+                    "input": self._build_turn_input(prompt, context.local_image_paths),
                 },
                 cancel_event=context.cancel_event,
                 reset_on_cancel=True,
@@ -544,6 +544,14 @@ class CodexAppServerClient:
             if watcher is not None:
                 watcher.cancel()
             self.active_turns.discard(turn)
+
+    def _build_turn_input(self, prompt: str, local_image_paths: tuple[str, ...]) -> list[dict[str, str]]:
+        items: list[dict[str, str]] = []
+        if prompt.strip():
+            items.append({"type": "text", "text": prompt})
+        for path in local_image_paths:
+            items.append({"type": "localImage", "path": path})
+        return items
 
     async def shutdown(self) -> None:
         process = self.process

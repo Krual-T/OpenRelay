@@ -279,3 +279,21 @@ def test_codex_process_env_overrides_sqlite_home(tmp_path: Path, monkeypatch: py
 
     assert env["CODEX_SQLITE_HOME"] == str((tmp_path / "codex-state").resolve())
     assert env["CODEX_THREAD_ID"] == "thread-from-parent"
+
+
+def test_codex_build_turn_input_includes_local_images(tmp_path: Path) -> None:
+    client = CodexAppServerClient(
+        codex_path="codex",
+        workspace_root=tmp_path,
+        sqlite_home=tmp_path / "codex-state",
+        model="gpt-test",
+        safety_mode="danger-full-access",
+    )
+
+    items = client._build_turn_input("describe image", ("/tmp/a.png", "/tmp/b.png"))
+
+    assert items == [
+        {"type": "text", "text": "describe image"},
+        {"type": "localImage", "path": "/tmp/a.png"},
+        {"type": "localImage", "path": "/tmp/b.png"},
+    ]
