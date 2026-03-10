@@ -8,7 +8,7 @@ import sqlite3
 import time
 import uuid
 
-from openrelay.config import AppConfig
+from openrelay.config import AppConfig, DirectoryShortcut
 from openrelay.models import SessionRecord, SessionSummary, utc_now
 from openrelay.release import infer_release_channel
 
@@ -78,6 +78,13 @@ class StateStore:
               message_id TEXT PRIMARY KEY,
               seen_at INTEGER NOT NULL
             );
+            CREATE TABLE IF NOT EXISTS directory_shortcuts (
+              name TEXT PRIMARY KEY COLLATE NOCASE,
+              path TEXT NOT NULL,
+              channels_json TEXT NOT NULL,
+              created_at TEXT NOT NULL,
+              updated_at TEXT NOT NULL
+            );
             """
         )
         columns = {row["name"] for row in self.connection.execute("PRAGMA table_info(sessions)").fetchall()}
@@ -86,6 +93,79 @@ class StateStore:
         if "last_usage_json" not in columns:
             self.connection.execute("ALTER TABLE sessions ADD COLUMN last_usage_json TEXT NOT NULL DEFAULT '{}'")
         self.connection.commit()
+
+    def list_directory_shortcuts(self) -> tuple[DirectoryShortcut, ...]:
+        rows = self.connection.execute(
+            "SELECT name, path, channels_json FROM directory_shortcuts ORDER BY name COLLATE NOCASE ASC"
+        ).fetchall()
+        shortcuts: list[DirectoryShortcut] = []
+        for row in rows:
+            try:
+                channels_payload = json.loads(row["channels_json"] or "[]")
+            except json.JSONDecodeError:
+                channels_payload = []
+            channels = tuple(
+                token for token in [str(item).strip().lower() for item in channels_payload if str(item).strip()] if token in {"all", "main", "develop"}
+            ) or ("all",)
+            shortcuts.append(
+                DirectoryShortcut(
+                    name=str(row["name"] or "").strip(),
+                    path=str(row["path"] or "").strip(),
+                    channels=channels,
+                )
+            )
+        return tuple(shortcuts)
+
+    def save_directory_shortcut(self, shortcut: DirectoryShortcut) -> DirectoryShortcut:
+        now = utc_now()
+        payload = (
+            shortcut.name.strip(),
+            shortcut.path.strip(),
+            json.dumps(list(shortcut.channels or ("all",)), ensure_ascii=False),
+            now,
+            now,
+        )
+        self.connection.execute(
+            """
+            INSERT INTO directory_shortcuts(name, path, channels_json, created_at, updated_at)
+            VALUES(?, ?, ?, ?, ?)
+            ON CONFLICT(name) DO UPDATE SET
+              path = excluded.path,
+              channels_json = excluded.channels_json,
+              updated_at = excluded.updated_at
+            """,
+            payload,
+        )
+        self.connection.commit()
+        return self.get_directory_shortcut(shortcut.name) or shortcut
+
+    def get_directory_shortcut(self, name: str) -> DirectoryShortcut | None:
+        row = self.connection.execute(
+            "SELECT name, path, channels_json FROM directory_shortcuts WHERE name = ? COLLATE NOCASE",
+            (name.strip(),),
+        ).fetchone()
+        if row is None:
+            return None
+        try:
+            channels_payload = json.loads(row["channels_json"] or "[]")
+        except json.JSONDecodeError:
+            channels_payload = []
+        channels = tuple(
+            token for token in [str(item).strip().lower() for item in channels_payload if str(item).strip()] if token in {"all", "main", "develop"}
+        ) or ("all",)
+        return DirectoryShortcut(
+            name=str(row["name"] or "").strip(),
+            path=str(row["path"] or "").strip(),
+            channels=channels,
+        )
+
+    def remove_directory_shortcut(self, name: str) -> bool:
+        cursor = self.connection.execute(
+            "DELETE FROM directory_shortcuts WHERE name = ? COLLATE NOCASE",
+            (name.strip(),),
+        )
+        self.connection.commit()
+        return cursor.rowcount > 0
 
     def _new_session_id(self) -> str:
         return f"s_{uuid.uuid4().hex[:12]}"

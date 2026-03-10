@@ -620,6 +620,13 @@ class AgentRuntime:
                 "action_label": "看目录",
             },
             {
+                "title": "管理快捷目录",
+                "meta": "目录 · 新增 / 列表 / 快速切换",
+                "preview": "用 /shortcut add|list|cd 在飞书里维护自己的常用目录入口。",
+                "command": "/shortcut list",
+                "action_label": "看快捷目录",
+            },
+            {
                 "title": "查看完整状态",
                 "meta": "状态 · 目录 / 模型 / 上下文",
                 "preview": "先确认现场，再决定继续当前任务还是切上下文。",

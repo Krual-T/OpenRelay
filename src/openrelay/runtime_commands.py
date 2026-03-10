@@ -5,7 +5,7 @@ import os
 import shlex
 from typing import Awaitable, Callable, Literal
 
-from openrelay.config import AppConfig, SAFETY_MODES
+from openrelay.config import AppConfig, DirectoryShortcut, SAFETY_MODES
 from openrelay.help_renderer import HelpRenderer
 from openrelay.models import IncomingMessage, SessionRecord
 from openrelay.release import format_release_channel, get_session_workspace_root, infer_release_channel, read_release_events, summarize_release_event
@@ -17,6 +17,10 @@ from openrelay.state import StateStore
 ADMIN_ONLY_COMMANDS = {"/restart"}
 PANEL_USAGE = "使用 /panel [sessions|directories|commands|status] [--page N] [--sort updated-desc|active-first]。"
 RESUME_USAGE = "使用 /resume [list|latest|<序号>|<session_id>] [--page N] [--sort updated-desc|active-first]。"
+SHORTCUT_USAGE = (
+    "使用 /shortcut list | /shortcut add <name> <path> [all|main|develop] | "
+    "/shortcut remove <name> | /shortcut cd <name>。"
+)
 
 ReplyHook = Callable[..., Awaitable[None]]
 SendHelpHook = Callable[[IncomingMessage, str, SessionRecord], Awaitable[None]]
@@ -173,6 +177,9 @@ class RuntimeCommandRouter:
 
         if name in {"/cwd", "/cd"}:
             return await self._handle_cwd(name, arg_text, message, session_key, session)
+
+        if name in {"/shortcut", "/shortcuts"}:
+            return await self._handle_shortcut(message, session_key, session, arg_text)
 
         if name == "/backend":
             return await self._handle_backend(message, session_key, session, arg_text)
@@ -354,6 +361,99 @@ class RuntimeCommandRouter:
         self.store.save_session(next_session)
         await self.hooks.reply(message, f"backend 已切换到 {backend}，新的原生会话将在下一条真实消息时创建。", command_reply=True)
         return True
+
+    async def _handle_shortcut(self, message: IncomingMessage, session_key: str, session: SessionRecord, arg_text: str) -> bool:
+        tokens = shlex.split(arg_text) if arg_text else []
+        action = tokens[0].lower() if tokens else "list"
+
+        if action in {"list", "ls"}:
+            shortcuts = self.session_ux.build_directory_shortcut_entries(session, limit=100)
+            if not shortcuts:
+                await self.hooks.reply(
+                    message,
+                    "当前没有可用的快捷目录。\n\n先用 `/shortcut add <name> <path>` 新增一个，或直接 `/cwd <path>`。",
+                    command_reply=True,
+                    command_name="/shortcut",
+                )
+                return True
+            lines = ["快捷目录："]
+            for entry in shortcuts:
+                lines.append(f"- {entry['label']} -> {entry['display_path']} [{entry['channels']}]")
+            lines.extend(["", "快速切换：/shortcut cd <name>"])
+            await self.hooks.reply(message, "\n".join(lines), command_reply=True, command_name="/shortcut")
+            return True
+
+        if action == "add":
+            try:
+                shortcut = self._parse_shortcut_add(tokens[1:])
+            except ValueError as exc:
+                await self.hooks.reply(message, f"shortcut 参数无效：{exc}\n{SHORTCUT_USAGE}", command_reply=True, command_name="/shortcut")
+                return True
+            self.store.save_directory_shortcut(shortcut)
+            await self.hooks.reply(
+                message,
+                "\n".join(
+                    [
+                        f"已保存快捷目录 `{shortcut.name}`。",
+                        f"path={shortcut.path}",
+                        f"channels={','.join(shortcut.channels)}",
+                        f"使用 `/shortcut cd {shortcut.name}` 或 `/panel directories`。",
+                    ]
+                ),
+                command_reply=True,
+                command_name="/shortcut",
+            )
+            return True
+
+        if action in {"remove", "rm", "del", "delete"}:
+            name = tokens[1].strip() if len(tokens) > 1 else ""
+            if not name:
+                await self.hooks.reply(message, f"shortcut 参数无效：缺少名称\n{SHORTCUT_USAGE}", command_reply=True, command_name="/shortcut")
+                return True
+            removed = self.store.remove_directory_shortcut(name)
+            if removed:
+                await self.hooks.reply(message, f"已删除快捷目录 `{name}`。", command_reply=True, command_name="/shortcut")
+                return True
+            await self.hooks.reply(message, f"没有找到可删除的快捷目录：`{name}`。", command_reply=True, command_name="/shortcut")
+            return True
+
+        if action in {"cd", "go", "use"}:
+            name = tokens[1].strip() if len(tokens) > 1 else ""
+            if not name:
+                await self.hooks.reply(message, f"shortcut 参数无效：缺少名称\n{SHORTCUT_USAGE}", command_reply=True, command_name="/shortcut")
+                return True
+            target = self.session_ux.resolve_directory_shortcut(name, session)
+            if target is None:
+                await self.hooks.reply(
+                    message,
+                    f"没有找到当前通道可用的快捷目录：`{name}`。\n先发 `/shortcut list` 看可用入口。",
+                    command_reply=True,
+                    command_name="/shortcut",
+                )
+                return True
+            return await self._handle_cwd("/shortcut", str(target), message, session_key, session)
+
+        await self.hooks.reply(message, f"shortcut 参数无效：不支持的动作 `{action}`\n{SHORTCUT_USAGE}", command_reply=True, command_name="/shortcut")
+        return True
+
+    def _parse_shortcut_add(self, tokens: list[str]) -> DirectoryShortcut:
+        if len(tokens) < 2:
+            raise ValueError("add 需要 <name> <path>")
+        name = tokens[0].strip()
+        path = tokens[1].strip()
+        if not name:
+            raise ValueError("name 不能为空")
+        if not path:
+            raise ValueError("path 不能为空")
+        channels: tuple[str, ...] = ("all",)
+        if len(tokens) >= 3:
+            channel = tokens[2].strip().lower()
+            if channel not in {"all", "main", "develop"}:
+                raise ValueError("channels 仅支持 all / main / develop")
+            channels = (channel,)
+        if len(tokens) > 3:
+            raise ValueError("add 最多支持一个 channels 参数")
+        return DirectoryShortcut(name=name, path=path, channels=channels)
 
     def _build_status_text(self, command_name: str, session_key: str, session: SessionRecord) -> str:
         latest_release_event = read_release_events(self.config, session_key=session_key, limit=1)
