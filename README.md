@@ -59,6 +59,7 @@ CODEX_CLI_PATH=codex
 CODEX_MODEL_OVERRIDE=
 CODEX_SANDBOX=workspace-write
 CODEX_SESSIONS_DIR=~/.codex/sessions
+CODEX_REQUEST_TIMEOUT_SECONDS=
 DIRECTORY_SHORTCUTS=[{"name":"docs","path":"docs","channels":"main"},{"name":"api","path":"services/api","channels":"develop"}]
 ```
 
@@ -68,6 +69,7 @@ DIRECTORY_SHORTCUTS=[{"name":"docs","path":"docs","channels":"main"},{"name":"ap
 - `FEISHU_ENCRYPT_KEY` 用于飞书事件加密；只有你在开放平台开启了加密推送时才需要配置
 - `WORKSPACE_DIR` 是默认工作区；`MAIN_WORKSPACE_DIR` 和 `DEVELOP_WORKSPACE_DIR` 对应 `/main` 与 `/develop`
 - `MODEL_BACKEND` 当前内置只支持 `codex-cli`，但 runtime 已按 CLI 适配器抽象设计
+- `CODEX_REQUEST_TIMEOUT_SECONDS` 默认留空，表示不对 `codex app-server` 请求施加固定超时；如需显式限制，可填正数秒
 - `FEISHU_ALLOWED_OPEN_IDS` 与 `FEISHU_ADMIN_OPEN_IDS` 是 `openrelay` 新补的权限层
 - `DIRECTORY_SHORTCUTS` 用 JSON array 描述 `/panel` 常用目录快捷入口；`channels` 支持 `main` / `develop` / `all`
 - 快捷目录按钮内部会先解析成稳定目标路径，再复用 `/cwd <path>` 主路径，避免受当前 cwd 深度影响

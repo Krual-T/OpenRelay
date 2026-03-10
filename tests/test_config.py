@@ -50,3 +50,20 @@ def test_load_config_rejects_overlapping_directory_shortcut_names(tmp_path, monk
 
     with pytest.raises(ConfigError, match="Duplicate directory shortcut name"):
         load_config(tmp_path)
+
+
+def test_load_config_disables_codex_request_timeout_when_unset_or_non_positive(
+    tmp_path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    apply_required_env(monkeypatch)
+
+    default_config = load_config(tmp_path)
+    assert default_config.backend.codex_request_timeout_seconds is None
+
+    monkeypatch.setenv("CODEX_REQUEST_TIMEOUT_SECONDS", "0")
+    disabled_config = load_config(tmp_path)
+    assert disabled_config.backend.codex_request_timeout_seconds is None
+
+    monkeypatch.setenv("CODEX_REQUEST_TIMEOUT_SECONDS", "45")
+    configured_config = load_config(tmp_path)
+    assert configured_config.backend.codex_request_timeout_seconds == 45.0

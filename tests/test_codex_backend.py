@@ -82,6 +82,38 @@ async def test_codex_request_timeout_resets_client(tmp_path: Path, monkeypatch: 
 
 
 @pytest.mark.asyncio
+async def test_codex_request_has_no_default_timeout(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    client = CodexAppServerClient(
+        codex_path="codex",
+        workspace_root=tmp_path,
+        model="gpt-test",
+        safety_mode="danger-full-access",
+        request_timeout_seconds=None,
+        interrupt_grace_seconds=0.01,
+    )
+    client.process = DummyProcess()
+
+    async def fake_ensure_ready() -> None:
+        return None
+
+    monkeypatch.setattr(client, "ensure_ready", fake_ensure_ready)
+
+    task = asyncio.create_task(client.request("turn/start", {"threadId": "t_1"}))
+
+    while not client.pending_requests:
+        await asyncio.sleep(0)
+    await asyncio.sleep(0.02)
+
+    assert not task.done()
+
+    request_id = next(iter(client.pending_requests))
+    await client._handle_message({"id": request_id, "result": {"turn": {"id": "turn_1"}}})
+
+    assert await task == {"turn": {"id": "turn_1"}}
+    assert client.pending_requests == {}
+
+
+@pytest.mark.asyncio
 async def test_codex_interrupt_timeout_forces_reset(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     client = CodexAppServerClient(
         codex_path="codex",

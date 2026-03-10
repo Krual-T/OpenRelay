@@ -24,7 +24,11 @@ def build_builtin_backend_descriptors() -> dict[str, BackendDescriptor]:
             name="codex",
             transport="cli-app-server",
             summary="persistent CLI backend via app-server protocol",
-            factory=lambda config: CodexBackend(config.backend.codex_cli_path, config.backend.default_model),
+            factory=lambda config: CodexBackend(
+                config.backend.codex_cli_path,
+                config.backend.default_model,
+                request_timeout_seconds=config.backend.codex_request_timeout_seconds,
+            ),
         ),
     }
 
