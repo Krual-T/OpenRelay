@@ -6,7 +6,7 @@ from typing import Any
 from openrelay.config import AppConfig
 from openrelay.models import SessionRecord
 from openrelay.release import format_release_channel, get_release_workspace, get_session_workspace_root, infer_release_channel
-from openrelay.session_browser import SessionListEntry
+from openrelay.session_browser import SessionListEntry, SessionListPage, SESSION_SORT_UPDATED
 from openrelay.state import StateStore
 
 
@@ -93,9 +93,9 @@ class SessionUX:
             parts.append(f"native={entry.native_session_id}")
         return " · ".join(parts)
 
-    def build_session_display_entries(self, entries: list[SessionListEntry]) -> list[dict[str, Any]]:
+    def build_session_display_entries(self, entries: list[SessionListEntry], start_index: int = 1) -> list[dict[str, Any]]:
         payloads: list[dict[str, Any]] = []
-        for index, entry in enumerate(entries, start=1):
+        for index, entry in enumerate(entries, start=start_index):
             payloads.append(
                 {
                     "index": index,
@@ -115,6 +115,34 @@ class SessionUX:
             return "没有可恢复的历史会话。"
         blocks: list[str] = []
         for display in self.build_session_display_entries(entries):
+            lines = [f"{display['index']}. {'[当前] ' if display.get('active') else ''}{display['title']}"]
+            identifier = f"id={display['resume_token']}"
+            native_id = str(display.get("native_session_id") or "")
+            if native_id and native_id != display["session_id"]:
+                identifier += f" · native={native_id}"
+            lines.append(f"   {identifier}")
+            if display.get("meta"):
+                lines.append(f"   {display['meta']}")
+            if display.get("preview"):
+                lines.append(f"   预览：{display['preview']}")
+            blocks.append("\n".join(lines))
+        return "\n\n".join(blocks)
+
+    def format_session_list_page(self, session_page: SessionListPage) -> str:
+        sort_label = "最近更新优先" if session_page.sort_mode == SESSION_SORT_UPDATED else "当前会话优先"
+        header = [
+            f"最近会话（第 {session_page.page} 页，排序：{sort_label}）：",
+            self._format_session_displays(self.build_session_display_entries(session_page.entries, start_index=session_page.start_index)),
+            "",
+            "使用 /resume <编号|session_id|latest> 恢复。翻页与排序卡片动作会保留当前上下文。",
+        ]
+        return "\n".join(line for line in header if line)
+
+    def _format_session_displays(self, displays: list[dict[str, Any]]) -> str:
+        if not displays:
+            return "没有可恢复的历史会话。"
+        blocks: list[str] = []
+        for display in displays:
             lines = [f"{display['index']}. {'[当前] ' if display.get('active') else ''}{display['title']}"]
             identifier = f"id={display['resume_token']}"
             native_id = str(display.get("native_session_id") or "")

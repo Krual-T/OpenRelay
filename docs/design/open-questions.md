@@ -12,17 +12,6 @@
 
 ## Ready
 
-### [ ] OR-TASK-006 会话列表卡片化、分页与排序
-- **优先级**：P1
-- **目标**：让用户获取历史会话列表时直接看到可操作的卡片视图，支持翻页与排序，并默认按最近更新时间倒序浏览。
-- **当前关注**：`/resume list`、`/panel` 或其他会话列表入口是否统一成同一种卡片交互；卡片动作如何稳定携带 `sessionKey / rootId / threadId` 等上下文；分页状态与排序状态如何编码到卡片动作；本地会话与原生 Codex 会话合并后如何保持一致排序；默认按 `updated_at desc` 排序时，当前会话是否仍需要单独高亮而不是强行置顶。
-- **关闭条件**：
-  - [ ] 至少一个会话列表入口改为交互卡片，并展示当前页会话项。
-  - [ ] 卡片支持显式翻页，用户可进入上一页 / 下一页而不丢失当前上下文。
-  - [ ] 卡片支持至少一种可切换排序方式，且默认排序为“最近更新优先”。
-  - [ ] 恢复会话、翻页、切换排序三类动作的状态流转可追踪，并有对应测试或明确的手工验收步骤。
-- **建议产物**：`docs/design/` 下的专题 note（如需要）；`src/openrelay/runtime.py`、`src/openrelay/session_ux.py`、`src/openrelay/panel_card.py`、`src/openrelay/feishu.py`、`tests/test_runtime.py` 等对应实现。
-
 ### [ ] OR-TASK-007 `/help` 卡片化并支持按钮直达执行
 - **优先级**：P1
 - **目标**：让用户打开 `/help` 时直接看到可点击的操作按钮，减少记忆命令和手动输入成本。
@@ -79,6 +68,19 @@
 - **建议产物**：`docs/design/` 下的专题 note；`src/openrelay/config.py`、`src/openrelay/state.py`、`src/openrelay/runtime.py` 等对应实现。
 
 ## Landed / Follow-up
+
+### [x] OR-TASK-006 会话列表卡片化、分页与排序
+- **当前状态**：本轮已落地。
+- **已完成证据**：`docs/design/session-list-cards.md`、`src/openrelay/card_actions.py`、`src/openrelay/session_browser.py`、`src/openrelay/session_list_card.py`、`src/openrelay/runtime.py`、`src/openrelay/runtime_commands.py`、`src/openrelay/panel_card.py`、`src/openrelay/session_ux.py`、`tests/test_session_browser.py`、`tests/test_session_list_card.py`、`tests/test_runtime.py`、`tests/test_feishu.py`。
+- **本轮已收敛**：
+  - [x] `/resume list` 已改为交互卡片，并展示当前页会话项。
+  - [x] 卡片支持显式翻页，上一页 / 下一页动作会保留当前上下文。
+  - [x] 卡片支持“最近更新优先 / 当前会话优先”切换，默认是最近更新优先。
+  - [x] 恢复会话、翻页、切换排序三类动作都通过命令文本携带状态，并有对应测试覆盖。
+- **后续 follow-up**：
+  - [ ] 评估是否把 `/panel` 里的会话区域直接收敛到同一套分页卡片入口。
+  - [ ] 如果会话规模继续增大，再评估是否从固定页大小切到游标分页。
+  - [ ] 评估是否把会话列表卡片和帮助卡片的视觉层级进一步统一。
 
 ### [x] OR-TASK-008 运行时模块边界收敛
 - **当前状态**：本轮已收敛。

@@ -2,21 +2,24 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import os
+import shlex
 from typing import Awaitable, Callable
 
 from openrelay.config import AppConfig, SAFETY_MODES
 from openrelay.help_renderer import HelpRenderer
 from openrelay.models import IncomingMessage, SessionRecord
 from openrelay.release import format_release_channel, get_session_workspace_root, infer_release_channel, read_release_events, summarize_release_event
-from openrelay.session_browser import SessionBrowser
+from openrelay.session_browser import DEFAULT_SESSION_LIST_SORT, DEFAULT_SESSION_LIST_PAGE_SIZE, SessionBrowser, SessionSortMode
 from openrelay.session_ux import SessionUX
 from openrelay.state import StateStore
 
 
 ADMIN_ONLY_COMMANDS = {"/restart"}
+RESUME_USAGE = "使用 /resume [list|latest|<序号>|<session_id>] [--page N] [--sort updated-desc|active-first]。"
 
 ReplyHook = Callable[..., Awaitable[None]]
 SendPanelHook = Callable[[IncomingMessage, str, SessionRecord], Awaitable[None]]
+SendSessionListHook = Callable[[IncomingMessage, str, SessionRecord, int, SessionSortMode], Awaitable[None]]
 SwitchReleaseHook = Callable[[IncomingMessage, str, SessionRecord, str, str, str], Awaitable[None]]
 StopHook = Callable[[IncomingMessage, str], Awaitable[None]]
 ScheduleRestartHook = Callable[[], None]
@@ -28,11 +31,19 @@ AvailableBackendsHook = Callable[[], list[str]]
 class RuntimeCommandHooks:
     reply: ReplyHook
     send_panel: SendPanelHook
+    send_session_list: SendSessionListHook
     switch_release_channel: SwitchReleaseHook
     stop: StopHook
     schedule_restart: ScheduleRestartHook
     is_admin: IsAdminHook
     available_backend_names: AvailableBackendsHook
+
+
+@dataclass(slots=True)
+class ResumeCommandArgs:
+    target: str
+    page: int
+    sort_mode: SessionSortMode
 
 
 class RuntimeCommandRouter:
@@ -131,26 +142,7 @@ class RuntimeCommandRouter:
             return True
 
         if name == "/resume":
-            merged_sessions = self.session_browser.list_entries(session_key, session, limit=20)
-            if not arg_text or arg_text.lower() == "list":
-                await self.hooks.reply(
-                    message,
-                    "\n".join([
-                        "最近会话：",
-                        self.session_ux.format_session_list(merged_sessions),
-                        "",
-                        "使用 /resume <序号|session_id|latest> 恢复。想在指定目录进入 Codex：先 /cwd <path>，再发消息。",
-                    ]),
-                    command_reply=True,
-                    command_name=name,
-                )
-                return True
-            resumed = self.session_browser.resume(session_key, session, arg_text, merged_sessions)
-            if resumed is None:
-                await self.hooks.reply(message, f"恢复失败。可用会话：\n{self.session_ux.format_session_list(merged_sessions)}", command_reply=True)
-                return True
-            await self.hooks.reply(message, self.session_ux.format_resume_success(resumed.session, imported=resumed.imported, entry=resumed.entry), command_reply=True)
-            return True
+            return await self._handle_resume(message, session_key, session, arg_text)
 
         if name == "/reset":
             self.store.clear_sessions(session_key)
@@ -174,6 +166,66 @@ class RuntimeCommandRouter:
 
         await self.hooks.reply(message, f"本地命令未实现：{name}。发送 /help 查看可用命令。", command_reply=True)
         return True
+
+    async def _handle_resume(self, message: IncomingMessage, session_key: str, session: SessionRecord, arg_text: str) -> bool:
+        try:
+            args = self._parse_resume_command_args(arg_text)
+        except ValueError as exc:
+            await self.hooks.reply(message, f"resume 参数无效：{exc}\n{RESUME_USAGE}", command_reply=True, command_name="/resume")
+            return True
+
+        if not args.target or args.target.lower() == "list":
+            await self.hooks.send_session_list(message, session_key, session, args.page, args.sort_mode)
+            return True
+
+        merged_sessions = self.session_browser.list_entries(session_key, session, limit=max(50, args.page * DEFAULT_SESSION_LIST_PAGE_SIZE + 1), sort_mode=args.sort_mode)
+        resumed = self.session_browser.resume(session_key, session, args.target, merged_sessions)
+        if resumed is None:
+            fallback_page = self.session_browser.list_page(session_key, session, page=args.page, page_size=DEFAULT_SESSION_LIST_PAGE_SIZE, sort_mode=args.sort_mode)
+            await self.hooks.reply(message, f"恢复失败。\n\n{self.session_ux.format_session_list_page(fallback_page)}", command_reply=True)
+            return True
+        await self.hooks.reply(message, self.session_ux.format_resume_success(resumed.session, imported=resumed.imported, entry=resumed.entry), command_reply=True)
+        return True
+
+    def _parse_resume_command_args(self, arg_text: str) -> ResumeCommandArgs:
+        tokens = shlex.split(arg_text) if arg_text else []
+        target = ""
+        page = 1
+        sort_mode = DEFAULT_SESSION_LIST_SORT
+        index = 0
+        while index < len(tokens):
+            token = tokens[index]
+            if token == "--page":
+                index += 1
+                if index >= len(tokens):
+                    raise ValueError("--page 缺少页码")
+                page = self._parse_positive_int(tokens[index], "page")
+            elif token.startswith("--page="):
+                page = self._parse_positive_int(token.split("=", 1)[1], "page")
+            elif token == "--sort":
+                index += 1
+                if index >= len(tokens):
+                    raise ValueError("--sort 缺少排序模式")
+                sort_mode = self.session_browser.normalize_sort_mode(tokens[index])
+            elif token.startswith("--sort="):
+                sort_mode = self.session_browser.normalize_sort_mode(token.split("=", 1)[1])
+            elif token.startswith("--"):
+                raise ValueError(f"不支持的选项：{token}")
+            elif not target:
+                target = token
+            else:
+                raise ValueError(f"多余参数：{token}")
+            index += 1
+        return ResumeCommandArgs(target=target, page=page, sort_mode=sort_mode)
+
+    def _parse_positive_int(self, value: str, name: str) -> int:
+        try:
+            parsed = int(value)
+        except ValueError as exc:
+            raise ValueError(f"{name} 必须是正整数") from exc
+        if parsed <= 0:
+            raise ValueError(f"{name} 必须是正整数")
+        return parsed
 
     async def _handle_cwd(self, command_name: str, arg_text: str, message: IncomingMessage, session_key: str, session: SessionRecord) -> bool:
         if not arg_text:

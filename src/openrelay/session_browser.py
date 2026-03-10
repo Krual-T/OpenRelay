@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from math import ceil
 from typing import Literal
 
 from openrelay.config import AppConfig
@@ -12,6 +13,10 @@ from openrelay.state import StateStore
 SESSION_SORT_ACTIVE = "active-first"
 SESSION_SORT_UPDATED = "updated-desc"
 SESSION_SORT_MODES = {SESSION_SORT_ACTIVE, SESSION_SORT_UPDATED}
+DEFAULT_SESSION_LIST_SORT = SESSION_SORT_UPDATED
+DEFAULT_BROWSE_SORT = DEFAULT_SESSION_LIST_SORT
+DEFAULT_SESSION_LIST_PAGE_SIZE = 5
+DEFAULT_BROWSE_LIMIT = 100
 SessionSortMode = Literal["active-first", "updated-desc"]
 
 
@@ -37,6 +42,23 @@ class SessionListEntry:
 
 
 @dataclass(slots=True)
+class SessionListPage:
+    entries: list[SessionListEntry]
+    page: int
+    page_size: int
+    start_index: int
+    sort_mode: SessionSortMode
+    has_previous: bool
+    has_next: bool
+    total_entries: int
+    total_pages: int
+
+    @property
+    def has_prev(self) -> bool:
+        return self.has_previous
+
+
+@dataclass(slots=True)
 class SessionResumeResult:
     session: SessionRecord
     imported: bool
@@ -53,9 +75,11 @@ class SessionBrowser:
         session_key: str,
         session: SessionRecord,
         limit: int = 12,
-        sort_mode: SessionSortMode = SESSION_SORT_ACTIVE,
+        sort_mode: SessionSortMode = DEFAULT_SESSION_LIST_SORT,
+        browse_limit: int = DEFAULT_BROWSE_LIMIT,
     ) -> list[SessionListEntry]:
-        local_sessions = self.store.list_sessions(session_key, limit=limit)
+        fetch_limit = max(limit, browse_limit)
+        local_sessions = self.store.list_sessions(session_key, limit=fetch_limit)
         merged: list[SessionListEntry] = []
         seen: set[str] = set()
 
@@ -64,7 +88,7 @@ class SessionBrowser:
             seen.add(item.dedup_key)
             merged.append(item)
 
-        for native in self.list_importable_native_sessions(local_sessions, session, limit):
+        for native in self.list_importable_native_sessions(local_sessions, session, fetch_limit):
             item = self._native_entry(native)
             if item.dedup_key in seen:
                 continue
@@ -72,7 +96,39 @@ class SessionBrowser:
             merged.append(item)
 
         self._sort_entries(merged, sort_mode)
-        return merged[:limit]
+        return merged[:fetch_limit]
+
+    def list_page(
+        self,
+        session_key: str,
+        session: SessionRecord,
+        page: int = 1,
+        page_size: int = DEFAULT_SESSION_LIST_PAGE_SIZE,
+        sort_mode: SessionSortMode = DEFAULT_SESSION_LIST_SORT,
+        browse_limit: int = DEFAULT_BROWSE_LIMIT,
+    ) -> SessionListPage:
+        normalized_page = max(page, 1)
+        normalized_size = max(page_size, 1)
+        entries = self.list_entries(session_key, session, limit=browse_limit, sort_mode=sort_mode, browse_limit=browse_limit)
+        total_entries = len(entries)
+        total_pages = max(1, ceil(total_entries / normalized_size))
+        current_page = min(normalized_page, total_pages)
+        start = (current_page - 1) * normalized_size
+        page_entries = entries[start:start + normalized_size]
+        return SessionListPage(
+            entries=page_entries,
+            page=current_page,
+            page_size=normalized_size,
+            start_index=start + 1,
+            sort_mode=sort_mode,
+            has_previous=current_page > 1,
+            has_next=current_page < total_pages,
+            total_entries=total_entries,
+            total_pages=total_pages,
+        )
+
+    def normalize_sort_mode(self, sort_mode: str) -> SessionSortMode:
+        return sort_mode if sort_mode in SESSION_SORT_MODES else DEFAULT_SESSION_LIST_SORT
 
     def resume(
         self,

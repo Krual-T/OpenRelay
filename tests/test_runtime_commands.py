@@ -6,7 +6,7 @@ from openrelay.config import AppConfig, BackendConfig, FeishuConfig
 from openrelay.help_renderer import HelpRenderer
 from openrelay.models import IncomingMessage
 from openrelay.runtime_commands import RuntimeCommandHooks, RuntimeCommandRouter
-from openrelay.session_browser import SessionBrowser
+from openrelay.session_browser import SESSION_SORT_ACTIVE, SessionBrowser
 from openrelay.session_ux import SessionUX
 from openrelay.state import StateStore
 
@@ -15,6 +15,7 @@ class FakeHooks:
     def __init__(self) -> None:
         self.replies: list[dict[str, object]] = []
         self.panel_calls: list[tuple[str, str]] = []
+        self.session_list_calls: list[tuple[str, int, str]] = []
         self.switch_calls: list[tuple[str, str, str]] = []
         self.stop_calls: list[str] = []
         self.restart_scheduled = 0
@@ -24,6 +25,9 @@ class FakeHooks:
 
     async def send_panel(self, message: IncomingMessage, session_key: str, session) -> None:
         self.panel_calls.append((message.message_id, session_key))
+
+    async def send_session_list(self, message: IncomingMessage, session_key: str, session, page: int, sort_mode: str) -> None:
+        self.session_list_calls.append((session_key, page, sort_mode))
 
     async def switch_release_channel(self, message: IncomingMessage, session_key: str, session, target_channel: str, command_name: str, reason: str) -> None:
         self.switch_calls.append((session_key, target_channel, command_name))
@@ -95,6 +99,7 @@ def build_router(tmp_path: Path) -> tuple[RuntimeCommandRouter, StateStore, Fake
         RuntimeCommandHooks(
             reply=hooks.reply,
             send_panel=hooks.send_panel,
+            send_session_list=hooks.send_session_list,
             switch_release_channel=hooks.switch_release_channel,
             stop=hooks.stop,
             schedule_restart=hooks.schedule_restart,
@@ -129,4 +134,15 @@ async def test_runtime_command_router_delegates_panel_and_admin_restart(tmp_path
     assert hooks.panel_calls == [("om_panel", session.base_key)]
     assert hooks.restart_scheduled == 1
     assert hooks.replies[-1]["text"] == "正在重启 openrelay，预计几秒后恢复。"
+    store.close()
+
+
+@pytest.mark.asyncio
+async def test_runtime_command_router_parses_resume_list_page_and_sort(tmp_path: Path) -> None:
+    router, store, hooks = build_router(tmp_path)
+    session = store.load_session("p2p:oc_1")
+
+    await router.handle(make_message(f"/resume list --page 2 --sort {SESSION_SORT_ACTIVE}", suffix="resume_list"), session.base_key, session)
+
+    assert hooks.session_list_calls == [(session.base_key, 2, SESSION_SORT_ACTIVE)]
     store.close()

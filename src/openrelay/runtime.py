@@ -29,7 +29,8 @@ from openrelay.release import (
 from openrelay.state import StateStore
 from openrelay.runtime_live import apply_live_progress, build_reply_card, create_live_reply_state
 from openrelay.runtime_commands import RuntimeCommandHooks, RuntimeCommandRouter
-from openrelay.session_browser import SessionBrowser
+from openrelay.session_browser import SessionBrowser, SessionSortMode
+from openrelay.session_list_card import build_session_list_card
 from openrelay.session_ux import SessionUX
 
 
@@ -90,6 +91,7 @@ class AgentRuntime:
             RuntimeCommandHooks(
                 reply=self._reply,
                 send_panel=self._send_panel,
+                send_session_list=self._send_session_list,
                 switch_release_channel=self._switch_release_channel,
                 stop=self._handle_stop,
                 schedule_restart=self._schedule_restart,
@@ -394,14 +396,16 @@ class AgentRuntime:
             command_reply=True,
         )
 
-    async def _send_panel(self, message: IncomingMessage, session_key: str, session: SessionRecord) -> None:
-        entries = self.session_browser.list_entries(session_key, session, limit=6)
-        context = {
+    def _build_card_action_context(self, message: IncomingMessage, session_key: str) -> dict[str, str]:
+        return {
             "rootId": message.root_id,
             "threadId": message.thread_id or message.root_id,
             "sessionKey": session_key,
             "sessionOwnerOpenId": message.session_owner_open_id or (message.sender_open_id if message.chat_type == "group" and self.config.feishu.group_session_scope != "shared" else ""),
         }
+
+    async def _send_panel(self, message: IncomingMessage, session_key: str, session: SessionRecord) -> None:
+        entries = self.session_browser.list_entries(session_key, session, limit=6)
         card = build_panel_card(
             {
                 "session_id": session.session_id,
@@ -413,7 +417,7 @@ class AgentRuntime:
                 "sandbox": session.safety_mode,
                 "context_usage": self.session_ux.format_context_usage(session),
                 "context_preview": self.session_ux.build_context_preview(session),
-                "action_context": context,
+                "action_context": self._build_card_action_context(message, session_key),
                 "sessions": self.session_ux.build_session_display_entries(entries),
             }
         )
@@ -423,11 +427,39 @@ class AgentRuntime:
                 card,
                 reply_to_message_id=self._command_reply_target(message),
                 root_id=self._root_id_for_message(message),
-                force_new_message=self._is_top_level_p2p_command(message),
+                force_new_message=self._should_force_new_message_for_command_card(message),
             )
         except Exception:
             await self._reply(message, self.session_ux.build_panel_text(session) + "\n\n" + self.session_ux.format_session_list(entries), command_reply=True)
 
+    async def _send_session_list(self, message: IncomingMessage, session_key: str, session: SessionRecord, page: int, sort_mode: SessionSortMode) -> None:
+        session_page = self.session_browser.list_page(session_key, session, page=page, sort_mode=sort_mode)
+        card = build_session_list_card(
+            {
+                "session_id": session.session_id,
+                "current_title": self.session_ux.build_session_title(session.label, session.session_id),
+                "channel": format_release_channel(infer_release_channel(self.config, session)),
+                "cwd": self.session_ux.format_cwd(session.cwd, session),
+                "page": session_page.page,
+                "total_pages": session_page.total_pages,
+                "total_entries": session_page.total_entries,
+                "sort_mode": session_page.sort_mode,
+                "has_previous": session_page.has_previous,
+                "has_next": session_page.has_next,
+                "action_context": self._build_card_action_context(message, session_key),
+                "sessions": self.session_ux.build_session_display_entries(session_page.entries, start_index=session_page.start_index),
+            }
+        )
+        try:
+            await self.messenger.send_interactive_card(
+                message.chat_id,
+                card,
+                reply_to_message_id=self._command_reply_target(message),
+                root_id=self._root_id_for_message(message),
+                force_new_message=self._should_force_new_message_for_command_card(message),
+            )
+        except Exception:
+            await self._reply(message, self.session_ux.format_session_list_page(session_page), command_reply=True, command_name="/resume")
 
     async def _send_reply_card(self, message: IncomingMessage, text: str, title: str = "openrelay 回复") -> None:
         await self.messenger.send_interactive_card(
@@ -486,6 +518,9 @@ class AgentRuntime:
         if not self._is_top_level_p2p_command(message):
             return False
         return command_name not in {"/cwd", "/cd"}
+
+    def _should_force_new_message_for_command_card(self, message: IncomingMessage) -> bool:
+        return self._is_top_level_p2p_command(message) and not self._is_card_action_message(message)
 
     def _is_stop_command(self, text: str) -> bool:
         return text.strip().lower().startswith("/stop")

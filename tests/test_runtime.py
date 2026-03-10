@@ -29,6 +29,18 @@ class FakeMessenger:
         return None
 
 
+def extract_card_commands(card: dict) -> list[str]:
+    commands: list[str] = []
+    for element in card.get("elements", []):
+        if element.get("tag") != "action":
+            continue
+        for action in element.get("actions", []):
+            value = action.get("value") if isinstance(action, dict) else None
+            if isinstance(value, dict) and value.get("command"):
+                commands.append(str(value["command"]))
+    return commands
+
+
 class FakeBackend(Backend):
     name = "fake"
 
@@ -210,7 +222,7 @@ async def test_runtime_panel_command_sends_card(tmp_path: Path) -> None:
 
 
 @pytest.mark.asyncio
-async def test_runtime_resume_list_uses_local_session_ids(tmp_path: Path) -> None:
+async def test_runtime_resume_list_sends_paginated_sortable_card(tmp_path: Path) -> None:
     config = make_config(tmp_path)
     config.workspace_root.mkdir(parents=True, exist_ok=True)
     config.main_workspace_dir.mkdir(parents=True, exist_ok=True)
@@ -223,14 +235,24 @@ async def test_runtime_resume_list_uses_local_session_ids(tmp_path: Path) -> Non
     older.label = "older"
     older.native_session_id = "native_old"
     store.save_session(older)
-    current = store.create_next_session(older.base_key, older, "current")
-    current.native_session_id = "native_current"
-    store.save_session(current)
+    for index in range(6):
+        next_session = store.create_next_session(older.base_key, older, f"session-{index}")
+        next_session.native_session_id = f"native_{index}"
+        store.save_session(next_session)
 
     await runtime.dispatch_message(make_message("/resume list", event_suffix="resume_list"))
-    resume_list = messenger.messages[-1]
-    assert f"id={older.session_id}" in resume_list
-    assert "native=native_old" in resume_list
+
+    assert messenger.cards
+    commands = extract_card_commands(messenger.cards[-1])
+    assert any(command.startswith("/resume s_") for command in commands)
+    assert "/resume list --page 2 --sort updated-desc" in commands
+    assert "/resume list --page 1 --sort active-first" in commands
+
+    await runtime.dispatch_message(make_message("/resume list --page 2 --sort active-first", event_suffix="resume_page2"))
+    latest_card = messenger.cards[-1]
+    header_text = latest_card["elements"][0]["text"]["content"]
+    assert "第 `2` 页" in header_text
+    assert "当前会话优先" in header_text
 
     await runtime.dispatch_message(make_message(f"/resume {older.session_id}", event_suffix="resume_old"))
     assert messenger.messages[-1].startswith("已恢复会话：older")
