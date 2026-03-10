@@ -164,3 +164,24 @@ async def test_runtime_command_router_parses_resume_list_page_and_sort(tmp_path:
 
     assert hooks.session_list_calls == [(session.base_key, 2, SESSION_SORT_ACTIVE)]
     store.close()
+
+
+@pytest.mark.asyncio
+async def test_runtime_command_router_manages_directory_shortcuts(tmp_path: Path) -> None:
+    router, store, hooks = build_router(tmp_path)
+    docs_dir = router.config.main_workspace_dir / "docs"
+    docs_dir.mkdir(parents=True, exist_ok=True)
+    session = store.load_session("p2p:oc_1")
+
+    await router.handle(make_message("/shortcut add docs docs main", suffix="shortcut_add"), session.base_key, session)
+    await router.handle(make_message("/shortcut list", suffix="shortcut_list"), session.base_key, session)
+    await router.handle(make_message("/shortcut cd docs", suffix="shortcut_cd"), session.base_key, session)
+    await router.handle(make_message("/shortcut remove docs", suffix="shortcut_remove"), session.base_key, session)
+
+    assert store.get_directory_shortcut("docs") is None
+    assert hooks.replies[0]["text"].startswith("已保存快捷目录 `docs`。")
+    assert "快捷目录：" in str(hooks.replies[1]["text"])
+    assert "docs -> docs [main]" in str(hooks.replies[1]["text"])
+    assert str(hooks.replies[2]["text"]).startswith("cwd 已切换到 docs。")
+    assert hooks.replies[3]["text"] == "已删除快捷目录 `docs`。"
+    store.close()

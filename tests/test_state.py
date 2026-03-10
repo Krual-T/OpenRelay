@@ -71,3 +71,21 @@ def test_state_migrates_legacy_database_name(tmp_path: Path) -> None:
     assert store.db_path.exists()
     assert legacy_db_path.exists() is False
     store.close()
+
+
+def test_state_directory_shortcut_crud(tmp_path: Path) -> None:
+    config = make_config(tmp_path)
+    config.workspace_root.mkdir(parents=True, exist_ok=True)
+    config.main_workspace_dir.mkdir(parents=True, exist_ok=True)
+    config.develop_workspace_dir.mkdir(parents=True, exist_ok=True)
+    store = StateStore(config)
+
+    from openrelay.config import DirectoryShortcut
+
+    saved = store.save_directory_shortcut(DirectoryShortcut(name="docs", path="docs", channels=("main",)))
+    assert saved.name == "docs"
+    assert store.get_directory_shortcut("DOCS") is not None
+    assert store.list_directory_shortcuts()[0].channels == ("main",)
+    assert store.remove_directory_shortcut("docs") is True
+    assert store.get_directory_shortcut("docs") is None
+    store.close()

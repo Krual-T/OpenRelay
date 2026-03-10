@@ -18,7 +18,7 @@
 
 - Feishu 支持 webhook 与 WebSocket 长连接两种接入方式
 - thread-first 回复：普通回复默认优先在线程里继续
-- 命令集尽量对齐：`/panel`、`/ping`、`/stop`、`/restart`、`/main`、`/stable`、`/develop`、`/new`、`/resume`、`/clear`、`/status`、`/cwd`、`/cd`、`/model`、`/sandbox`、`/tools`、`/help`
+- 命令集尽量对齐：`/panel`、`/ping`、`/stop`、`/restart`、`/main`、`/stable`、`/develop`、`/new`、`/resume`、`/clear`、`/status`、`/cwd`、`/cd`、`/shortcut`、`/model`、`/sandbox`、`/tools`、`/help`
 - 会话支持 `main` / `develop` 工作区切换，并写入 `data/release-events.jsonl`
 - `/panel` 现在是飞书里的总入口：总览页下再分 `sessions / directories / commands / status` 四类结果面
 - `/panel`、`/resume list`、`/help` 这类导航型卡片在按钮切换时会优先原地更新，避免翻页和层级切换不断刷新消息
@@ -121,6 +121,7 @@ http://your-host:3000/feishu/webhook
 - `/clear` - 清空上下文但保留当前目录和配置
 - `/status` - 查看当前会话状态
 - `/cwd [path]`、`/cd [path]` - 查看或切换当前目录
+- `/shortcut list|add|remove|cd` - 在飞书里维护常用目录快捷入口，并复用 `/cwd` 快速切换
 - `/model [name|default]` - 查看或切换模型覆盖值
 - `/sandbox [read-only|workspace-write|danger-full-access]` - 查看或切换执行模式
 - `/tools`、`/help` - 查看当前会话阶段、优先操作建议、常用流程和命令速查
