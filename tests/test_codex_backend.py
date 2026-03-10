@@ -56,6 +56,7 @@ async def test_codex_request_timeout_resets_client(tmp_path: Path, monkeypatch: 
     client = CodexAppServerClient(
         codex_path="codex",
         workspace_root=tmp_path,
+        sqlite_home=tmp_path / "codex-state",
         model="gpt-test",
         safety_mode="danger-full-access",
         request_timeout_seconds=0.01,
@@ -86,6 +87,7 @@ async def test_codex_request_has_no_default_timeout(tmp_path: Path, monkeypatch:
     client = CodexAppServerClient(
         codex_path="codex",
         workspace_root=tmp_path,
+        sqlite_home=tmp_path / "codex-state",
         model="gpt-test",
         safety_mode="danger-full-access",
         request_timeout_seconds=None,
@@ -118,6 +120,7 @@ async def test_codex_interrupt_timeout_forces_reset(tmp_path: Path, monkeypatch:
     client = CodexAppServerClient(
         codex_path="codex",
         workspace_root=tmp_path,
+        sqlite_home=tmp_path / "codex-state",
         model="gpt-test",
         safety_mode="danger-full-access",
         request_timeout_seconds=1,
@@ -171,6 +174,7 @@ async def test_codex_turn_start_cancel_before_response_resets_client(tmp_path: P
     client = CodexAppServerClient(
         codex_path="codex",
         workspace_root=tmp_path,
+        sqlite_home=tmp_path / "codex-state",
         model="gpt-test",
         safety_mode="danger-full-access",
         request_timeout_seconds=1,
@@ -218,3 +222,19 @@ async def test_codex_turn_start_cancel_before_response_resets_client(tmp_path: P
 
     assert reset_reasons == ["Codex app-server request turn/start cancelled by /stop before response"]
     assert client.pending_requests == {}
+
+
+def test_codex_process_env_overrides_sqlite_home(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("CODEX_THREAD_ID", "thread-from-parent")
+    client = CodexAppServerClient(
+        codex_path="codex",
+        workspace_root=tmp_path,
+        sqlite_home=tmp_path / "codex-state",
+        model="gpt-test",
+        safety_mode="danger-full-access",
+    )
+
+    env = client._build_process_env()
+
+    assert env["CODEX_SQLITE_HOME"] == str((tmp_path / "codex-state").resolve())
+    assert env["CODEX_THREAD_ID"] == "thread-from-parent"

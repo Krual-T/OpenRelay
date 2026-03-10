@@ -67,3 +67,20 @@ def test_load_config_disables_codex_request_timeout_when_unset_or_non_positive(
     monkeypatch.setenv("CODEX_REQUEST_TIMEOUT_SECONDS", "45")
     configured_config = load_config(tmp_path)
     assert configured_config.backend.codex_request_timeout_seconds == 45.0
+
+
+def test_load_config_defaults_codex_sqlite_home_under_data_dir(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
+    apply_required_env(monkeypatch)
+
+    config = load_config(tmp_path)
+
+    assert config.backend.codex_sqlite_home == (tmp_path / "data" / "codex-sqlite").resolve()
+
+
+def test_load_config_allows_overriding_codex_sqlite_home(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
+    apply_required_env(monkeypatch)
+    monkeypatch.setenv("CODEX_SQLITE_HOME", "./runtime/codex-state")
+
+    config = load_config(tmp_path)
+
+    assert config.backend.codex_sqlite_home == (tmp_path / "runtime" / "codex-state").resolve()
