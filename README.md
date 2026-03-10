@@ -28,6 +28,7 @@
 - `FEISHU_STREAM_MODE=card` 时会显示 `openrelay` 的运行中状态卡片与 typing
 - 主回复卡片、运行中卡片和常驻操作卡片已收敛到一套更接近 Codex CLI 的低噪音主题语义
 - 当前回复还没结束时，继续发消息会自动排到下一轮；连续补充会合并成一轮 follow-up
+- `/ping`、`/status`、`/usage`、`/help`、`/panel` 这类诊断命令在当前回复尚未结束时也会立即返回，不再被同 session 串行锁静默卡住
 
 ## 环境变量
 

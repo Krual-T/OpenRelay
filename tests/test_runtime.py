@@ -891,6 +891,29 @@ async def test_runtime_stop_keeps_queued_follow_up(tmp_path: Path) -> None:
 
 
 @pytest.mark.asyncio
+async def test_runtime_ping_bypasses_active_run_queue(tmp_path: Path) -> None:
+    config = make_config(tmp_path)
+    config.workspace_root.mkdir(parents=True, exist_ok=True)
+    config.main_workspace_dir.mkdir(parents=True, exist_ok=True)
+    config.develop_workspace_dir.mkdir(parents=True, exist_ok=True)
+    store = StateStore(config)
+    messenger = FakeMessenger()
+    backend = QueuedFollowUpBackend()
+    runtime = AgentRuntime(config, store, messenger, backends={"codex": backend})
+
+    run_task = asyncio.create_task(runtime.dispatch_message(make_message("long running", event_suffix="run_ping")))
+    await asyncio.wait_for(backend.first_started.wait(), timeout=1)
+
+    await asyncio.wait_for(runtime.dispatch_message(make_message("/ping", event_suffix="ping_during_run")), timeout=1)
+
+    assert messenger.messages[-1] == "pong"
+
+    backend.release_first.set()
+    await asyncio.wait_for(run_task, timeout=1)
+    await runtime.shutdown()
+
+
+@pytest.mark.asyncio
 async def test_runtime_top_level_p2p_cwd_prefers_thread_reply(tmp_path: Path) -> None:
     config = make_config(tmp_path)
     config.workspace_root.mkdir(parents=True, exist_ok=True)

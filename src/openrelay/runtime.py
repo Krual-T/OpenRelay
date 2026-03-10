@@ -36,6 +36,7 @@ from openrelay.session_ux import SessionUX
 
 
 DEFAULT_SYSTEMD_SERVICE_UNIT = "openrelay.service"
+NON_BLOCKING_ACTIVE_RUN_COMMANDS = {"/ping", "/status", "/usage", "/help", "/tools", "/panel", "/restart"}
 LOGGER = logging.getLogger("openrelay.runtime")
 
 
@@ -150,6 +151,11 @@ class AgentRuntime:
                 return
 
             session_lock = self._locks[session_key]
+            if session_lock.locked() and self._should_bypass_active_run(message.text):
+                session = self.store.load_session(session_key)
+                handled = await self._handle_command(message, session_key, session)
+                if handled:
+                    return
             if session_lock.locked():
                 queued_follow_up = self._enqueue_pending_input(session_key, message)
                 if queued_follow_up is not None:
@@ -762,6 +768,12 @@ class AgentRuntime:
 
     def _is_stop_command(self, text: str) -> bool:
         return text.strip().lower().startswith("/stop")
+
+    def _should_bypass_active_run(self, text: str) -> bool:
+        stripped = text.strip()
+        if not stripped.startswith("/"):
+            return False
+        return stripped.split(maxsplit=1)[0].lower() in NON_BLOCKING_ACTIVE_RUN_COMMANDS
 
     def _schedule_restart(self) -> None:
         if self._restart_started:
