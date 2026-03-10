@@ -131,6 +131,12 @@ class AgentRuntime:
     def is_admin(self, sender_open_id: str) -> bool:
         return bool(self.config.feishu.admin_open_ids) and sender_open_id in self.config.feishu.admin_open_ids
 
+    def _build_execution_key(self, session_key: str, session: SessionRecord) -> str:
+        native_session_id = str(session.native_session_id or "").strip()
+        if native_session_id:
+            return f"native:{native_session_id}"
+        return f"session:{session_key}"
+
     async def dispatch_message(self, message: IncomingMessage) -> None:
         try:
             if not message.text:
@@ -146,45 +152,47 @@ class AgentRuntime:
                 return
 
             session_key = self.build_session_key(message)
+            session = self.store.load_session(session_key)
+            execution_key = self._build_execution_key(session_key, session)
             if self._is_stop_command(message.text):
-                await self._handle_stop(message, session_key)
+                await self._handle_stop(message, execution_key)
                 return
 
-            session_lock = self._locks[session_key]
+            session_lock = self._locks[execution_key]
             if session_lock.locked() and self._should_bypass_active_run(message.text):
-                session = self.store.load_session(session_key)
                 handled = await self._handle_command(message, session_key, session)
                 if handled:
                     return
             if session_lock.locked():
-                queued_follow_up = self._enqueue_pending_input(session_key, message)
+                queued_follow_up = self._enqueue_pending_input(execution_key, message)
                 if queued_follow_up is not None:
                     await self._reply(message, queued_follow_up.acknowledgement_text())
                 return
 
             async with session_lock:
-                await self._handle_message_serialized(message, session_key)
+                await self._handle_message_serialized(message, execution_key)
         except Exception:
             LOGGER.exception("dispatch_message failed for event_id=%s chat_id=%s", message.event_id, message.chat_id)
 
-    async def _handle_message_serialized(self, message: IncomingMessage, session_key: str) -> None:
+    async def _handle_message_serialized(self, message: IncomingMessage, execution_key: str) -> None:
         pending_input: IncomingMessage | QueuedFollowUp | None = message
         while pending_input is not None:
-            await self._handle_single_serialized_input(pending_input, session_key)
-            pending_input = self._dequeue_pending_input(session_key)
+            await self._handle_single_serialized_input(pending_input, execution_key)
+            pending_input = self._dequeue_pending_input(execution_key)
 
-    async def _handle_single_serialized_input(self, pending_input: IncomingMessage | QueuedFollowUp, session_key: str) -> None:
+    async def _handle_single_serialized_input(self, pending_input: IncomingMessage | QueuedFollowUp, execution_key: str) -> None:
         message = pending_input.to_message() if isinstance(pending_input, QueuedFollowUp) else pending_input
+        session_key = self.build_session_key(message)
         session = self.store.load_session(session_key)
         if message.text.startswith("/"):
             handled = await self._handle_command(message, session_key, session)
             if handled:
                 return
-        await self._run_backend_turn(message, session_key, session)
+        await self._run_backend_turn(message, execution_key, session)
 
-    def _enqueue_pending_input(self, session_key: str, message: IncomingMessage) -> QueuedFollowUp | None:
-        pending_inputs = self._pending_session_inputs[session_key]
-        if self.active_runs.get(session_key) is not None and not message.text.startswith("/"):
+    def _enqueue_pending_input(self, execution_key: str, message: IncomingMessage) -> QueuedFollowUp | None:
+        pending_inputs = self._pending_session_inputs[execution_key]
+        if self.active_runs.get(execution_key) is not None and not message.text.startswith("/"):
             last_input = pending_inputs[-1] if pending_inputs else None
             if isinstance(last_input, QueuedFollowUp):
                 last_input.merge(message)
@@ -195,22 +203,22 @@ class AgentRuntime:
         pending_inputs.append(message)
         return None
 
-    def _dequeue_pending_input(self, session_key: str) -> IncomingMessage | QueuedFollowUp | None:
-        pending_inputs = self._pending_session_inputs.get(session_key)
+    def _dequeue_pending_input(self, execution_key: str) -> IncomingMessage | QueuedFollowUp | None:
+        pending_inputs = self._pending_session_inputs.get(execution_key)
         if not pending_inputs:
             return None
         next_input = pending_inputs.popleft()
         if not pending_inputs:
-            self._pending_session_inputs.pop(session_key, None)
+            self._pending_session_inputs.pop(execution_key, None)
         return next_input
 
-    def _queued_follow_up_count(self, session_key: str) -> int:
-        pending_inputs = self._pending_session_inputs.get(session_key)
+    def _queued_follow_up_count(self, execution_key: str) -> int:
+        pending_inputs = self._pending_session_inputs.get(execution_key)
         if not pending_inputs:
             return 0
         return sum(item.message_count for item in pending_inputs if isinstance(item, QueuedFollowUp))
 
-    async def _run_backend_turn(self, message: IncomingMessage, session_key: str, session: SessionRecord) -> None:
+    async def _run_backend_turn(self, message: IncomingMessage, execution_key: str, session: SessionRecord) -> None:
         backend = self.backends.get(session.backend)
         if backend is None:
             await self._reply(message, f"Unsupported backend: {session.backend}")
@@ -221,7 +229,7 @@ class AgentRuntime:
         async def cancel(_reason: str) -> None:
             cancel_event.set()
 
-        self.active_runs[session_key] = ActiveRun(started_at=utc_now(), description=self.session_ux.shorten(message.text, 72), cancel=cancel)
+        self.active_runs[execution_key] = ActiveRun(started_at=utc_now(), description=self.session_ux.shorten(message.text, 72), cancel=cancel)
         typing_state: dict[str, Any] | None = None
         streaming: FeishuStreamingSession | None = None
         streaming_broken = False
@@ -273,7 +281,7 @@ class AgentRuntime:
                 if not has_started:
                     streaming = None
                 stop_spinner_task()
-                LOGGER.exception("streaming update failed for session_key=%s", session_key)
+                LOGGER.exception("streaming update failed for execution_key=%s", execution_key)
 
         async def spinner_loop() -> None:
             nonlocal streaming_dirty
@@ -291,7 +299,7 @@ class AgentRuntime:
                     await update_streaming()
                 except Exception:
                     stop_spinner_task()
-                    LOGGER.exception("streaming tick failed for session_key=%s", session_key)
+                    LOGGER.exception("streaming tick failed for execution_key=%s", execution_key)
                     return
 
         try:
@@ -362,7 +370,7 @@ class AgentRuntime:
                 await self._reply_final(message, f"处理失败：{exc}", streaming)
         finally:
             stop_spinner_task()
-            self.active_runs.pop(session_key, None)
+            self.active_runs.pop(execution_key, None)
             if typing_state is not None:
                 try:
                     await self.typing_manager.remove(typing_state)
@@ -372,13 +380,13 @@ class AgentRuntime:
     async def _handle_command(self, message: IncomingMessage, session_key: str, session: SessionRecord) -> bool:
         return await self.command_router.handle(message, session_key, session)
 
-    async def _handle_stop(self, message: IncomingMessage, session_key: str) -> None:
-        active = self.active_runs.get(session_key)
+    async def _handle_stop(self, message: IncomingMessage, execution_key: str) -> None:
+        active = self.active_runs.get(execution_key)
         if active is None:
             await self._reply(message, "当前没有进行中的回复。", command_reply=True)
             return
         await active.cancel("interrupted by /stop")
-        queued_follow_up_count = self._queued_follow_up_count(session_key)
+        queued_follow_up_count = self._queued_follow_up_count(execution_key)
         stop_message = "已发送停止请求，正在中断当前回复。"
         if queued_follow_up_count > 0:
             stop_message = f"{stop_message[:-1]} 停止后会继续处理已收到的 {queued_follow_up_count} 条补充消息。"
@@ -397,7 +405,7 @@ class AgentRuntime:
         if not workspace_dir.exists():
             await self._reply(message, f"{target_channel} 工作目录不存在：{workspace_dir}", command_reply=True)
             return
-        active = self.active_runs.get(session_key)
+        active = self.active_runs.get(self._build_execution_key(session_key, session))
         cancelled_active_run = active is not None
         if active is not None:
             await active.cancel(f"interrupted by {command_name}")
