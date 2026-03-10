@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 import os
 import shlex
-from typing import Awaitable, Callable
+from typing import Awaitable, Callable, Literal
 
 from openrelay.config import AppConfig, SAFETY_MODES
 from openrelay.help_renderer import HelpRenderer
@@ -15,17 +15,20 @@ from openrelay.state import StateStore
 
 
 ADMIN_ONLY_COMMANDS = {"/restart"}
+PANEL_USAGE = "使用 /panel [sessions|directories|commands|status] [--page N] [--sort updated-desc|active-first]。"
 RESUME_USAGE = "使用 /resume [list|latest|<序号>|<session_id>] [--page N] [--sort updated-desc|active-first]。"
 
 ReplyHook = Callable[..., Awaitable[None]]
 SendHelpHook = Callable[[IncomingMessage, str, SessionRecord], Awaitable[None]]
-SendPanelHook = Callable[[IncomingMessage, str, SessionRecord], Awaitable[None]]
+SendPanelHook = Callable[[IncomingMessage, str, SessionRecord, "PanelCommandArgs"], Awaitable[None]]
 SendSessionListHook = Callable[[IncomingMessage, str, SessionRecord, int, SessionSortMode], Awaitable[None]]
 SwitchReleaseHook = Callable[[IncomingMessage, str, SessionRecord, str, str, str], Awaitable[None]]
 StopHook = Callable[[IncomingMessage, str], Awaitable[None]]
 ScheduleRestartHook = Callable[[], None]
 IsAdminHook = Callable[[str], bool]
 AvailableBackendsHook = Callable[[], list[str]]
+
+PanelView = Literal["home", "sessions", "directories", "commands", "status"]
 
 
 @dataclass(slots=True)
@@ -44,6 +47,13 @@ class RuntimeCommandHooks:
 @dataclass(slots=True)
 class ResumeCommandArgs:
     target: str
+    page: int
+    sort_mode: SessionSortMode
+
+
+@dataclass(slots=True)
+class PanelCommandArgs:
+    view: PanelView
     page: int
     sort_mode: SessionSortMode
 
@@ -88,7 +98,12 @@ class RuntimeCommandRouter:
             return True
 
         if name == "/panel":
-            await self.hooks.send_panel(message, session_key, session)
+            try:
+                args = self._parse_panel_command_args(arg_text)
+            except ValueError as exc:
+                await self.hooks.reply(message, f"panel 参数无效：{exc}\n{PANEL_USAGE}", command_reply=True, command_name="/panel")
+                return True
+            await self.hooks.send_panel(message, session_key, session, args)
             return True
 
         if name == "/restart":
@@ -219,6 +234,67 @@ class RuntimeCommandRouter:
                 raise ValueError(f"多余参数：{token}")
             index += 1
         return ResumeCommandArgs(target=target, page=page, sort_mode=sort_mode)
+
+    def _parse_panel_command_args(self, arg_text: str) -> PanelCommandArgs:
+        tokens = shlex.split(arg_text) if arg_text else []
+        raw_view = ""
+        page = 1
+        sort_mode = DEFAULT_SESSION_LIST_SORT
+        index = 0
+        while index < len(tokens):
+            token = tokens[index]
+            if token == "--page":
+                index += 1
+                if index >= len(tokens):
+                    raise ValueError("--page 缺少页码")
+                page = self._parse_positive_int(tokens[index], "page")
+            elif token.startswith("--page="):
+                page = self._parse_positive_int(token.split("=", 1)[1], "page")
+            elif token == "--sort":
+                index += 1
+                if index >= len(tokens):
+                    raise ValueError("--sort 缺少排序模式")
+                sort_mode = self.session_browser.normalize_sort_mode(tokens[index])
+            elif token.startswith("--sort="):
+                sort_mode = self.session_browser.normalize_sort_mode(token.split("=", 1)[1])
+            elif token.startswith("--"):
+                raise ValueError(f"不支持的选项：{token}")
+            elif not raw_view:
+                raw_view = token
+            else:
+                raise ValueError(f"多余参数：{token}")
+            index += 1
+
+        uses_session_paging = page != 1 or sort_mode != DEFAULT_SESSION_LIST_SORT
+        view = self._normalize_panel_view(raw_view or ("sessions" if uses_session_paging else "home"))
+        if view != "sessions" and uses_session_paging:
+            raise ValueError("只有 /panel sessions 支持 --page 和 --sort")
+        return PanelCommandArgs(view=view, page=page, sort_mode=sort_mode)
+
+    def _normalize_panel_view(self, value: str) -> PanelView:
+        aliases: dict[str, PanelView] = {
+            "": "home",
+            "home": "home",
+            "overview": "home",
+            "main": "home",
+            "session": "sessions",
+            "sessions": "sessions",
+            "list": "sessions",
+            "directory": "directories",
+            "directories": "directories",
+            "dir": "directories",
+            "dirs": "directories",
+            "command": "commands",
+            "commands": "commands",
+            "action": "commands",
+            "actions": "commands",
+            "status": "status",
+            "state": "status",
+        }
+        normalized = value.strip().lower()
+        if normalized in aliases:
+            return aliases[normalized]
+        raise ValueError(f"不支持的 panel 视图：{value}")
 
     def _parse_positive_int(self, value: str, name: str) -> int:
         try:

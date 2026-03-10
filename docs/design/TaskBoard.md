@@ -12,16 +12,16 @@
 
 ## Ready
 
-### [ ] OR-TASK-009 查询优化与 `/panel` 界面设计
+### [ ] OR-TASK-010 单卡翻页与终极 `/panel` 导航
 - **优先级**：P2
-- **目标**：让用户在飞书里通过查询与 `/panel` 进入会话、目录和常用动作时，路径更短、信息更聚焦、界面更易扫描，不需要在命令记忆和卡片浏览之间来回切换。
-- **当前关注**：查询入口应该覆盖哪些高频对象（会话、目录、命令、状态）；结果是偏搜索、筛选还是快捷动作；`/panel` 应该承担总入口、导航面板还是操作面板；卡片的信息层级、主次动作、折叠策略和主题一致性如何收敛；查询结果与现有 `/resume list`、目录快捷入口、帮助卡片之间是否要共享组件和交互模式。
+- **目标**：让用户在飞书里浏览分页内容、进入子菜单、返回主菜单时，尽量始终停留在同一张卡片内完成，不因为翻页和层级切换不断刷出新消息，保持面板交互连续、稳定、低噪音。
+- **当前关注**：现有 `/resume list`、`/panel`、帮助卡片的翻页与跳转是否都能收敛到同一张卡；卡片状态该如何保存（页面、排序、子菜单路径、选中对象）；CardKit 更新能力是否足以支撑“同卡翻页 + 子菜单 + 返回主菜单”；哪些动作适合原地更新，哪些动作仍应新开卡片或落回文本；单卡导航和现有 command/value 携带上下文方案如何兼容。
 - **关闭条件**：
-  - [ ] 独立 design note 明确查询场景、信息架构、结果层级和 `/panel` 的界面职责边界。
-  - [ ] 至少一条最小交互路径落地，例如 `/panel` 内的查询/筛选入口、快捷搜索结果卡片或统一的快捷动作区域。
-  - [ ] 查询结果与 `/panel` 主界面在组件映射和交互语义上保持一致，而不是各自零散设计。
-  - [ ] README 或帮助文案补齐新的查询 / panel 使用心智，并至少补一条相关测试或明确的手工验收步骤。
-- **建议产物**：`docs/design/` 下的专题 note；`src/openrelay/panel_card.py`、`src/openrelay/session_browser.py`、`src/openrelay/runtime.py`、`src/openrelay/help_renderer.py`、相关测试与 README。
+  - [ ] 独立 design note 明确单卡导航的信息架构、状态模型和返回路径。
+  - [ ] 至少一条分页场景支持在同一张卡片内翻页完成，而不是每次翻页都发新卡。
+  - [ ] 至少一条子菜单路径落地，例如从主 `/panel` 进入某个子菜单后还能返回主菜单。
+  - [ ] README 或帮助文案补齐新的 panel 导航心智，并至少补一条相关测试或明确的手工验收步骤。
+- **建议产物**：`docs/design/` 下的专题 note；`src/openrelay/panel_card.py`、`src/openrelay/session_list_card.py`、`src/openrelay/runtime.py`、`src/openrelay/streaming_card.py`、相关测试与 README。
 
 ### [ ] OR-TASK-003 多机器人、多用户、多终端的支持方式
 - **优先级**：P3
@@ -35,6 +35,18 @@
 - **建议产物**：`docs/design/` 下的专题 note；`src/openrelay/config.py`、`src/openrelay/state.py`、`src/openrelay/runtime.py` 等对应实现。
 
 ## Landed / Follow-up
+
+### [x] OR-TASK-009 查询优化与 `/panel` 界面设计
+- **当前状态**：第一版已落地。
+- **已完成证据**：`docs/design/panel-query-information-architecture.md`、`README.md`、`src/openrelay/panel_card.py`、`src/openrelay/runtime.py`、`src/openrelay/runtime_commands.py`、`src/openrelay/help_renderer.py`、`src/openrelay/session_ux.py`、`tests/test_runtime.py`、`tests/test_runtime_commands.py`。
+- **本轮已收敛**：
+  - [x] 独立 design note 已明确查询场景、信息架构、结果层级和 `/panel` 的职责边界。
+  - [x] `/panel` 已收敛为总入口，并落地 `sessions / directories / commands / status` 四类结果面；其中 `sessions` 支持最小翻页 / 排序闭环。
+  - [x] 总览预览项与结果页项已共享同一套 `title / meta / preview / action` 语义，不再各自零散设计。
+  - [x] README、`/help` 与自动化测试已同步新的 `/panel` 使用心智。
+- **后续 follow-up**：
+  - [ ] 评估是否为会话结果补自由文本搜索，而不是只停留在结构化筛选。
+  - [ ] 评估是否把 `/resume list` 的分页 / 排序进一步并到单卡 `/panel sessions` 导航里。
 
 ### [x] OR-TASK-005 响应卡片对齐 Codex CLI 的样式和配色
 - **当前状态**：本轮已落地。

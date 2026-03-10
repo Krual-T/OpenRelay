@@ -275,12 +275,14 @@ class SessionUX:
             f"cwd={self.format_cwd(session.cwd, session)}",
             f"model={self.effective_model(session)}",
             f"sandbox={session.safety_mode}",
-            "提示：先 /cwd <path> 再发消息，就会在目标目录进入 Codex；如需强制切回稳定版本，发送 /main 原因。",
+            "结果面：/panel sessions | /panel directories | /panel commands | /panel status",
+            "提示：/panel 现在是总入口；先选会话 / 目录 / 命令 / 状态，再进入对应结果面。",
+            "目录入口仍复用 /cwd 主路径；如需强制切回稳定版本，发送 /main 原因。",
         ]
         shortcut_entries = self.build_directory_shortcut_entries(session)
         if shortcut_entries:
             lines.append("常用目录：")
             lines.extend([f"- {entry['label']} -> {entry['display_path']}" for entry in shortcut_entries])
             lines.append("面板里的快捷目录按钮会直接执行稳定的 /cwd 切换。")
-        lines.append("commands: /restart /main /stable /develop /new /resume /resume latest /cwd <path> /cd <path> /status /model [name|default] /sandbox [mode] /clear")
+        lines.append("commands: /panel sessions /panel directories /panel commands /panel status /resume list /resume latest /cwd <path> /main /develop /new /status /model [name|default] /sandbox [mode] /clear")
         return "\n".join(lines)
