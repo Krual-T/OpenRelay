@@ -20,8 +20,9 @@
 - thread-first 回复：普通回复默认优先在线程里继续
 - 命令集尽量对齐：`/panel`、`/ping`、`/stop`、`/restart`、`/main`、`/stable`、`/develop`、`/new`、`/resume`、`/clear`、`/status`、`/cwd`、`/cd`、`/model`、`/sandbox`、`/tools`、`/help`
 - 会话支持 `main` / `develop` 工作区切换，并写入 `data/release-events.jsonl`
-- `/panel` 会发送飞书交互卡片，最近会话和常用动作都在卡片里
-- `/panel` 现在可按 `main / develop` 作用域显示常用目录快捷按钮，点击后直接复用 `/cwd` 切换
+- `/panel` 现在是飞书里的总入口：总览页下再分 `sessions / directories / commands / status` 四类结果面
+- `/panel` 的会话结果继续复用 `/resume` 主路径，目录结果继续复用 `/cwd` 主路径，避免再长出第二套执行语义
+- `/panel` 仍会按 `main / develop` 作用域显示常用目录快捷按钮，点击后直接复用 `/cwd` 切换
 - `/resume` 现在会合并本地会话与可导入的原生 `~/.codex/sessions` 历史
 - `FEISHU_STREAM_MODE=card` 时会显示 `openrelay` 的运行中状态卡片与 typing
 - 主回复卡片、运行中卡片和常驻操作卡片已收敛到一套更接近 Codex CLI 的低噪音主题语义
@@ -101,7 +102,7 @@ http://your-host:3000/feishu/webhook
 
 ## 命令
 
-- `/panel` - 打开会话面板卡片
+- `/panel [sessions|directories|commands|status]` - 打开总入口或直接进入对应结果面；`sessions` 额外支持 `--page` 与 `--sort`
 - `/ping` - 连通性检查
 - `/stop` - 停止当前回复
 - `/restart` - 重启当前服务进程
@@ -115,6 +116,8 @@ http://your-host:3000/feishu/webhook
 - `/model [name|default]` - 查看或切换模型覆盖值
 - `/sandbox [read-only|workspace-write|danger-full-access]` - 查看或切换执行模式
 - `/tools`、`/help` - 查看当前会话阶段、优先操作建议、常用流程和命令速查
+
+推荐路径是：先 `/panel`，再点进 `sessions / directories / commands / status` 对应结果面；其中会话结果负责“找回哪条会话”，目录结果负责“进哪个目录”，命令结果负责“高频动作直达”，状态结果负责“先判断现场”。
 
 如果你的 `/panel` 已配置常用目录快捷按钮，优先直接点按钮切目录；没有合适入口时再手写 `/cwd <path>`。
 

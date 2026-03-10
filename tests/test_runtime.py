@@ -277,6 +277,14 @@ async def test_runtime_panel_command_sends_card(tmp_path: Path) -> None:
 
     await runtime.dispatch_message(make_message("/panel"))
     assert messenger.cards
+    panel_card = messenger.cards[-1]
+    panel_text = extract_card_text(panel_card)
+    panel_commands = extract_card_commands(panel_card)
+    assert "面板 · 总览" in panel_text
+    assert "/panel sessions" in panel_commands
+    assert "/panel directories" in panel_commands
+    assert "/panel commands" in panel_commands
+    assert "/panel status" in panel_commands
     await runtime.shutdown()
 
 
@@ -374,6 +382,70 @@ async def test_runtime_resume_list_sends_paginated_sortable_card(tmp_path: Path)
     await runtime.dispatch_message(make_message(f"/resume {older.session_id}", event_suffix="resume_old"))
     assert messenger.messages[-1].startswith("已恢复会话：older")
     assert f"session_id={older.session_id}" in messenger.messages[-1]
+    await runtime.shutdown()
+
+
+@pytest.mark.asyncio
+async def test_runtime_panel_views_show_structured_results(tmp_path: Path) -> None:
+    config = make_config(tmp_path)
+    config.workspace_root.mkdir(parents=True, exist_ok=True)
+    config.main_workspace_dir.mkdir(parents=True, exist_ok=True)
+    config.develop_workspace_dir.mkdir(parents=True, exist_ok=True)
+    main_docs = config.main_workspace_dir / "docs"
+    develop_api = config.develop_workspace_dir / "api"
+    main_docs.mkdir(parents=True, exist_ok=True)
+    develop_api.mkdir(parents=True, exist_ok=True)
+    config.directory_shortcuts = (
+        DirectoryShortcut(name="文档", path="docs", channels=("main",)),
+        DirectoryShortcut(name="修复 API", path="api", channels=("develop",)),
+    )
+    store = StateStore(config)
+    messenger = FakeMessenger()
+    runtime = AgentRuntime(config, store, messenger, backends={"codex": FakeBackend()})
+
+    current = store.load_session("p2p:oc_1")
+    current.label = "current"
+    store.save_session(current)
+    for index in range(6):
+        next_session = store.create_next_session(current.base_key, current, f"session-{index}")
+        next_session.native_session_id = f"native_{index}"
+        store.save_session(next_session)
+
+    await runtime.dispatch_message(make_message("/panel sessions --page 2 --sort active-first", event_suffix="panel_sessions"))
+    session_card = messenger.cards[-1]
+    session_text = extract_card_text(session_card)
+    session_commands = extract_card_commands(session_card)
+    assert "面板 · 会话" in session_text
+    assert "/resume latest" in session_commands
+    assert "/resume list --page 2 --sort active-first" in session_commands
+    assert "/panel sessions --page 1 --sort updated-desc" in session_commands
+    assert any(command.startswith("/resume s_") for command in session_commands)
+
+    await runtime.dispatch_message(make_message("/panel directories", event_suffix="panel_directories"))
+    directories_card = messenger.cards[-1]
+    directory_text = extract_card_text(directories_card)
+    directory_commands = extract_card_commands(directories_card)
+    assert "面板 · 目录" in directory_text
+    assert f"/cwd {shlex.quote(str(main_docs))}" in directory_commands
+
+    await runtime.dispatch_message(make_message("/panel commands", event_suffix="panel_commands"))
+    commands_card = messenger.cards[-1]
+    commands_text = extract_card_text(commands_card)
+    commands_commands = extract_card_commands(commands_card)
+    assert "面板 · 命令" in commands_text
+    assert "/resume latest" in commands_commands
+    assert "/panel directories" in commands_commands
+    assert "/new" in commands_commands
+
+    await runtime.dispatch_message(make_message("/panel status", event_suffix="panel_status"))
+    status_card = messenger.cards[-1]
+    status_text = extract_card_text(status_card)
+    status_commands = extract_card_commands(status_card)
+    assert "面板 · 状态" in status_text
+    assert "/status" in status_commands
+    assert "/usage" in status_commands
+    assert "/help" in status_commands
+
     await runtime.shutdown()
 
 

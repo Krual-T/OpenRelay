@@ -15,7 +15,7 @@ class FakeHooks:
     def __init__(self) -> None:
         self.replies: list[dict[str, object]] = []
         self.help_calls: list[tuple[str, str]] = []
-        self.panel_calls: list[tuple[str, str]] = []
+        self.panel_calls: list[tuple[str, str, str, int, str]] = []
         self.session_list_calls: list[tuple[str, int, str]] = []
         self.switch_calls: list[tuple[str, str, str]] = []
         self.stop_calls: list[str] = []
@@ -27,8 +27,8 @@ class FakeHooks:
     async def send_help(self, message: IncomingMessage, session_key: str, session) -> None:
         self.help_calls.append((message.message_id, session_key))
 
-    async def send_panel(self, message: IncomingMessage, session_key: str, session) -> None:
-        self.panel_calls.append((message.message_id, session_key))
+    async def send_panel(self, message: IncomingMessage, session_key: str, session, args) -> None:
+        self.panel_calls.append((message.message_id, session_key, args.view, args.page, args.sort_mode))
 
     async def send_session_list(self, message: IncomingMessage, session_key: str, session, page: int, sort_mode: str) -> None:
         self.session_list_calls.append((session_key, page, sort_mode))
@@ -138,9 +138,20 @@ async def test_runtime_command_router_delegates_panel_and_admin_restart(tmp_path
     await router.handle(make_message("/restart", sender_open_id="ou_admin", suffix="restart_admin"), session.base_key, session)
 
     assert hooks.help_calls == [("om_help", session.base_key)]
-    assert hooks.panel_calls == [("om_panel", session.base_key)]
+    assert hooks.panel_calls == [("om_panel", session.base_key, "home", 1, "updated-desc")]
     assert hooks.restart_scheduled == 1
     assert hooks.replies[-1]["text"] == "正在重启 openrelay，预计几秒后恢复。"
+    store.close()
+
+
+@pytest.mark.asyncio
+async def test_runtime_command_router_parses_panel_view_page_and_sort(tmp_path: Path) -> None:
+    router, store, hooks = build_router(tmp_path)
+    session = store.load_session("p2p:oc_1")
+
+    await router.handle(make_message(f"/panel sessions --page 2 --sort {SESSION_SORT_ACTIVE}", suffix="panel_sessions"), session.base_key, session)
+
+    assert hooks.panel_calls == [("om_panel_sessions", session.base_key, "sessions", 2, SESSION_SORT_ACTIVE)]
     store.close()
 
 
