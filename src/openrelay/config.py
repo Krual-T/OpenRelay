@@ -38,6 +38,7 @@ class BackendConfig:
     default_safety_mode: str = "workspace-write"
     codex_cli_path: str = "codex"
     codex_sessions_dir: Path = Path.home() / ".codex" / "sessions"
+    codex_sqlite_home: Path = Path.home() / ".codex"
     codex_request_timeout_seconds: float | None = None
 
 
@@ -254,6 +255,7 @@ def load_config(cwd: str | Path | None = None) -> AppConfig:
             default_safety_mode=default_safety_mode,
             codex_cli_path=read_first("CODEX_CLI_PATH", "CODEX_PATH", default="codex"),
             codex_sessions_dir=Path(read_first("CODEX_SESSIONS_DIR", default=str(Path.home() / ".codex" / "sessions"))).expanduser().resolve(),
+            codex_sqlite_home=resolve_env_path(base, "CODEX_SQLITE_HOME", default=str(data_dir / "codex-sqlite")),
             codex_request_timeout_seconds=read_optional_float("CODEX_REQUEST_TIMEOUT_SECONDS", default=None),
         ),
         directory_shortcuts=read_directory_shortcuts("DIRECTORY_SHORTCUTS"),

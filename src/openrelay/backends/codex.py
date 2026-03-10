@@ -206,6 +206,7 @@ class CodexAppServerClient:
         self,
         codex_path: str,
         workspace_root: Path,
+        sqlite_home: Path,
         model: str,
         safety_mode: str,
         *,
@@ -214,6 +215,7 @@ class CodexAppServerClient:
     ):
         self.codex_path = codex_path
         self.workspace_root = workspace_root
+        self.sqlite_home = sqlite_home
         self.model = model
         self.safety_mode = safety_mode
         self.request_timeout_seconds = self._normalize_request_timeout(request_timeout_seconds)
@@ -282,7 +284,8 @@ class CodexAppServerClient:
         await ready_task
 
     async def _start(self) -> None:
-        env = build_subprocess_env("codex")
+        env = self._build_process_env()
+        self.sqlite_home.mkdir(parents=True, exist_ok=True)
         self.process = await asyncio.create_subprocess_exec(
             self.codex_path,
             "app-server",
@@ -301,6 +304,11 @@ class CodexAppServerClient:
             "initialize",
             {"clientInfo": {"name": "openrelay", "version": "0.1.0"}},
         )
+
+    def _build_process_env(self) -> dict[str, str]:
+        env = build_subprocess_env("codex")
+        env["CODEX_SQLITE_HOME"] = str(self.sqlite_home)
+        return env
 
     async def _read_stdout(self) -> None:
         assert self.process is not None and self.process.stdout is not None
@@ -529,11 +537,13 @@ class CodexBackend(Backend):
         codex_path: str,
         default_model: str,
         *,
+        sqlite_home: Path,
         request_timeout_seconds: float | None = DEFAULT_REQUEST_TIMEOUT_SECONDS,
         interrupt_grace_seconds: float = DEFAULT_INTERRUPT_GRACE_SECONDS,
     ):
         self.codex_path = codex_path
         self.default_model = default_model
+        self.sqlite_home = sqlite_home
         self.request_timeout_seconds = request_timeout_seconds
         self.interrupt_grace_seconds = interrupt_grace_seconds
 
@@ -551,6 +561,7 @@ class CodexBackend(Backend):
             client = CodexAppServerClient(
                 codex_path=self.codex_path,
                 workspace_root=context.workspace_root,
+                sqlite_home=self.sqlite_home,
                 model=session.model_override or self.default_model,
                 safety_mode=session.safety_mode,
                 request_timeout_seconds=self.request_timeout_seconds,

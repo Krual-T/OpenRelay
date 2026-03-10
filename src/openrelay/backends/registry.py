@@ -27,6 +27,7 @@ def build_builtin_backend_descriptors() -> dict[str, BackendDescriptor]:
             factory=lambda config: CodexBackend(
                 config.backend.codex_cli_path,
                 config.backend.default_model,
+                sqlite_home=config.backend.codex_sqlite_home,
                 request_timeout_seconds=config.backend.codex_request_timeout_seconds,
             ),
         ),
