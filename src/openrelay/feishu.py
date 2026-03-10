@@ -9,7 +9,7 @@ import uuid
 from typing import Any, Awaitable, Callable
 
 import lark_oapi as lark
-from lark_oapi.api.im.v1 import ReplyMessageRequest, ReplyMessageRequestBody
+from lark_oapi.api.im.v1 import ReplyMessageRequest, ReplyMessageRequestBody, UpdateMessageRequest, UpdateMessageRequestBody
 from lark_oapi.api.im.v1.model.p2_im_message_receive_v1 import P2ImMessageReceiveV1
 from lark_oapi.core.enum import AccessTokenType, HttpMethod, LogLevel
 from lark_oapi.core.model import BaseRequest, RawRequest
@@ -307,6 +307,14 @@ class FeishuMessenger:
         _ensure_success(response, f"Feishu create {msg_type}")
         return _response_payload(response)
 
+    async def update_message(self, message_id: str, msg_type: str, content: str) -> dict[str, Any]:
+        request = UpdateMessageRequest.builder().message_id(message_id).request_body(
+            UpdateMessageRequestBody.builder().msg_type(msg_type).content(content).build()
+        ).build()
+        response = await self.client.im.v1.message.aupdate(request)
+        _ensure_success(response, f"Feishu update {msg_type}")
+        return _response_payload(response)
+
     async def send_text(self, chat_id: str, text: str, *, reply_to_message_id: str = "", root_id: str = "", force_new_message: bool = False) -> None:
         for chunk in split_text(text):
             if reply_to_message_id and not force_new_message:
@@ -317,8 +325,23 @@ class FeishuMessenger:
                     LOGGER.exception("reply text failed for message_id=%s", reply_to_message_id)
             await self.create_message(chat_id, "post", build_markdown_post_content(chunk), root_id=root_id)
 
-    async def send_interactive_card(self, chat_id: str, card: dict[str, Any], *, reply_to_message_id: str = "", root_id: str = "", force_new_message: bool = False) -> None:
+    async def send_interactive_card(
+        self,
+        chat_id: str,
+        card: dict[str, Any],
+        *,
+        reply_to_message_id: str = "",
+        root_id: str = "",
+        force_new_message: bool = False,
+        update_message_id: str = "",
+    ) -> None:
         content = _json_dumps(card)
+        if update_message_id:
+            try:
+                await self.update_message(update_message_id, "interactive", content)
+                return
+            except Exception:
+                LOGGER.exception("update interactive card failed for message_id=%s", update_message_id)
         if reply_to_message_id and not force_new_message:
             try:
                 await self.reply_message(reply_to_message_id, "interactive", content, reply_in_thread=True)

@@ -462,6 +462,7 @@ class AgentRuntime:
                 reply_to_message_id=self._command_reply_target(message),
                 root_id=self._root_id_for_message(message),
                 force_new_message=self._should_force_new_message_for_command_card(message),
+                update_message_id=self._command_card_update_target(message),
             )
         except Exception:
             await self._reply(message, self.help_renderer.build_text(session, self.available_backend_names()), command_reply=True, command_name="/help")
@@ -511,6 +512,7 @@ class AgentRuntime:
                 reply_to_message_id=self._command_reply_target(message),
                 root_id=self._root_id_for_message(message),
                 force_new_message=self._should_force_new_message_for_command_card(message),
+                update_message_id=self._command_card_update_target(message),
             )
         except Exception:
             await self._reply(message, fallback_text, command_reply=True, command_name="/panel")
@@ -540,6 +542,7 @@ class AgentRuntime:
                 reply_to_message_id=self._command_reply_target(message),
                 root_id=self._root_id_for_message(message),
                 force_new_message=self._should_force_new_message_for_command_card(message),
+                update_message_id=self._command_card_update_target(message),
             )
         except Exception:
             await self._reply(message, self.session_ux.format_session_list_page(session_page), command_reply=True, command_name="/resume")
@@ -724,6 +727,11 @@ class AgentRuntime:
 
     def _command_reply_target(self, message: IncomingMessage) -> str:
         return message.reply_to_message_id or ("" if self._is_card_action_message(message) else message.message_id)
+
+    def _command_card_update_target(self, message: IncomingMessage) -> str:
+        if not self._is_card_action_message(message):
+            return ""
+        return message.reply_to_message_id
 
     def _root_id_for_message(self, message: IncomingMessage) -> str:
         return message.root_id or message.thread_id

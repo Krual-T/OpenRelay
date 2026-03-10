@@ -141,6 +141,7 @@ def _build_header_block(info: dict[str, Any], view: str) -> dict[str, Any]:
         lines.append(f"> 上下文使用：`{info.get('context_usage')}`")
     if info.get("context_preview"):
         lines.append(f"> 最近上下文：{info.get('context_preview')}")
+    lines.append("> 导航：从卡片按钮进入结果面、翻页或返回总览时，优先原地更新当前卡片。")
     if view == PANEL_HOME:
         lines.append("> 角色：总入口。先选会话 / 目录 / 命令 / 状态，再进入对应结果面。")
     elif view == PANEL_SESSIONS:

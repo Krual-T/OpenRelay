@@ -12,17 +12,6 @@
 
 ## Ready
 
-### [ ] OR-TASK-010 单卡翻页与终极 `/panel` 导航
-- **优先级**：P2
-- **目标**：让用户在飞书里浏览分页内容、进入子菜单、返回主菜单时，尽量始终停留在同一张卡片内完成，不因为翻页和层级切换不断刷出新消息，保持面板交互连续、稳定、低噪音。
-- **当前关注**：现有 `/resume list`、`/panel`、帮助卡片的翻页与跳转是否都能收敛到同一张卡；卡片状态该如何保存（页面、排序、子菜单路径、选中对象）；CardKit 更新能力是否足以支撑“同卡翻页 + 子菜单 + 返回主菜单”；哪些动作适合原地更新，哪些动作仍应新开卡片或落回文本；单卡导航和现有 command/value 携带上下文方案如何兼容。
-- **关闭条件**：
-  - [ ] 独立 design note 明确单卡导航的信息架构、状态模型和返回路径。
-  - [ ] 至少一条分页场景支持在同一张卡片内翻页完成，而不是每次翻页都发新卡。
-  - [ ] 至少一条子菜单路径落地，例如从主 `/panel` 进入某个子菜单后还能返回主菜单。
-  - [ ] README 或帮助文案补齐新的 panel 导航心智，并至少补一条相关测试或明确的手工验收步骤。
-- **建议产物**：`docs/design/` 下的专题 note；`src/openrelay/panel_card.py`、`src/openrelay/session_list_card.py`、`src/openrelay/runtime.py`、`src/openrelay/streaming_card.py`、相关测试与 README。
-
 ### [ ] OR-TASK-003 多机器人、多用户、多终端的支持方式
 - **优先级**：P3
 - **目标**：在保持会话隔离和可控性的前提下，让多机器人和多终端的使用方式足够清晰，不让用户搞不清楚“当前是谁在处理、在哪台机器上处理”。
@@ -35,6 +24,18 @@
 - **建议产物**：`docs/design/` 下的专题 note；`src/openrelay/config.py`、`src/openrelay/state.py`、`src/openrelay/runtime.py` 等对应实现。
 
 ## Landed / Follow-up
+
+### [x] OR-TASK-010 单卡翻页与终极 `/panel` 导航
+- **当前状态**：本轮已落地。
+- **已完成证据**：`docs/design/panel-single-card-navigation.md`、`README.md`、`src/openrelay/feishu.py`、`src/openrelay/help_renderer.py`、`src/openrelay/panel_card.py`、`src/openrelay/runtime.py`、`src/openrelay/session_list_card.py`、`tests/test_runtime.py`。
+- **本轮已收敛**：
+  - [x] 独立 design note 已明确单卡导航的信息架构、状态模型、更新目标与返回路径。
+  - [x] `/resume list` 与 `/panel sessions` 的分页 / 排序按钮已支持在同一张卡片内完成导航，而不是每次翻页都发新卡。
+  - [x] 已落地主 `/panel` 从总览进入子结果面再返回总览的同卡路径，并补上 `/help -> /panel` 的同卡跳转。
+  - [x] README、帮助文案与自动化测试已同步新的“导航型卡片优先原地更新”心智，design note 也补了手工验收步骤。
+- **后续 follow-up**：
+  - [ ] 评估是否把更多纯导航动作继续收敛到同卡更新，而把执行型动作明确维持在文本 / 新消息主路径。
+  - [ ] 如果后续出现更深层级的 `/panel` 子菜单，再评估是否需要 breadcrumb 或返回栈，而不是现在就提前引入状态机。
 
 ### [x] OR-TASK-009 查询优化与 `/panel` 界面设计
 - **当前状态**：第一版已落地。

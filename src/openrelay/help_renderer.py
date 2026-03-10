@@ -235,7 +235,7 @@ class HelpRenderer:
             "- 开新任务或切话题：/new <label>；回旧会话：/resume list、/resume latest。",
             "- 换执行位置：/cwd <path> 切目录；/main 回稳定工作区；/develop 进修复工作区。",
             "- 看现场：/status 看会话、目录、最近上下文；/usage 看 token 和 context_usage。",
-            "- 面板导航：/panel 打开总入口；/panel sessions、/panel directories、/panel commands、/panel status 进入对应结果面。",
+            "- 面板导航：/panel 打开总入口；/panel sessions、/panel directories、/panel commands、/panel status 进入对应结果面；从卡片按钮切换时会优先留在同一张卡。",
             "- 控制运行：/stop 停止生成；/clear 清空当前上下文；需要更完整说明时再发 /help。",
             "- 环境与维护：/model 切模型；/sandbox 切执行模式；/ping 连通性检查；/restart 管理员用。",
         ]

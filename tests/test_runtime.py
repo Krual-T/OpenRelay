@@ -20,13 +20,31 @@ class FakeMessenger:
         self.messages: list[str] = []
         self.cards: list[dict] = []
         self.text_calls: list[dict] = []
+        self.card_calls: list[dict] = []
 
     async def send_text(self, chat_id: str, text: str, *, reply_to_message_id: str = "", root_id: str = "", force_new_message: bool = False) -> None:
         self.messages.append(text)
         self.text_calls.append({"chat_id": chat_id, "text": text, "reply_to_message_id": reply_to_message_id, "root_id": root_id, "force_new_message": force_new_message})
 
-    async def send_interactive_card(self, chat_id: str, card: dict, *, reply_to_message_id: str = "", root_id: str = "", force_new_message: bool = False) -> None:
+    async def send_interactive_card(
+        self,
+        chat_id: str,
+        card: dict,
+        *,
+        reply_to_message_id: str = "",
+        root_id: str = "",
+        force_new_message: bool = False,
+        update_message_id: str = "",
+    ) -> None:
         self.cards.append(card)
+        self.card_calls.append({
+            "chat_id": chat_id,
+            "card": card,
+            "reply_to_message_id": reply_to_message_id,
+            "root_id": root_id,
+            "force_new_message": force_new_message,
+            "update_message_id": update_message_id,
+        })
 
     async def close(self) -> None:
         return None
@@ -382,6 +400,120 @@ async def test_runtime_resume_list_sends_paginated_sortable_card(tmp_path: Path)
     await runtime.dispatch_message(make_message(f"/resume {older.session_id}", event_suffix="resume_old"))
     assert messenger.messages[-1].startswith("已恢复会话：older")
     assert f"session_id={older.session_id}" in messenger.messages[-1]
+    await runtime.shutdown()
+
+
+@pytest.mark.asyncio
+async def test_runtime_panel_navigation_updates_same_card_for_card_actions(tmp_path: Path) -> None:
+    config = make_config(tmp_path)
+    config.workspace_root.mkdir(parents=True, exist_ok=True)
+    config.main_workspace_dir.mkdir(parents=True, exist_ok=True)
+    config.develop_workspace_dir.mkdir(parents=True, exist_ok=True)
+    store = StateStore(config)
+    messenger = FakeMessenger()
+    runtime = AgentRuntime(config, store, messenger, backends={"codex": FakeBackend()})
+
+    await runtime.dispatch_message(make_message("/panel", event_suffix="panel_nav_root"))
+    home_card = messenger.cards[-1]
+
+    to_sessions = parse_card_action_event(
+        {
+            "token": "tok_panel_sessions",
+            "operator": {"open_id": "ou_user"},
+            "action": {"value": find_card_action_value(home_card, "/panel sessions")},
+            "context": {"open_chat_id": "oc_1", "open_message_id": "om_panel_nav"},
+        }
+    )
+    assert to_sessions.message is not None
+
+    await runtime.dispatch_message(to_sessions.message)
+
+    assert messenger.card_calls[-1]["update_message_id"] == "om_panel_nav"
+    assert "面板 · 会话" in extract_card_text(messenger.cards[-1])
+
+    back_home = parse_card_action_event(
+        {
+            "token": "tok_panel_home",
+            "operator": {"open_id": "ou_user"},
+            "action": {"value": find_card_action_value(messenger.cards[-1], "/panel")},
+            "context": {"open_chat_id": "oc_1", "open_message_id": "om_panel_nav"},
+        }
+    )
+    assert back_home.message is not None
+
+    await runtime.dispatch_message(back_home.message)
+
+    assert messenger.card_calls[-1]["update_message_id"] == "om_panel_nav"
+    assert "面板 · 总览" in extract_card_text(messenger.cards[-1])
+    await runtime.shutdown()
+
+
+@pytest.mark.asyncio
+async def test_runtime_resume_list_navigation_updates_same_card_for_card_actions(tmp_path: Path) -> None:
+    config = make_config(tmp_path)
+    config.workspace_root.mkdir(parents=True, exist_ok=True)
+    config.main_workspace_dir.mkdir(parents=True, exist_ok=True)
+    config.develop_workspace_dir.mkdir(parents=True, exist_ok=True)
+    store = StateStore(config)
+    messenger = FakeMessenger()
+    runtime = AgentRuntime(config, store, messenger, backends={"codex": FakeBackend()})
+
+    older = store.load_session("p2p:oc_1")
+    older.label = "older"
+    older.native_session_id = "native_old"
+    store.save_session(older)
+    for index in range(6):
+        next_session = store.create_next_session(older.base_key, older, f"session-{index}")
+        next_session.native_session_id = f"native_{index}"
+        store.save_session(next_session)
+
+    await runtime.dispatch_message(make_message("/resume list", event_suffix="resume_nav_root"))
+    first_card = messenger.cards[-1]
+
+    next_page = parse_card_action_event(
+        {
+            "token": "tok_resume_next",
+            "operator": {"open_id": "ou_user"},
+            "action": {"value": find_card_action_value(first_card, "/resume list --page 2 --sort updated-desc")},
+            "context": {"open_chat_id": "oc_1", "open_message_id": "om_resume_nav"},
+        }
+    )
+    assert next_page.message is not None
+
+    await runtime.dispatch_message(next_page.message)
+
+    assert messenger.card_calls[-1]["update_message_id"] == "om_resume_nav"
+    assert "第 `2` 页" in extract_card_text(messenger.cards[-1])
+    await runtime.shutdown()
+
+
+@pytest.mark.asyncio
+async def test_runtime_help_card_action_updates_same_message_when_opening_panel(tmp_path: Path) -> None:
+    config = make_config(tmp_path)
+    config.workspace_root.mkdir(parents=True, exist_ok=True)
+    config.main_workspace_dir.mkdir(parents=True, exist_ok=True)
+    config.develop_workspace_dir.mkdir(parents=True, exist_ok=True)
+    store = StateStore(config)
+    messenger = FakeMessenger()
+    runtime = AgentRuntime(config, store, messenger, backends={"codex": FakeBackend()})
+
+    await runtime.dispatch_message(make_message("/help", event_suffix="help_panel_nav"))
+    help_card = messenger.cards[-1]
+
+    to_panel = parse_card_action_event(
+        {
+            "token": "tok_help_panel",
+            "operator": {"open_id": "ou_user"},
+            "action": {"value": find_card_action_value(help_card, "/panel")},
+            "context": {"open_chat_id": "oc_1", "open_message_id": "om_help_panel"},
+        }
+    )
+    assert to_panel.message is not None
+
+    await runtime.dispatch_message(to_panel.message)
+
+    assert messenger.card_calls[-1]["update_message_id"] == "om_help_panel"
+    assert "面板 · 总览" in extract_card_text(messenger.cards[-1])
     await runtime.shutdown()
 
 
