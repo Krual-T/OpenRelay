@@ -50,6 +50,7 @@ def build_session_list_card(info: dict[str, Any]) -> dict[str, Any]:
                         f"> 当前会话：{current_title}",
                         f"> session_id：`{current_session_id}`",
                         f"> 排序：`{sort_label}` · 第 `{page}` 页",
+                        "> 导航：分页与排序按钮会优先原地更新当前卡片。",
                         "> 点击按钮即可恢复；也可以继续手动输入 `/resume <编号|session_id|latest>`。",
                     ]
                 ),

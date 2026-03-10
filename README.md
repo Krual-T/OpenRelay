@@ -21,6 +21,7 @@
 - 命令集尽量对齐：`/panel`、`/ping`、`/stop`、`/restart`、`/main`、`/stable`、`/develop`、`/new`、`/resume`、`/clear`、`/status`、`/cwd`、`/cd`、`/model`、`/sandbox`、`/tools`、`/help`
 - 会话支持 `main` / `develop` 工作区切换，并写入 `data/release-events.jsonl`
 - `/panel` 现在是飞书里的总入口：总览页下再分 `sessions / directories / commands / status` 四类结果面
+- `/panel`、`/resume list`、`/help` 这类导航型卡片在按钮切换时会优先原地更新，避免翻页和层级切换不断刷新消息
 - `/panel` 的会话结果继续复用 `/resume` 主路径，目录结果继续复用 `/cwd` 主路径，避免再长出第二套执行语义
 - `/panel` 仍会按 `main / develop` 作用域显示常用目录快捷按钮，点击后直接复用 `/cwd` 切换
 - `/resume` 现在会合并本地会话与可导入的原生 `~/.codex/sessions` 历史
@@ -102,7 +103,7 @@ http://your-host:3000/feishu/webhook
 
 ## 命令
 
-- `/panel [sessions|directories|commands|status]` - 打开总入口或直接进入对应结果面；`sessions` 额外支持 `--page` 与 `--sort`
+- `/panel [sessions|directories|commands|status]` - 打开总入口或直接进入对应结果面；`sessions` 额外支持 `--page` 与 `--sort`，卡片按钮切换时优先留在同一张卡
 - `/ping` - 连通性检查
 - `/stop` - 停止当前回复
 - `/restart` - 重启当前服务进程
@@ -117,7 +118,7 @@ http://your-host:3000/feishu/webhook
 - `/sandbox [read-only|workspace-write|danger-full-access]` - 查看或切换执行模式
 - `/tools`、`/help` - 查看当前会话阶段、优先操作建议、常用流程和命令速查
 
-推荐路径是：先 `/panel`，再点进 `sessions / directories / commands / status` 对应结果面；其中会话结果负责“找回哪条会话”，目录结果负责“进哪个目录”，命令结果负责“高频动作直达”，状态结果负责“先判断现场”。
+推荐路径是：先 `/panel`，再点进 `sessions / directories / commands / status` 对应结果面；其中会话结果负责“找回哪条会话”，目录结果负责“进哪个目录”，命令结果负责“高频动作直达”，状态结果负责“先判断现场”。这些按钮导航、翻页和返回总览会优先停留在同一张卡内完成。
 
 如果你的 `/panel` 已配置常用目录快捷按钮，优先直接点按钮切目录；没有合适入口时再手写 `/cwd <path>`。
 
