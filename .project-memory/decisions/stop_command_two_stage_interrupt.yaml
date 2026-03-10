@@ -1,0 +1,41 @@
+id: stop_command_two_stage_interrupt
+kind: decision
+title: /stop 采用两段式中断，并按 session 隔离 Codex client
+summary: 让 /stop 在请求阶段和 turn 运行阶段都尽快生效，同时避免 client reset 误伤其他会话。
+scope:
+  repo: openrelay
+  branch: main
+status: reviewed
+created_at: '2026-03-10T09:32:19Z'
+updated_at: '2026-03-10T09:32:19Z'
+confidence: 0.92
+last_verified_commit: d1d1e2976adaca07f149c7e65f4c52f50d02924b
+intent_aliases:
+- 为什么 /stop 不是只设取消标记
+- openrelay 的 /stop 为什么要重置 client
+- stop 中断语义怎么设计的
+tags:
+- decision
+- stop
+- runtime
+alternatives:
+- 只在 runtime 层设置取消标记，等待底层请求自行结束。
+- 继续按 workspace/model/sandbox 共享 Codex client，再在 /stop 时统一 reset。
+consequences:
+- 停止语义更可预期，用户发出 /stop 后可以更快看到请求级中断结果。
+- backend 需要维护 pending request、turn_id 可用前后的两段式中断，以及 session 级 client 生命周期。
+revisit_when:
+- 当 Claude 等其他 backend 也需要统一中断语义时重新评估。
+- 当多终端、多机器人或会话接管模型落地时重新评估 client 隔离粒度。
+question: openrelay 的 /stop 应该如何在请求阶段与 turn 运行阶段都尽快生效？
+decision: 拿到 turn_id 后发送 turn/interrupt；若仍处于 thread/start、thread/resume 或 turn/start
+  等请求阶段，则直接取消请求并重置当前 session 绑定的 app-server client。
+rationale: 只在 runtime 层设置取消标记，无法可靠中断卡在请求阶段的 backend 调用；client 改为按 session 隔离后，重置当前
+  client 不会误伤其他会话的执行。
+evidence:
+- path: docs/design/stop-command.md
+  kind: file
+- path: src/openrelay/runtime.py
+  kind: file
+- path: src/openrelay/backends/codex.py
+  kind: file

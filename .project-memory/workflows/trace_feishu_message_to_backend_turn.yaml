@@ -1,0 +1,40 @@
+id: trace_feishu_message_to_backend_turn
+kind: workflow
+title: 追踪一条飞书消息如何进入 backend.run
+summary: 从 FastAPI 启动装配到 Feishu 事件派发、会话序列化和 backend.run 的主路径排查流程。
+scope:
+  repo: openrelay
+  branch: main
+status: reviewed
+created_at: '2026-03-10T09:32:19Z'
+updated_at: '2026-03-10T09:32:19Z'
+confidence: 0.88
+last_verified_commit: d1d1e2976adaca07f149c7e65f4c52f50d02924b
+review_after: '2026-06-30'
+intent_aliases:
+- 飞书消息是怎么进 backend 的
+- openrelay 一条消息主流程怎么走
+- 怎么 trace Feishu 到 runtime 再到 backend
+tags:
+- workflow
+- feishu
+- runtime
+steps:
+- 先看 server.create_app 在 startup 中如何装配 StateStore、FeishuMessenger、AgentRuntime 和 FeishuEventDispatcher。
+- 再看 FeishuEventDispatcher.build 与 _schedule，确认 Feishu 事件何时被解析并投递为 IncomingMessage。
+- 检查 AgentRuntime.dispatch_message，确认去重、权限、/stop、session_key 构造与按会话串行化。
+- 检查 StateStore.load_session 与 session_pointers，确认 base_key 如何映射到当前活跃 SessionRecord。
+- 最后检查 AgentRuntime._run_backend_turn，确认 BackendContext、流式回调、消息持久化与最终回复路径。
+entrypoints:
+- src/openrelay/server.py:create_app
+- src/openrelay/feishu.py:FeishuEventDispatcher
+- src/openrelay/runtime.py:AgentRuntime.dispatch_message
+evidence:
+- path: src/openrelay/server.py
+  kind: file
+- path: src/openrelay/feishu.py
+  kind: file
+- path: src/openrelay/runtime.py
+  kind: file
+- path: src/openrelay/state.py
+  kind: file
