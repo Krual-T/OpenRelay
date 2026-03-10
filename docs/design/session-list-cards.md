@@ -44,15 +44,14 @@
 
 ## 按钮状态编码
 
-卡片按钮不额外引入新的 webhook 状态字段，而是直接把状态编码进命令文本：
-- `/resume list --page 2 --sort updated-desc`
-- `/resume list --page 1 --sort active-first`
-- `/resume <session_id> --page 2 --sort updated-desc`
+卡片按钮不额外引入新的 webhook 状态字段，而是分两类编码：
+- 翻页 / 排序动作直接编码进命令文本，例如 `/resume list --page 2 --sort updated-desc`
+- 恢复动作保持最短主路径，直接使用 `/resume <session_id>`
 
 这样做有三个好处：
 - `parse_card_action_event` 不需要新增一层专用状态协议
 - 卡片 action 进入 runtime 后，仍然表现为普通命令文本，主路径更短
-- 翻页、排序、恢复三类动作的状态都能直接从 `IncomingMessage.text` 追踪
+- 浏览状态和恢复动作的语义分离：翻页 / 排序可追踪，恢复动作不携带多余状态噪音
 
 ## 模块落点
 
