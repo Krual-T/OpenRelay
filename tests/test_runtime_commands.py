@@ -1,0 +1,132 @@
+from pathlib import Path
+
+import pytest
+
+from openrelay.config import AppConfig, BackendConfig, FeishuConfig
+from openrelay.help_renderer import HelpRenderer
+from openrelay.models import IncomingMessage
+from openrelay.runtime_commands import RuntimeCommandHooks, RuntimeCommandRouter
+from openrelay.session_browser import SessionBrowser
+from openrelay.session_ux import SessionUX
+from openrelay.state import StateStore
+
+
+class FakeHooks:
+    def __init__(self) -> None:
+        self.replies: list[dict[str, object]] = []
+        self.panel_calls: list[tuple[str, str]] = []
+        self.switch_calls: list[tuple[str, str, str]] = []
+        self.stop_calls: list[str] = []
+        self.restart_scheduled = 0
+
+    async def reply(self, message: IncomingMessage, text: str, **kwargs) -> None:
+        self.replies.append({"message": message, "text": text, "kwargs": kwargs})
+
+    async def send_panel(self, message: IncomingMessage, session_key: str, session) -> None:
+        self.panel_calls.append((message.message_id, session_key))
+
+    async def switch_release_channel(self, message: IncomingMessage, session_key: str, session, target_channel: str, command_name: str, reason: str) -> None:
+        self.switch_calls.append((session_key, target_channel, command_name))
+
+    async def stop(self, message: IncomingMessage, session_key: str) -> None:
+        self.stop_calls.append(session_key)
+
+    def schedule_restart(self) -> None:
+        self.restart_scheduled += 1
+
+    def is_admin(self, sender_open_id: str) -> bool:
+        return sender_open_id == "ou_admin"
+
+    def available_backend_names(self) -> list[str]:
+        return ["claude", "codex"]
+
+
+
+def make_config(tmp_path: Path) -> AppConfig:
+    return AppConfig(
+        cwd=tmp_path,
+        port=3100,
+        webhook_path="/feishu/webhook",
+        data_dir=tmp_path / "data",
+        workspace_root=tmp_path / "workspace",
+        main_workspace_dir=tmp_path / "main",
+        develop_workspace_dir=tmp_path / "develop",
+        max_request_bytes=1024,
+        max_session_messages=20,
+        feishu=FeishuConfig(app_id="app", app_secret="secret", verify_token="verify-token", bot_open_id="ou_bot"),
+        backend=BackendConfig(default_backend="codex", codex_sessions_dir=tmp_path / "native"),
+    )
+
+
+
+def prepare_dirs(config: AppConfig) -> None:
+    for path in [config.workspace_root, config.main_workspace_dir, config.develop_workspace_dir, config.backend.codex_sessions_dir]:
+        path.mkdir(parents=True, exist_ok=True)
+
+
+
+def make_message(text: str, sender_open_id: str = "ou_user", suffix: str = "cmd") -> IncomingMessage:
+    return IncomingMessage(
+        event_id=f"evt_{suffix}",
+        message_id=f"om_{suffix}",
+        chat_id="oc_1",
+        chat_type="p2p",
+        sender_open_id=sender_open_id,
+        text=text,
+        actionable=True,
+    )
+
+
+
+def build_router(tmp_path: Path) -> tuple[RuntimeCommandRouter, StateStore, FakeHooks]:
+    config = make_config(tmp_path)
+    prepare_dirs(config)
+    store = StateStore(config)
+    session_ux = SessionUX(config, store)
+    browser = SessionBrowser(config, store)
+    hooks = FakeHooks()
+    router = RuntimeCommandRouter(
+        config,
+        store,
+        browser,
+        session_ux,
+        HelpRenderer(config, store, session_ux),
+        {"codex": object(), "claude": object()},
+        RuntimeCommandHooks(
+            reply=hooks.reply,
+            send_panel=hooks.send_panel,
+            switch_release_channel=hooks.switch_release_channel,
+            stop=hooks.stop,
+            schedule_restart=hooks.schedule_restart,
+            is_admin=hooks.is_admin,
+            available_backend_names=hooks.available_backend_names,
+        ),
+    )
+    return router, store, hooks
+
+
+@pytest.mark.asyncio
+async def test_runtime_command_router_requires_admin_for_restart(tmp_path: Path) -> None:
+    router, store, hooks = build_router(tmp_path)
+    session = store.load_session("p2p:oc_1")
+
+    handled = await router.handle(make_message("/restart", suffix="restart"), session.base_key, session)
+
+    assert handled is True
+    assert hooks.restart_scheduled == 0
+    assert hooks.replies[-1]["text"] == "这个命令只允许管理员使用。"
+    store.close()
+
+
+@pytest.mark.asyncio
+async def test_runtime_command_router_delegates_panel_and_admin_restart(tmp_path: Path) -> None:
+    router, store, hooks = build_router(tmp_path)
+    session = store.load_session("p2p:oc_1")
+
+    await router.handle(make_message("/panel", suffix="panel"), session.base_key, session)
+    await router.handle(make_message("/restart", sender_open_id="ou_admin", suffix="restart_admin"), session.base_key, session)
+
+    assert hooks.panel_calls == [("om_panel", session.base_key)]
+    assert hooks.restart_scheduled == 1
+    assert hooks.replies[-1]["text"] == "正在重启 openrelay，预计几秒后恢复。"
+    store.close()
