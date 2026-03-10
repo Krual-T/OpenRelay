@@ -42,7 +42,8 @@
 ## 组件映射
 
 - 主回复卡片：`src/openrelay/runtime_live.py` 的 `build_reply_card()` 走统一 shell，并根据最终文案推断成功 / 失败 / 取消语义。
-- 运行中卡片：`src/openrelay/render.py` 负责把 live state 映射到统一主题文本；`src/openrelay/streaming_card.py` 负责把它落到 CardKit 结构，并在 final sections 中补上最终状态 badge。
+- 运行中卡片：`src/openrelay/render.py` 负责把 live state 映射到统一主题文本；`src/openrelay/streaming_card.py` 负责把它落到 CardKit 结构。
+- 聊天消息在 `card` 模式下把 CardKit 仅作为运行中载体；turn 完成后会优先把同一条消息替换回普通 interactive reply card，以恢复稳定的最终态 header / shell 语义。
 - 常驻操作卡片：`/help`、`/panel`、`/resume list` 统一复用同一 shell，避免继续复制 header/config 约定。
 
 ## 保留与舍弃

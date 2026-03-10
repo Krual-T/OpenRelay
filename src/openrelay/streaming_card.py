@@ -239,6 +239,11 @@ class FeishuStreamingSession:
             return
         await self.apply_sections(next_sections, animate_body=False)
 
+    def message_id(self) -> str:
+        if self.state is None:
+            return ""
+        return str(self.state.get("message_id") or "")
+
     def has_started(self) -> bool:
         return self.state is not None
 
