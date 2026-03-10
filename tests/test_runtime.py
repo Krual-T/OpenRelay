@@ -248,6 +248,28 @@ class BlockingStreamingSession(FakeStreamingSession):
             await asyncio.Event().wait()
 
 
+class NativeSessionConcurrencyBackend(Backend):
+    name = "fake"
+
+    def __init__(self) -> None:
+        self.started: dict[str, asyncio.Event] = {}
+        self.released: dict[str, asyncio.Event] = {}
+        self.start_order: list[str] = []
+
+    def _ensure_prompt(self, prompt: str) -> tuple[asyncio.Event, asyncio.Event]:
+        if prompt not in self.started:
+            self.started[prompt] = asyncio.Event()
+            self.released[prompt] = asyncio.Event()
+        return self.started[prompt], self.released[prompt]
+
+    async def run(self, session: SessionRecord, prompt: str, context: BackendContext) -> BackendReply:
+        started, released = self._ensure_prompt(prompt)
+        self.start_order.append(prompt)
+        started.set()
+        await released.wait()
+        return BackendReply(text=f"done: {prompt}", native_session_id=session.native_session_id or f"native_{prompt}")
+
+
 
 def make_config(tmp_path: Path) -> AppConfig:
     return AppConfig(
@@ -910,6 +932,118 @@ async def test_runtime_ping_bypasses_active_run_queue(tmp_path: Path) -> None:
 
     backend.release_first.set()
     await asyncio.wait_for(run_task, timeout=1)
+    await runtime.shutdown()
+
+
+@pytest.mark.asyncio
+async def test_runtime_serializes_messages_sharing_same_native_session(tmp_path: Path) -> None:
+    config = make_config(tmp_path)
+    config.workspace_root.mkdir(parents=True, exist_ok=True)
+    config.main_workspace_dir.mkdir(parents=True, exist_ok=True)
+    config.develop_workspace_dir.mkdir(parents=True, exist_ok=True)
+    store = StateStore(config)
+    messenger = FakeMessenger()
+    backend = NativeSessionConcurrencyBackend()
+    runtime = AgentRuntime(config, store, messenger, backends={"codex": backend})
+
+    shared_native = "native_shared"
+    first_session = store.load_session("p2p:chat-a")
+    first_session.native_session_id = shared_native
+    store.save_session(first_session)
+    second_session = store.load_session("p2p:chat-b")
+    second_session.native_session_id = shared_native
+    store.save_session(second_session)
+
+    first_message = IncomingMessage(
+        event_id="evt_native_shared_1",
+        message_id="om_native_shared_1",
+        chat_id="chat-a",
+        chat_type="p2p",
+        sender_open_id="ou_user",
+        text="first shared",
+        actionable=True,
+    )
+    second_message = IncomingMessage(
+        event_id="evt_native_shared_2",
+        message_id="om_native_shared_2",
+        chat_id="chat-b",
+        chat_type="p2p",
+        sender_open_id="ou_user",
+        text="second shared",
+        actionable=True,
+    )
+    first_started, first_released = backend._ensure_prompt("first shared")
+    second_started, second_released = backend._ensure_prompt("second shared")
+
+    first_task = asyncio.create_task(runtime.dispatch_message(first_message))
+    await asyncio.wait_for(first_started.wait(), timeout=1)
+
+    second_task = asyncio.create_task(runtime.dispatch_message(second_message))
+    await asyncio.sleep(0.05)
+
+    assert backend.start_order == ["first shared"]
+
+    first_released.set()
+    await asyncio.wait_for(second_started.wait(), timeout=1)
+    second_released.set()
+    await asyncio.wait_for(first_task, timeout=1)
+    await asyncio.wait_for(second_task, timeout=1)
+
+    assert backend.start_order == ["first shared", "second shared"]
+    await runtime.shutdown()
+
+
+@pytest.mark.asyncio
+async def test_runtime_allows_parallel_messages_for_different_native_sessions(tmp_path: Path) -> None:
+    config = make_config(tmp_path)
+    config.workspace_root.mkdir(parents=True, exist_ok=True)
+    config.main_workspace_dir.mkdir(parents=True, exist_ok=True)
+    config.develop_workspace_dir.mkdir(parents=True, exist_ok=True)
+    store = StateStore(config)
+    messenger = FakeMessenger()
+    backend = NativeSessionConcurrencyBackend()
+    runtime = AgentRuntime(config, store, messenger, backends={"codex": backend})
+
+    first_session = store.load_session("p2p:chat-a")
+    first_session.native_session_id = "native_a"
+    store.save_session(first_session)
+    second_session = store.load_session("p2p:chat-b")
+    second_session.native_session_id = "native_b"
+    store.save_session(second_session)
+
+    first_message = IncomingMessage(
+        event_id="evt_native_parallel_1",
+        message_id="om_native_parallel_1",
+        chat_id="chat-a",
+        chat_type="p2p",
+        sender_open_id="ou_user",
+        text="first parallel",
+        actionable=True,
+    )
+    second_message = IncomingMessage(
+        event_id="evt_native_parallel_2",
+        message_id="om_native_parallel_2",
+        chat_id="chat-b",
+        chat_type="p2p",
+        sender_open_id="ou_user",
+        text="second parallel",
+        actionable=True,
+    )
+    first_started, first_released = backend._ensure_prompt("first parallel")
+    second_started, second_released = backend._ensure_prompt("second parallel")
+
+    first_task = asyncio.create_task(runtime.dispatch_message(first_message))
+    second_task = asyncio.create_task(runtime.dispatch_message(second_message))
+
+    await asyncio.wait_for(first_started.wait(), timeout=1)
+    await asyncio.wait_for(second_started.wait(), timeout=1)
+
+    assert backend.start_order == ["first parallel", "second parallel"]
+
+    first_released.set()
+    second_released.set()
+    await asyncio.wait_for(first_task, timeout=1)
+    await asyncio.wait_for(second_task, timeout=1)
     await runtime.shutdown()
 
 

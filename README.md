@@ -29,6 +29,7 @@
 - 主回复卡片、运行中卡片和常驻操作卡片已收敛到一套更接近 Codex CLI 的低噪音主题语义
 - 当前回复还没结束时，继续发消息会自动排到下一轮；连续补充会合并成一轮 follow-up
 - `/ping`、`/status`、`/usage`、`/help`、`/panel` 这类诊断命令在当前回复尚未结束时也会立即返回，不再被同 session 串行锁静默卡住
+- 串行粒度现在按原生 `codex session` 收敛：同一个 native session 继续排队，不同 native session 可以并发
 
 ## 环境变量
 
