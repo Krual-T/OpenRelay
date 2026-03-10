@@ -138,6 +138,7 @@ class FakeStreamingSession:
         self.closed = False
         self.updates = []
         self.final_text = None
+        self._message_id = "om_stream_card"
 
     async def start(self, receive_id: str, *, reply_to_message_id: str = "", root_id: str = "") -> None:
         self.started = True
@@ -148,6 +149,9 @@ class FakeStreamingSession:
     async def close(self, final_text: str | None) -> None:
         self.closed = True
         self.final_text = final_text
+
+    def message_id(self) -> str:
+        return self._message_id if self.started else ""
 
     def has_started(self) -> bool:
         return self.started
@@ -756,7 +760,10 @@ async def test_runtime_card_stream_mode_uses_streaming_session(tmp_path: Path) -
     assert sessions
     assert sessions[0].started is True
     assert sessions[0].closed is True
-    assert sessions[0].final_text == "echo: hello stream"
+    assert sessions[0].final_text is None
+    assert messenger.cards
+    assert messenger.card_calls[-1]["update_message_id"] == "om_stream_card"
+    assert messenger.cards[-1]["header"]["title"]["content"] == "openrelay 回复"
     assert typing.added == ["om_stream"]
     assert typing.removed
     await runtime.shutdown()
@@ -793,7 +800,9 @@ async def test_runtime_streaming_update_does_not_block_backend_turn(tmp_path: Pa
     assert sessions
     assert sessions[0].started is True
     assert sessions[0].closed is True
-    assert sessions[0].final_text == "done: hello blocked stream"
+    assert sessions[0].final_text is None
+    assert messenger.cards
+    assert messenger.card_calls[-1]["update_message_id"] == "om_stream_card"
     session = store.load_session(runtime.build_session_key(make_message("hello blocked stream", event_suffix="blocked_stream")))
     assert session.native_session_id == "native_2"
     await runtime.shutdown()

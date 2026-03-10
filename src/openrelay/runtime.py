@@ -684,24 +684,34 @@ class AgentRuntime:
         lines.extend([f"- {entry['title']}：{entry['preview']} ({entry['command']})" for entry in status_entries])
         return "\n".join(lines)
 
-    async def _send_reply_card(self, message: IncomingMessage, text: str, title: str = "openrelay 回复") -> None:
+    async def _send_reply_card(
+        self,
+        message: IncomingMessage,
+        text: str,
+        title: str = "openrelay 回复",
+        *,
+        update_message_id: str = "",
+    ) -> None:
         await self.messenger.send_interactive_card(
             message.chat_id,
             build_reply_card(text, title),
             reply_to_message_id=message.reply_to_message_id or ("" if self._is_card_action_message(message) else message.message_id),
             root_id=self._root_id_for_message(message),
+            update_message_id=update_message_id,
         )
 
     async def _reply_final(self, message: IncomingMessage, text: str, streaming: FeishuStreamingSession | None) -> None:
+        update_message_id = ""
         if streaming is not None and streaming.has_started():
             try:
-                await streaming.close(text)
-                return
+                update_message_id = streaming.message_id()
+                await streaming.close(None)
             except Exception:
                 LOGGER.exception("streaming close failed for event_id=%s", message.event_id)
+                update_message_id = ""
         if self.config.feishu.stream_mode == "card":
             try:
-                await self._send_reply_card(message, text, "openrelay 回复")
+                await self._send_reply_card(message, text, "openrelay 回复", update_message_id=update_message_id)
                 return
             except Exception:
                 LOGGER.exception("reply card fallback failed for event_id=%s", message.event_id)
