@@ -46,3 +46,4 @@ def test_render_live_status_sections_splits_fields() -> None:
     assert sections["details"]
     assert sections["body"] == "hello"
     assert "`进行中`" in sections["header"]
+    assert "```text" in sections["details"]

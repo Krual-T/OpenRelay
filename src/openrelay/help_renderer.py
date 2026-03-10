@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import Any
 
 from openrelay.card_actions import build_button
-from openrelay.card_theme import build_card_shell
+from openrelay.card_theme import build_card_shell, build_section_block, build_status_hero, divider_block
 from openrelay.config import AppConfig
 from openrelay.models import SessionRecord
 from openrelay.release import format_release_channel, infer_release_channel
@@ -68,62 +68,41 @@ class HelpRenderer:
         context_preview = self.session_ux.build_context_preview(session, limit=2)
         actions_context = action_context or {}
         elements: list[dict[str, Any]] = [
-            {
-                "tag": "div",
-                "text": {
-                    "tag": "lark_md",
-                    "content": "\n".join([
-                        "**当前状态**",
-                        f"> 会话：{session.label or '未命名会话'} (`{session.session_id}`)",
-                        f"> 会话阶段：{self.describe_session_phase(session, message_count)}",
-                        f"> 通道：`{format_release_channel(infer_release_channel(self.config, session))}`",
-                        f"> 目录：`{self.session_ux.format_cwd(session.cwd, session)}`",
-                        f"> 后端：`{session.backend}` · 模型：`{self.session_ux.effective_model(session)}`",
-                        f"> Sandbox：`{session.safety_mode}` · 原生会话：`{session.native_session_id or 'pending'}`",
-                        f"> 上下文占用：`{self.session_ux.format_context_usage(session)}` · 本地消息数：`{message_count}`",
-                        f"> 最近关注：{context_preview or '还没有可总结的本地上下文'}",
-                        f"> 一句话判断：{self.build_now_summary(session, message_count)}",
-                    ]),
-                },
-            }
+            *build_status_hero(
+                "当前状态",
+                tone="info",
+                summary=self.build_now_summary(session, message_count),
+                facts=[
+                    ("会话", f"{session.label or '未命名会话'}\n`{session.session_id}`"),
+                    ("阶段", self.describe_session_phase(session, message_count)),
+                    ("通道", f"`{format_release_channel(infer_release_channel(self.config, session))}`"),
+                    ("目录", f"`{self.session_ux.format_cwd(session.cwd, session)}`"),
+                    ("后端 / 模型", f"`{session.backend}` · `{self.session_ux.effective_model(session)}`"),
+                    ("Sandbox / 原生会话", f"`{session.safety_mode}` · `{session.native_session_id or 'pending'}`"),
+                    ("上下文 / 本地消息", f"`{self.session_ux.format_context_usage(session)}` · `{message_count}`"),
+                ],
+                notes=[f"最近关注：{context_preview or '还没有可总结的本地上下文'}"],
+            )
         ]
         context_note = self.build_context_note(session)
         if context_note:
-            elements.append({"tag": "div", "text": {"tag": "lark_md", "content": context_note}})
+            elements.append(build_section_block("上下文提醒", [context_note], emoji="⚠️"))
         elements.extend(
             [
-                {
-                    "tag": "div",
-                    "text": {
-                        "tag": "lark_md",
-                        "content": "\n".join([
-                            "**你现在最该做什么**",
-                            *self.build_priority_actions(session, message_count),
-                        ]),
-                    },
-                },
-                {
-                    "tag": "div",
-                    "text": {
-                        "tag": "lark_md",
-                        "content": "\n".join([
-                            "**下一条消息可以直接这样发**",
-                            *self.build_prompt_examples(session, message_count),
-                        ]),
-                    },
-                },
-                {
-                    "tag": "div",
-                    "text": {
-                        "tag": "lark_md",
-                        "content": "\n".join([
-                            "**什么时候该用命令**",
-                            *self.build_command_guide(session, available_backends),
-                            "",
-                            "> 点击下面按钮即可直接执行对应命令；如果任务没变，直接发消息通常更快。",
-                        ]),
-                    },
-                },
+                divider_block(),
+                build_section_block("你现在最该做什么", self.build_priority_actions(session, message_count), emoji="🎯"),
+                divider_block(),
+                build_section_block("下一条消息可以直接这样发", self.build_prompt_examples(session, message_count), emoji="✍️"),
+                divider_block(),
+                build_section_block(
+                    "什么时候该用命令",
+                    [
+                        *self.build_command_guide(session, available_backends),
+                        "",
+                        "> 点击下面按钮即可直接执行对应命令；如果任务没变，直接发消息通常更快。",
+                    ],
+                    emoji="🧭",
+                ),
             ]
         )
         for group in self.build_command_button_groups(available_backends, actions_context):

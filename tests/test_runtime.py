@@ -52,35 +52,72 @@ class FakeMessenger:
 
 def extract_card_commands(card: dict) -> list[str]:
     commands: list[str] = []
-    for element in card.get("elements", []):
-        if element.get("tag") != "action":
-            continue
-        for action in element.get("actions", []):
-            value = action.get("value") if isinstance(action, dict) else None
-            if isinstance(value, dict) and value.get("command"):
-                commands.append(str(value["command"]))
+
+    def walk(node: object) -> None:
+        if isinstance(node, list):
+            for item in node:
+                walk(item)
+            return
+        if not isinstance(node, dict):
+            return
+        if node.get("tag") == "action":
+            for action in node.get("actions", []):
+                value = action.get("value") if isinstance(action, dict) else None
+                if isinstance(value, dict) and value.get("command"):
+                    commands.append(str(value["command"]))
+        for key in ("elements", "columns", "fields"):
+            walk(node.get(key))
+
+    walk(card.get("elements", []))
     return commands
 
 
 def extract_card_text(card: dict) -> str:
     contents: list[str] = []
-    for element in card.get("elements", []):
-        if not isinstance(element, dict):
-            continue
-        text = element.get("text")
+
+    def walk(node: object) -> None:
+        if isinstance(node, list):
+            for item in node:
+                walk(item)
+            return
+        if not isinstance(node, dict):
+            return
+        text = node.get("text")
         if isinstance(text, dict) and isinstance(text.get("content"), str):
             contents.append(text["content"])
+        if isinstance(node.get("content"), str) and node.get("tag") in {"lark_md", "plain_text", "markdown"}:
+            contents.append(str(node["content"]))
+        for key in ("elements", "columns", "fields"):
+            walk(node.get(key))
+
+    walk(card.get("elements", []))
     return "\n".join(contents)
 
 
 def find_card_action_value(card: dict, command: str) -> dict:
-    for element in card.get("elements", []):
-        if element.get("tag") != "action":
-            continue
-        for action in element.get("actions", []):
-            value = action.get("value") if isinstance(action, dict) else None
-            if isinstance(value, dict) and value.get("command") == command:
-                return value
+    def walk(node: object) -> dict | None:
+        if isinstance(node, list):
+            for item in node:
+                result = walk(item)
+                if result is not None:
+                    return result
+            return None
+        if not isinstance(node, dict):
+            return None
+        if node.get("tag") == "action":
+            for action in node.get("actions", []):
+                value = action.get("value") if isinstance(action, dict) else None
+                if isinstance(value, dict) and value.get("command") == command:
+                    return value
+        for key in ("elements", "columns", "fields"):
+            result = walk(node.get(key))
+            if result is not None:
+                return result
+        return None
+
+    matched = walk(card.get("elements", []))
+    if matched is not None:
+        return matched
     raise AssertionError(f"command not found in card: {command}")
 
 
@@ -393,7 +430,7 @@ async def test_runtime_resume_list_sends_paginated_sortable_card(tmp_path: Path)
 
     await runtime.dispatch_message(make_message("/resume list --page 2 --sort active-first", event_suffix="resume_page2"))
     latest_card = messenger.cards[-1]
-    header_text = latest_card["elements"][0]["text"]["content"]
+    header_text = extract_card_text(latest_card)
     assert "第 `2` 页" in header_text
     assert "当前会话优先" in header_text
 
@@ -597,9 +634,9 @@ async def test_runtime_help_command_shows_actionable_guidance(tmp_path: Path) ->
     assert empty_card["header"]["title"]["content"] == "openrelay help"
     empty_help = extract_card_text(empty_card)
     assert "当前状态" in empty_help
-    assert "会话阶段：未开始（还没发第一条真实需求）" in empty_help
-    assert "原生会话：`pending`" in empty_help
-    assert "一句话判断：这是一个空会话；最有效的动作通常是直接发完整任务，而不是先试很多命令。" in empty_help
+    assert "阶段" in empty_help
+    assert "未开始（还没发第一条真实需求）" in empty_help
+    assert "pending" in empty_help
     assert "这是一个空会话；最有效的动作通常是直接发完整任务，而不是先试很多命令。" in empty_help
     assert "你现在最该做什么" in empty_help
     assert "先把目标说完整：要改什么、在哪个目录、是否要直接改代码。" in empty_help
@@ -637,8 +674,8 @@ async def test_runtime_help_command_shows_actionable_guidance(tmp_path: Path) ->
 
     help_card = messenger.cards[-1]
     help_text = extract_card_text(help_card)
-    assert "会话阶段：进行中（继续发消息会沿用当前原生会话）" in help_text
-    assert "上下文占用：`17.0% (170/1000)`" in help_text
+    assert "进行中（继续发消息会沿用当前原生会话）" in help_text
+    assert "17.0% (170/1000)" in help_text
     assert "最近关注：用户：hello help | 助手：echo: hello help" in help_text
     assert "这是一个进行中的会话；如果任务没变，直接补充信息最快。" in help_text
     assert "如果还是同一件事，直接追加信息：目标、报错、文件路径、验收标准。" in help_text

@@ -111,6 +111,21 @@ def format_elapsed(started_at: object, now_ts: float | None = None) -> str:
 
 
 
+def render_markdown_panel(lines: list[object]) -> str:
+    normalized_lines: list[str] = []
+    for line in lines:
+        normalized = str(line or "").strip()
+        if not normalized:
+            continue
+        if normalized.startswith(">"):
+            normalized = normalized[1:].lstrip()
+        if normalized:
+            normalized_lines.append(normalized)
+    if not normalized_lines:
+        return ""
+    return "```text\n" + "\n".join(normalized_lines) + "\n```"
+
+
 def build_activity_summary(activity: dict[str, Any] | None = None) -> str:
     activity = activity or {}
     lines: list[str] = []
@@ -203,20 +218,19 @@ def render_reply_markdown(reply: object) -> str:
 def render_live_status_markdown(state: dict[str, Any] | None = None) -> str:
     view = build_live_status_view(state)
     lines = list(view["header_lines"])
-    detail_lines = list(view["detail_lines"])
-    if detail_lines:
-        lines.extend(["", *detail_lines])
+    detail_panel = render_markdown_panel(list(view["detail_lines"]))
+    if detail_panel:
+        lines.extend(["", detail_panel])
     body_text = str(view["body_text"] or "")
     if body_text:
         lines.extend(["", "---", body_text])
     return "\n".join(lines).strip()
 
 
-
 def render_live_status_sections(state: dict[str, Any] | None = None) -> dict[str, str]:
     view = build_live_status_view(state)
     return {
         "header": "\n".join(view["header_lines"]).strip(),
-        "details": "\n".join(view["detail_lines"]).strip(),
+        "details": render_markdown_panel(list(view["detail_lines"])),
         "body": str(view["body_text"] or ""),
     }

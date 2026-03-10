@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import Any
 
 from openrelay.card_actions import build_button
-from openrelay.card_theme import build_card_shell
+from openrelay.card_theme import build_card_shell, build_note_bar, build_status_hero, divider_block, markdown_block
 
 
 PANEL_HOME = "home"
@@ -27,7 +27,7 @@ SESSION_SORT_LABELS = {
 
 
 def _markdown(content: str) -> dict[str, Any]:
-    return {"tag": "div", "text": {"tag": "lark_md", "content": content}}
+    return markdown_block(content)
 
 
 
@@ -120,7 +120,7 @@ def _append_view_nav(elements: list[dict[str, Any]], current_view: str, action_c
 
 
 
-def _build_header_block(info: dict[str, Any], view: str) -> dict[str, Any]:
+def _build_header_elements(info: dict[str, Any], view: str) -> list[dict[str, Any]]:
     current_title = str(info.get("current_title") or "未命名会话")
     session_id = str(info.get("session_id") or "-")
     cwd = str(info.get("cwd") or ".")
@@ -128,35 +128,42 @@ def _build_header_block(info: dict[str, Any], view: str) -> dict[str, Any]:
     provider = str(info.get("provider") or "-")
     sandbox = str(info.get("sandbox") or "-")
     channel = str(info.get("channel") or "main（稳定）")
-    lines = [
-        f"**面板 · {PANEL_VIEW_LABELS.get(view, '总览')}**",
-        f"> 当前会话：{current_title}",
-        f"> ID：`{session_id}`",
-        f"> 通道：`{channel}`",
-        f"> 目录：`{cwd}`",
-        f"> 模型：`{model}` · Provider：`{provider}`",
-        f"> Sandbox：`{sandbox}`",
-    ]
-    if info.get("context_usage"):
-        lines.append(f"> 上下文使用：`{info.get('context_usage')}`")
-    if info.get("context_preview"):
-        lines.append(f"> 最近上下文：{info.get('context_preview')}")
-    lines.append("> 导航：从卡片按钮进入结果面、翻页或返回总览时，优先原地更新当前卡片。")
+    summary = "从卡片按钮进入结果面、翻页或返回总览时，优先原地更新当前卡片。"
     if view == PANEL_HOME:
-        lines.append("> 角色：总入口。先选会话 / 目录 / 命令 / 状态，再进入对应结果面。")
+        summary = "总入口。先选会话 / 目录 / 命令 / 状态，再进入对应结果面。"
     elif view == PANEL_SESSIONS:
         sort_mode = str(info.get("sort_mode") or "updated-desc")
-        lines.append(f"> 结果：第 `{info.get('page', 1)}` / `{info.get('total_pages', 1)}` 页 · 排序：`{SESSION_SORT_LABELS.get(sort_mode, sort_mode)}`")
-        lines.append("> 语义：会话结果继续复用 `/resume` 主路径，卡片只负责更快浏览。")
+        summary = (
+            f"结果：第 `{info.get('page', 1)}` / `{info.get('total_pages', 1)}` 页 · "
+            f"排序：`{SESSION_SORT_LABELS.get(sort_mode, sort_mode)}`"
+        )
     elif view == PANEL_DIRECTORIES:
-        lines.append(f"> 结果：`{len(list(info.get('directory_shortcuts') or []))}` 个目录入口")
-        lines.append("> 语义：优先点快捷目录；没有合适入口时再手写 `/cwd <path>`。")
+        summary = f"结果：`{len(list(info.get('directory_shortcuts') or []))}` 个目录入口。优先点快捷目录；没有合适入口时再手写 `/cwd <path>`。"
     elif view == PANEL_COMMANDS:
-        lines.append(f"> 结果：`{len(list(info.get('command_entries') or []))}` 个高频动作")
-        lines.append("> 语义：只保留高频命令，减少在帮助文案和命令记忆之间来回切换。")
+        summary = f"结果：`{len(list(info.get('command_entries') or []))}` 个高频动作。这里只保留高频入口，不追求完整命令清单。"
     elif view == PANEL_STATUS:
-        lines.append("> 语义：先看现场，再决定继续当前任务、切目录，还是切会话。")
-    return _markdown("\n".join(lines))
+        summary = "先看现场，再决定继续当前任务、切目录，还是切会话。"
+    elements = build_status_hero(
+        f"面板 · {PANEL_VIEW_LABELS.get(view, '总览')}",
+        tone="info",
+        summary=summary,
+        facts=[
+            ("当前会话", f"{current_title}\n`{session_id}`"),
+            ("通道", f"`{channel}`"),
+            ("目录", f"`{cwd}`"),
+            ("模型", f"`{model}`"),
+            ("Provider", f"`{provider}`"),
+            ("Sandbox", f"`{sandbox}`"),
+            ("上下文", f"`{info.get('context_usage')}`" if info.get("context_usage") else ""),
+        ],
+        notes=["导航和翻页优先原地更新当前消息"],
+    )
+    context_preview = str(info.get("context_preview") or "").strip()
+    if context_preview:
+        note_block = build_note_bar([f"最近上下文：{context_preview}"])
+        if note_block is not None:
+            elements.append(note_block)
+    return elements
 
 
 
@@ -164,7 +171,7 @@ def _build_home_card(info: dict[str, Any]) -> dict[str, Any]:
     action_context = info.get("action_context") if isinstance(info.get("action_context"), dict) else {}
     sessions = list(info.get("sessions") or [])[:3]
     shortcuts = list(info.get("directory_shortcuts") or [])[:3]
-    elements: list[dict[str, Any]] = [_build_header_block(info, PANEL_HOME)]
+    elements: list[dict[str, Any]] = [*_build_header_elements(info, PANEL_HOME), divider_block()]
     _append_view_nav(elements, PANEL_HOME, action_context)
     elements.append(_markdown("**进入哪一类结果**\n> 这四个入口分别收敛会话、目录、命令和状态结果；下面的预览和结果页使用同一套项目语义。"))
     elements.append(_action_row([build_button("恢复上一条", "/resume latest", "primary", action_context), build_button("新会话", "/new", "default", action_context), build_button("当前状态", "/panel status", "default", action_context)]))
@@ -183,7 +190,7 @@ def _build_sessions_card(info: dict[str, Any]) -> dict[str, Any]:
     page = int(info.get("page") or 1)
     total_pages = int(info.get("total_pages") or 1)
     sort_mode = str(info.get("sort_mode") or "updated-desc")
-    elements: list[dict[str, Any]] = [_build_header_block(info, PANEL_SESSIONS)]
+    elements: list[dict[str, Any]] = [*_build_header_elements(info, PANEL_SESSIONS), divider_block()]
     _append_view_nav(elements, PANEL_SESSIONS, action_context)
     elements.append(_markdown("**会话结果**\n> 先在这里排序或翻页，再决定恢复哪条会话；真正执行仍统一走 `/resume`。"))
     elements.append(_action_row([
@@ -205,7 +212,7 @@ def _build_sessions_card(info: dict[str, Any]) -> dict[str, Any]:
 def _build_directories_card(info: dict[str, Any]) -> dict[str, Any]:
     action_context = info.get("action_context") if isinstance(info.get("action_context"), dict) else {}
     shortcuts = list(info.get("directory_shortcuts") or [])
-    elements: list[dict[str, Any]] = [_build_header_block(info, PANEL_DIRECTORIES)]
+    elements: list[dict[str, Any]] = [*_build_header_elements(info, PANEL_DIRECTORIES), divider_block()]
     _append_view_nav(elements, PANEL_DIRECTORIES, action_context)
     elements.append(_markdown("**目录结果**\n> 优先使用稳定快捷入口；没有合适入口时，再手写 `/cwd <path>`。"))
     _append_directory_items(elements, shortcuts, action_context)
@@ -216,7 +223,7 @@ def _build_directories_card(info: dict[str, Any]) -> dict[str, Any]:
 
 def _build_commands_card(info: dict[str, Any]) -> dict[str, Any]:
     action_context = info.get("action_context") if isinstance(info.get("action_context"), dict) else {}
-    elements: list[dict[str, Any]] = [_build_header_block(info, PANEL_COMMANDS)]
+    elements: list[dict[str, Any]] = [*_build_header_elements(info, PANEL_COMMANDS), divider_block()]
     _append_view_nav(elements, PANEL_COMMANDS, action_context)
     elements.append(_markdown("**命令结果**\n> 这里保留的是高频动作，不是完整命令清单；目标是更快进入下一步。"))
     _append_generic_items(elements, list(info.get("command_entries") or []), action_context)
@@ -226,7 +233,7 @@ def _build_commands_card(info: dict[str, Any]) -> dict[str, Any]:
 
 def _build_status_card(info: dict[str, Any]) -> dict[str, Any]:
     action_context = info.get("action_context") if isinstance(info.get("action_context"), dict) else {}
-    elements: list[dict[str, Any]] = [_build_header_block(info, PANEL_STATUS)]
+    elements: list[dict[str, Any]] = [*_build_header_elements(info, PANEL_STATUS), divider_block()]
     _append_view_nav(elements, PANEL_STATUS, action_context)
     elements.append(_markdown("**状态结果**\n> 先判断现场，再决定是继续发消息、切目录，还是切去旧会话。"))
     _append_generic_items(elements, list(info.get("status_entries") or []), action_context)
