@@ -14,6 +14,7 @@ from openrelay.state import StateStore
 class FakeHooks:
     def __init__(self) -> None:
         self.replies: list[dict[str, object]] = []
+        self.help_calls: list[tuple[str, str]] = []
         self.panel_calls: list[tuple[str, str]] = []
         self.session_list_calls: list[tuple[str, int, str]] = []
         self.switch_calls: list[tuple[str, str, str]] = []
@@ -22,6 +23,9 @@ class FakeHooks:
 
     async def reply(self, message: IncomingMessage, text: str, **kwargs) -> None:
         self.replies.append({"message": message, "text": text, "kwargs": kwargs})
+
+    async def send_help(self, message: IncomingMessage, session_key: str, session) -> None:
+        self.help_calls.append((message.message_id, session_key))
 
     async def send_panel(self, message: IncomingMessage, session_key: str, session) -> None:
         self.panel_calls.append((message.message_id, session_key))
@@ -98,6 +102,7 @@ def build_router(tmp_path: Path) -> tuple[RuntimeCommandRouter, StateStore, Fake
         {"codex": object(), "claude": object()},
         RuntimeCommandHooks(
             reply=hooks.reply,
+            send_help=hooks.send_help,
             send_panel=hooks.send_panel,
             send_session_list=hooks.send_session_list,
             switch_release_channel=hooks.switch_release_channel,
@@ -128,9 +133,11 @@ async def test_runtime_command_router_delegates_panel_and_admin_restart(tmp_path
     router, store, hooks = build_router(tmp_path)
     session = store.load_session("p2p:oc_1")
 
+    await router.handle(make_message("/help", suffix="help"), session.base_key, session)
     await router.handle(make_message("/panel", suffix="panel"), session.base_key, session)
     await router.handle(make_message("/restart", sender_open_id="ou_admin", suffix="restart_admin"), session.base_key, session)
 
+    assert hooks.help_calls == [("om_help", session.base_key)]
     assert hooks.panel_calls == [("om_panel", session.base_key)]
     assert hooks.restart_scheduled == 1
     assert hooks.replies[-1]["text"] == "正在重启 openrelay，预计几秒后恢复。"

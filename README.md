@@ -21,8 +21,11 @@
 - 命令集尽量对齐：`/panel`、`/ping`、`/stop`、`/restart`、`/main`、`/stable`、`/develop`、`/new`、`/resume`、`/clear`、`/status`、`/cwd`、`/cd`、`/model`、`/sandbox`、`/tools`、`/help`
 - 会话支持 `main` / `develop` 工作区切换，并写入 `data/release-events.jsonl`
 - `/panel` 会发送飞书交互卡片，最近会话和常用动作都在卡片里
+- `/panel` 现在可按 `main / develop` 作用域显示常用目录快捷按钮，点击后直接复用 `/cwd` 切换
 - `/resume` 现在会合并本地会话与可导入的原生 `~/.codex/sessions` 历史
 - `FEISHU_STREAM_MODE=card` 时会显示 `openrelay` 的运行中状态卡片与 typing
+- 主回复卡片、运行中卡片和常驻操作卡片已收敛到一套更接近 Codex CLI 的低噪音主题语义
+- 当前回复还没结束时，继续发消息会自动排到下一轮；连续补充会合并成一轮 follow-up
 
 ## 环境变量
 
@@ -54,6 +57,7 @@ CODEX_CLI_PATH=codex
 CODEX_MODEL_OVERRIDE=
 CODEX_SANDBOX=workspace-write
 CODEX_SESSIONS_DIR=~/.codex/sessions
+DIRECTORY_SHORTCUTS=[{"name":"docs","path":"docs","channels":"main"},{"name":"api","path":"services/api","channels":"develop"}]
 ```
 
 说明：
@@ -63,6 +67,8 @@ CODEX_SESSIONS_DIR=~/.codex/sessions
 - `WORKSPACE_DIR` 是默认工作区；`MAIN_WORKSPACE_DIR` 和 `DEVELOP_WORKSPACE_DIR` 对应 `/main` 与 `/develop`
 - `MODEL_BACKEND` 当前内置只支持 `codex-cli`，但 runtime 已按 CLI 适配器抽象设计
 - `FEISHU_ALLOWED_OPEN_IDS` 与 `FEISHU_ADMIN_OPEN_IDS` 是 `openrelay` 新补的权限层
+- `DIRECTORY_SHORTCUTS` 用 JSON array 描述 `/panel` 常用目录快捷入口；`channels` 支持 `main` / `develop` / `all`
+- 快捷目录按钮内部会先解析成稳定目标路径，再复用 `/cwd <path>` 主路径，避免受当前 cwd 深度影响
 
 ## 快速开始
 
@@ -110,9 +116,19 @@ http://your-host:3000/feishu/webhook
 - `/sandbox [read-only|workspace-write|danger-full-access]` - 查看或切换执行模式
 - `/tools`、`/help` - 查看当前会话阶段、优先操作建议、常用流程和命令速查
 
+如果你的 `/panel` 已配置常用目录快捷按钮，优先直接点按钮切目录；没有合适入口时再手写 `/cwd <path>`。
+
 ## 当前状态
 
 - 命令与会话体验已收敛到 `openrelay` 当前形态
 - `codex app-server` 本机 smoke test 已跑通
 - Feishu WebSocket、流式卡片、typing 和原生 session 导入列表已经补上；还未完全补齐的是更细的流式活动面板与外部 provider 行为差异
 - 但 runtime 主流程已经按“可插拔 CLI 适配器”设计好了，后续扩展不会再把产品绑死到某一家 CLI
+
+## 连续消息的默认心智
+
+- 同一任务继续时，通常不用先发命令，直接补充消息即可。
+- 如果上一条回复还在生成，新的普通文本会进入下一轮 follow-up；连续补充会自动合并。
+- 如果你想立刻打断当前回复，发送 `/stop`；已确认收到的补充消息会在停止后继续处理。
+- 如果你其实已经切到新任务，不要继续堆在同一会话里，直接 `/new <label>`。
+- 飞书侧这版不依赖“编辑上一条消息”来驱动 runtime；想修正内容时，直接补发一条，或 `/stop` 后重发。

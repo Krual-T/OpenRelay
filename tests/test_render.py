@@ -27,6 +27,7 @@ def test_render_live_status_markdown_contains_header_details_and_body() -> None:
             "started_at": "2026-03-09T00:00:00+00:00",
         }
     )
+    assert "`进行中`" in markdown
     assert "**正在执行命令**" in markdown
     assert "当前：执行 `ls -la`" in markdown
     assert "partial reply" in markdown
@@ -44,3 +45,4 @@ def test_render_live_status_sections_splits_fields() -> None:
     assert sections["header"]
     assert sections["details"]
     assert sections["body"] == "hello"
+    assert "`进行中`" in sections["header"]

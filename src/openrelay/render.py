@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from openrelay.card_theme import build_status_heading, status_emoji
+
 
 def normalize_inline(text: object) -> str:
     return " ".join(str(text or "").split()).strip()
@@ -158,7 +160,7 @@ def build_live_status_view(state: dict[str, Any] | None = None) -> dict[str, obj
     spinner = resolve_spinner_dots(state)
     semantic_source = f"{state.get('heading', '')} {state.get('status', '')}"
     heading_emoji = resolve_semantic_emoji(semantic_source)
-    header_lines = [f"{spinner}  {heading_emoji} **{heading}**"]
+    header_lines = [build_status_heading("running", heading, prefix=f"{spinner} {heading_emoji}")]
     detail_lines: list[str] = []
 
     current_text = ""
@@ -171,7 +173,7 @@ def build_live_status_view(state: dict[str, Any] | None = None) -> dict[str, obj
     elif heading:
         current_text = heading
     if current_text:
-        detail_lines.append(f"> {resolve_semantic_emoji(current_text)} 当前：{current_text}")
+        detail_lines.append(f"> {status_emoji('running')} 当前：{current_text}")
 
     reasoning_title = extract_reasoning_title(state.get("last_reasoning")) if state.get("last_reasoning") else ""
     if reasoning_title and not any(token in current_text for token in ["分析", "计划", "reason"]):

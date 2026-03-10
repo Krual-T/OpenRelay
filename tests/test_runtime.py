@@ -1,11 +1,14 @@
 import asyncio
+import shlex
 from pathlib import Path
 import os
 
 import pytest
 
 from openrelay.backends.base import Backend, BackendContext
-from openrelay.config import AppConfig, BackendConfig, FeishuConfig
+from openrelay.config import AppConfig, BackendConfig, DirectoryShortcut, FeishuConfig
+from openrelay.feishu import parse_card_action_event
+from openrelay.follow_up import MERGED_FOLLOW_UP_INTRO
 from openrelay.models import BackendReply, IncomingMessage, SessionRecord
 from openrelay.runtime import AgentRuntime, get_systemd_service_unit, is_systemd_service_process
 from openrelay.session_ux import SessionUX
@@ -39,6 +42,28 @@ def extract_card_commands(card: dict) -> list[str]:
             if isinstance(value, dict) and value.get("command"):
                 commands.append(str(value["command"]))
     return commands
+
+
+def extract_card_text(card: dict) -> str:
+    contents: list[str] = []
+    for element in card.get("elements", []):
+        if not isinstance(element, dict):
+            continue
+        text = element.get("text")
+        if isinstance(text, dict) and isinstance(text.get("content"), str):
+            contents.append(text["content"])
+    return "\n".join(contents)
+
+
+def find_card_action_value(card: dict, command: str) -> dict:
+    for element in card.get("elements", []):
+        if element.get("tag") != "action":
+            continue
+        for action in element.get("actions", []):
+            value = action.get("value") if isinstance(action, dict) else None
+            if isinstance(value, dict) and value.get("command") == command:
+                return value
+    raise AssertionError(f"command not found in card: {command}")
 
 
 class FakeBackend(Backend):
@@ -116,6 +141,40 @@ class InterruptibleBackend(Backend):
         await context.cancel_event.wait()
         self.cancelled.set()
         raise RuntimeError("interrupted by /stop")
+
+
+class QueuedFollowUpBackend(Backend):
+    name = "fake"
+
+    def __init__(self) -> None:
+        self.prompts: list[str] = []
+        self.first_started = asyncio.Event()
+        self.release_first = asyncio.Event()
+
+    async def run(self, session: SessionRecord, prompt: str, context: BackendContext) -> BackendReply:
+        self.prompts.append(prompt)
+        if len(self.prompts) == 1:
+            self.first_started.set()
+            await self.release_first.wait()
+        return BackendReply(text=f"done: {prompt}", native_session_id=f"native_{len(self.prompts)}")
+
+
+class StopThenContinueBackend(Backend):
+    name = "fake"
+
+    def __init__(self) -> None:
+        self.prompts: list[str] = []
+        self.first_started = asyncio.Event()
+
+    async def run(self, session: SessionRecord, prompt: str, context: BackendContext) -> BackendReply:
+        self.prompts.append(prompt)
+        if len(self.prompts) == 1:
+            self.first_started.set()
+            if context.cancel_event is None:
+                raise AssertionError("cancel_event is required for stop-follow-up test")
+            await context.cancel_event.wait()
+            raise RuntimeError("interrupted by /stop")
+        return BackendReply(text=f"done: {prompt}", native_session_id="native_follow_up")
 
 
 class BlockingStreamingSession(FakeStreamingSession):
@@ -222,6 +281,64 @@ async def test_runtime_panel_command_sends_card(tmp_path: Path) -> None:
 
 
 @pytest.mark.asyncio
+async def test_runtime_panel_shortcuts_switch_cwd_from_button(tmp_path: Path) -> None:
+    config = make_config(tmp_path)
+    config.workspace_root.mkdir(parents=True, exist_ok=True)
+    config.main_workspace_dir.mkdir(parents=True, exist_ok=True)
+    config.develop_workspace_dir.mkdir(parents=True, exist_ok=True)
+    main_docs = config.main_workspace_dir / "docs"
+    main_shared = config.main_workspace_dir / "shared"
+    develop_shared = config.develop_workspace_dir / "shared"
+    develop_api = config.develop_workspace_dir / "api"
+    for path in [main_docs, main_shared, develop_shared, develop_api]:
+        path.mkdir(parents=True, exist_ok=True)
+    config.directory_shortcuts = (
+        DirectoryShortcut(name="文档", path="docs", channels=("main",)),
+        DirectoryShortcut(name="共享", path="shared", channels=("all",)),
+        DirectoryShortcut(name="修复 API", path="api", channels=("develop",)),
+    )
+    store = StateStore(config)
+    messenger = FakeMessenger()
+    runtime = AgentRuntime(config, store, messenger, backends={"codex": FakeBackend()})
+
+    await runtime.dispatch_message(make_message("/panel", event_suffix="panel_shortcuts_main"))
+
+    main_card = messenger.cards[-1]
+    main_commands = extract_card_commands(main_card)
+    docs_command = f"/cwd {shlex.quote(str(main_docs))}"
+    main_shared_command = f"/cwd {shlex.quote(str(main_shared))}"
+    develop_command = f"/cwd {shlex.quote(str(develop_api))}"
+    assert docs_command in main_commands
+    assert main_shared_command in main_commands
+    assert develop_command not in main_commands
+
+    docs_action = find_card_action_value(main_card, docs_command)
+    parsed = parse_card_action_event(
+        {
+            "token": "tok_panel_docs",
+            "operator": {"open_id": "ou_user"},
+            "action": {"value": docs_action},
+            "context": {"open_chat_id": "oc_1", "open_message_id": "om_panel_docs"},
+        }
+    )
+    assert parsed.message is not None
+    await runtime.dispatch_message(parsed.message)
+    session = store.load_session(runtime.build_session_key(make_message("x")))
+    assert session.cwd == str(main_docs)
+
+    await runtime.dispatch_message(make_message("/develop bugfix", event_suffix="panel_shortcuts_develop_switch"))
+    await runtime.dispatch_message(make_message("/panel", event_suffix="panel_shortcuts_develop"))
+    develop_card = messenger.cards[-1]
+    develop_commands = extract_card_commands(develop_card)
+    develop_shared_command = f"/cwd {shlex.quote(str(develop_shared))}"
+    assert docs_command not in develop_commands
+    assert develop_shared_command in develop_commands
+    assert develop_command in develop_commands
+
+    await runtime.shutdown()
+
+
+@pytest.mark.asyncio
 async def test_runtime_resume_list_sends_paginated_sortable_card(tmp_path: Path) -> None:
     config = make_config(tmp_path)
     config.workspace_root.mkdir(parents=True, exist_ok=True)
@@ -271,36 +388,61 @@ async def test_runtime_help_command_shows_actionable_guidance(tmp_path: Path) ->
     runtime = AgentRuntime(config, store, messenger, backends={"codex": FakeBackend()})
 
     await runtime.dispatch_message(make_message("/help", event_suffix="help0"))
-    empty_help = messenger.messages[-1]
-    assert "OpenRelay 帮助" in empty_help
-    assert "当前状态：" in empty_help
-    assert "- 会话阶段：未开始（还没发第一条真实需求）" in empty_help
-    assert "- 原生会话：pending（直接发消息就会创建）" in empty_help
-    assert "一句话判断：" in empty_help
+    assert messenger.cards
+    empty_card = messenger.cards[-1]
+    assert empty_card["header"]["title"]["content"] == "openrelay help"
+    empty_help = extract_card_text(empty_card)
+    assert "当前状态" in empty_help
+    assert "会话阶段：未开始（还没发第一条真实需求）" in empty_help
+    assert "原生会话：`pending`" in empty_help
+    assert "一句话判断：这是一个空会话；最有效的动作通常是直接发完整任务，而不是先试很多命令。" in empty_help
     assert "这是一个空会话；最有效的动作通常是直接发完整任务，而不是先试很多命令。" in empty_help
-    assert "你现在最该做什么：" in empty_help
+    assert "你现在最该做什么" in empty_help
     assert "先把目标说完整：要改什么、在哪个目录、是否要直接改代码。" in empty_help
-    assert "下一条消息可以直接这样发：" in empty_help
+    assert "下一条消息可以直接这样发" in empty_help
     assert "在 <path> 下实现 <需求>；先列计划，再按最小改动完成。" in empty_help
-    assert "什么时候该用命令：" in empty_help
+    assert "什么时候该用命令" in empty_help
     assert "/status 看会话、目录、最近上下文；/usage 看 token 和 context_usage。" in empty_help
-    assert "最近上下文：" in empty_help
-    assert "当前还没有上下文消息。发出第一条真实消息后，这里会显示最近上下文。" in empty_help
+    assert "最近关注：还没有可总结的本地上下文" in empty_help
+    empty_commands = extract_card_commands(empty_card)
+    assert "/status" in empty_commands
+    assert "/usage" in empty_commands
+    assert "/resume list" in empty_commands
+    assert "/new" in empty_commands
+    assert "/cwd" in empty_commands
+    assert "/main" in empty_commands
+    assert "/develop" in empty_commands
+
+    status_action = find_card_action_value(empty_card, "/status")
+    parsed = parse_card_action_event(
+        {
+            "token": "tok_help_status",
+            "operator": {"open_id": "ou_user"},
+            "action": {"value": status_action},
+            "context": {"open_chat_id": "oc_1", "open_message_id": "om_help_card"},
+        }
+    )
+    assert parsed.message is not None
+    assert parsed.message.session_key == runtime.build_session_key(make_message("/help", event_suffix="help0"))
+
+    await runtime.dispatch_message(parsed.message)
+    assert messenger.messages[-1].startswith("session_base=p2p:oc_1")
 
     await runtime.dispatch_message(make_message("hello help", event_suffix="help1"))
     await runtime.dispatch_message(make_message("/help", event_suffix="help2"))
 
-    help_text = messenger.messages[-1]
-    assert "- 会话阶段：进行中（继续发消息会沿用当前原生会话）" in help_text
-    assert "- 上下文占用：17.0% (170/1000)" in help_text
-    assert "- 最近关注：用户：hello help | 助手：echo: hello help" in help_text
+    help_card = messenger.cards[-1]
+    help_text = extract_card_text(help_card)
+    assert "会话阶段：进行中（继续发消息会沿用当前原生会话）" in help_text
+    assert "上下文占用：`17.0% (170/1000)`" in help_text
+    assert "最近关注：用户：hello help | 助手：echo: hello help" in help_text
     assert "这是一个进行中的会话；如果任务没变，直接补充信息最快。" in help_text
     assert "如果还是同一件事，直接追加信息：目标、报错、文件路径、验收标准。" in help_text
+    assert "当前回复还没结束时，继续发消息会自动排到下一轮；连续补充会合并处理。" in help_text
     assert "基于现在的进度继续，不要重来；做完告诉我改了哪些文件。" in help_text
     assert "同一任务继续干：通常不用命令，直接发消息。" in help_text
-    assert "最近上下文：" in help_text
-    assert "- 用户：hello help" in help_text
-    assert "- 助手：echo: hello help" in help_text
+    assert "当前回复还在跑时，继续发消息会进入下一轮；连续补充会自动合并。" in help_text
+    assert "/stop" in extract_card_commands(help_card)
     await runtime.shutdown()
 
 
@@ -436,6 +578,64 @@ async def test_runtime_stop_interrupts_active_run(tmp_path: Path) -> None:
     assert backend.cancelled.is_set() is True
     assert "已发送停止请求，正在中断当前回复。" in messenger.messages
     assert "已停止当前回复。" in messenger.messages
+    assert len(runtime.active_runs) == 0
+    await runtime.shutdown()
+
+
+@pytest.mark.asyncio
+async def test_runtime_merges_follow_up_messages_during_active_run(tmp_path: Path) -> None:
+    config = make_config(tmp_path)
+    config.workspace_root.mkdir(parents=True, exist_ok=True)
+    config.main_workspace_dir.mkdir(parents=True, exist_ok=True)
+    config.develop_workspace_dir.mkdir(parents=True, exist_ok=True)
+    store = StateStore(config)
+    messenger = FakeMessenger()
+    backend = QueuedFollowUpBackend()
+    runtime = AgentRuntime(config, store, messenger, backends={"codex": backend})
+
+    run_task = asyncio.create_task(runtime.dispatch_message(make_message("first", event_suffix="first")))
+    await asyncio.wait_for(backend.first_started.wait(), timeout=1)
+
+    await runtime.dispatch_message(make_message("补充一", event_suffix="follow_1"))
+    await runtime.dispatch_message(make_message("补充二", event_suffix="follow_2"))
+
+    backend.release_first.set()
+    await asyncio.wait_for(run_task, timeout=1)
+
+    assert backend.prompts[0] == "first"
+    assert MERGED_FOLLOW_UP_INTRO in backend.prompts[1]
+    assert "补充消息 1：\n补充一" in backend.prompts[1]
+    assert "补充消息 2：\n补充二" in backend.prompts[1]
+    assert "已收到补充，会在当前回复结束后自动继续；后续新补充会合并到下一轮。" in messenger.messages
+    assert "已收到补充，当前累计 2 条；当前回复结束后会合并成下一轮继续。" in messenger.messages
+    assert messenger.messages[-1].startswith(f"done: {MERGED_FOLLOW_UP_INTRO}")
+    assert len(runtime.active_runs) == 0
+    await runtime.shutdown()
+
+
+@pytest.mark.asyncio
+async def test_runtime_stop_keeps_queued_follow_up(tmp_path: Path) -> None:
+    config = make_config(tmp_path)
+    config.workspace_root.mkdir(parents=True, exist_ok=True)
+    config.main_workspace_dir.mkdir(parents=True, exist_ok=True)
+    config.develop_workspace_dir.mkdir(parents=True, exist_ok=True)
+    store = StateStore(config)
+    messenger = FakeMessenger()
+    backend = StopThenContinueBackend()
+    runtime = AgentRuntime(config, store, messenger, backends={"codex": backend})
+
+    run_task = asyncio.create_task(runtime.dispatch_message(make_message("long running", event_suffix="queued_run")))
+    await asyncio.wait_for(backend.first_started.wait(), timeout=1)
+
+    await runtime.dispatch_message(make_message("补充 stop", event_suffix="queued_follow_up"))
+    await runtime.dispatch_message(make_message("/stop", event_suffix="queued_stop"))
+    await asyncio.wait_for(run_task, timeout=1)
+
+    assert backend.prompts == ["long running", "补充 stop"]
+    assert "已收到补充，会在当前回复结束后自动继续；后续新补充会合并到下一轮。" in messenger.messages
+    assert "已发送停止请求，正在中断当前回复 停止后会继续处理已收到的 1 条补充消息。" in messenger.messages
+    assert "已停止当前回复。" in messenger.messages
+    assert messenger.messages[-1] == "done: 补充 stop"
     assert len(runtime.active_runs) == 0
     await runtime.shutdown()
 

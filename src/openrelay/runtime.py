@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import asyncio
-from collections import defaultdict
+from collections import defaultdict, deque
 import logging
 import os
 from pathlib import Path
@@ -11,6 +11,7 @@ from typing import Any, Awaitable, Callable
 from openrelay.backends import Backend, BackendDescriptor, BackendContext, CodexBackend, build_builtin_backend_descriptors, instantiate_builtin_backends
 from openrelay.config import AppConfig
 from openrelay.feishu import FeishuMessenger
+from openrelay.follow_up import QueuedFollowUp
 from openrelay.help_renderer import HelpRenderer
 from openrelay.models import ActiveRun, IncomingMessage, SessionRecord, utc_now
 from openrelay.panel_card import build_panel_card
@@ -75,6 +76,7 @@ class AgentRuntime:
         if config.backend.default_backend not in self.backends:
             raise ValueError(f"Configured default backend is unavailable: {config.backend.default_backend}")
         self._locks: dict[str, asyncio.Lock] = defaultdict(asyncio.Lock)
+        self._pending_session_inputs: dict[str, deque[IncomingMessage | QueuedFollowUp]] = defaultdict(deque)
         self.active_runs: dict[str, ActiveRun] = {}
         self.streaming_session_factory = streaming_session_factory or (lambda current_messenger: FeishuStreamingSession(current_messenger))
         self.typing_manager = typing_manager or FeishuTypingManager(messenger)
@@ -90,6 +92,7 @@ class AgentRuntime:
             self.backends,
             RuntimeCommandHooks(
                 reply=self._reply,
+                send_help=self._send_help,
                 send_panel=self._send_panel,
                 send_session_list=self._send_session_list,
                 switch_release_channel=self._switch_release_channel,
@@ -146,18 +149,60 @@ class AgentRuntime:
                 await self._handle_stop(message, session_key)
                 return
 
-            async with self._locks[session_key]:
+            session_lock = self._locks[session_key]
+            if session_lock.locked():
+                queued_follow_up = self._enqueue_pending_input(session_key, message)
+                if queued_follow_up is not None:
+                    await self._reply(message, queued_follow_up.acknowledgement_text())
+                return
+
+            async with session_lock:
                 await self._handle_message_serialized(message, session_key)
         except Exception:
             LOGGER.exception("dispatch_message failed for event_id=%s chat_id=%s", message.event_id, message.chat_id)
 
     async def _handle_message_serialized(self, message: IncomingMessage, session_key: str) -> None:
+        pending_input: IncomingMessage | QueuedFollowUp | None = message
+        while pending_input is not None:
+            await self._handle_single_serialized_input(pending_input, session_key)
+            pending_input = self._dequeue_pending_input(session_key)
+
+    async def _handle_single_serialized_input(self, pending_input: IncomingMessage | QueuedFollowUp, session_key: str) -> None:
+        message = pending_input.to_message() if isinstance(pending_input, QueuedFollowUp) else pending_input
         session = self.store.load_session(session_key)
         if message.text.startswith("/"):
             handled = await self._handle_command(message, session_key, session)
             if handled:
                 return
         await self._run_backend_turn(message, session_key, session)
+
+    def _enqueue_pending_input(self, session_key: str, message: IncomingMessage) -> QueuedFollowUp | None:
+        pending_inputs = self._pending_session_inputs[session_key]
+        if self.active_runs.get(session_key) is not None and not message.text.startswith("/"):
+            last_input = pending_inputs[-1] if pending_inputs else None
+            if isinstance(last_input, QueuedFollowUp):
+                last_input.merge(message)
+                return last_input
+            queued_follow_up = QueuedFollowUp.from_message(message)
+            pending_inputs.append(queued_follow_up)
+            return queued_follow_up
+        pending_inputs.append(message)
+        return None
+
+    def _dequeue_pending_input(self, session_key: str) -> IncomingMessage | QueuedFollowUp | None:
+        pending_inputs = self._pending_session_inputs.get(session_key)
+        if not pending_inputs:
+            return None
+        next_input = pending_inputs.popleft()
+        if not pending_inputs:
+            self._pending_session_inputs.pop(session_key, None)
+        return next_input
+
+    def _queued_follow_up_count(self, session_key: str) -> int:
+        pending_inputs = self._pending_session_inputs.get(session_key)
+        if not pending_inputs:
+            return 0
+        return sum(item.message_count for item in pending_inputs if isinstance(item, QueuedFollowUp))
 
     async def _run_backend_turn(self, message: IncomingMessage, session_key: str, session: SessionRecord) -> None:
         backend = self.backends.get(session.backend)
@@ -327,7 +372,11 @@ class AgentRuntime:
             await self._reply(message, "当前没有进行中的回复。", command_reply=True)
             return
         await active.cancel("interrupted by /stop")
-        await self._reply(message, "已发送停止请求，正在中断当前回复。", command_reply=True)
+        queued_follow_up_count = self._queued_follow_up_count(session_key)
+        stop_message = "已发送停止请求，正在中断当前回复。"
+        if queued_follow_up_count > 0:
+            stop_message = f"{stop_message[:-1]} 停止后会继续处理已收到的 {queued_follow_up_count} 条补充消息。"
+        await self._reply(message, stop_message, command_reply=True)
 
     async def _switch_release_channel(
         self,
@@ -404,6 +453,19 @@ class AgentRuntime:
             "sessionOwnerOpenId": message.session_owner_open_id or (message.sender_open_id if message.chat_type == "group" and self.config.feishu.group_session_scope != "shared" else ""),
         }
 
+    async def _send_help(self, message: IncomingMessage, session_key: str, session: SessionRecord) -> None:
+        card = self.help_renderer.build_card(session, self.available_backend_names(), self._build_card_action_context(message, session_key))
+        try:
+            await self.messenger.send_interactive_card(
+                message.chat_id,
+                card,
+                reply_to_message_id=self._command_reply_target(message),
+                root_id=self._root_id_for_message(message),
+                force_new_message=self._should_force_new_message_for_command_card(message),
+            )
+        except Exception:
+            await self._reply(message, self.help_renderer.build_text(session, self.available_backend_names()), command_reply=True, command_name="/help")
+
     async def _send_panel(self, message: IncomingMessage, session_key: str, session: SessionRecord) -> None:
         entries = self.session_browser.list_entries(session_key, session, limit=6)
         card = build_panel_card(
@@ -417,6 +479,7 @@ class AgentRuntime:
                 "sandbox": session.safety_mode,
                 "context_usage": self.session_ux.format_context_usage(session),
                 "context_preview": self.session_ux.build_context_preview(session),
+                "directory_shortcuts": self.session_ux.build_directory_shortcut_entries(session),
                 "action_context": self._build_card_action_context(message, session_key),
                 "sessions": self.session_ux.build_session_display_entries(entries),
             }

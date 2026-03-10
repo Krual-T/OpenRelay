@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from typing import Any, Callable
 
+from openrelay.card_theme import build_card_shell, infer_final_tone
 from openrelay.models import SessionRecord, utc_now
 
 
@@ -102,8 +103,9 @@ def apply_live_progress(state: LiveReplyState, event: dict[str, Any] | None) -> 
 
 
 def build_reply_card(text: str, title: str = "openrelay") -> dict[str, object]:
-    return {
-        "config": {"wide_screen_mode": True, "enable_forward": True, "update_multi": True},
-        "header": {"template": "blue", "title": {"tag": "plain_text", "content": title}},
-        "elements": [{"tag": "div", "text": {"tag": "lark_md", "content": text.strip() or "回复为空。"}}],
-    }
+    content = text.strip() or "回复为空。"
+    return build_card_shell(
+        title,
+        [{"tag": "div", "text": {"tag": "lark_md", "content": content}}],
+        tone=infer_final_tone(content),
+    )

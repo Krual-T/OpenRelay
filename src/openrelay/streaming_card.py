@@ -16,6 +16,7 @@ from lark_oapi.api.cardkit.v1 import (
     UpdateCardRequestBody,
 )
 
+from openrelay.card_theme import build_status_heading, infer_final_tone
 from openrelay.feishu import FeishuMessenger, _read_text
 from openrelay.render import render_live_status_sections
 
@@ -68,7 +69,13 @@ def has_same_layout(left: dict[str, str] | None, right: dict[str, str] | None) -
 
 
 def build_final_sections(text: str) -> dict[str, str]:
-    return {"header": "", "details": "", "body": normalize_section_text(text)}
+    content = normalize_section_text(text)
+    tone = infer_final_tone(content)
+    return {
+        "header": build_status_heading(tone, "openrelay 回复"),
+        "details": "",
+        "body": content,
+    }
 
 
 
