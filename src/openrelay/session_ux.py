@@ -48,7 +48,7 @@ class SessionUX:
             workspace_root = get_session_workspace_root(self.config, session).resolve()
         else:
             workspace_root = self.config.workspace_root.resolve()
-        absolute = Path(cwd).resolve() if cwd else workspace_root
+        absolute = Path(cwd).expanduser().resolve() if cwd else workspace_root
         try:
             relative = absolute.relative_to(workspace_root)
         except ValueError:
@@ -57,10 +57,15 @@ class SessionUX:
 
     def resolve_cwd(self, current_cwd: str, relative_path: str, session: SessionRecord) -> Path:
         workspace_root = get_session_workspace_root(self.config, session).resolve()
-        base = Path(current_cwd).resolve() if current_cwd else workspace_root
-        target = (base / relative_path).resolve()
+        base = Path(current_cwd).expanduser().resolve() if current_cwd else workspace_root
+        requested = Path(relative_path.strip()).expanduser()
+        target = requested.resolve() if requested.is_absolute() else (base / requested).resolve()
         if target != workspace_root and workspace_root not in target.parents:
             raise ValueError("path escapes workspace root")
+        if not target.exists():
+            raise ValueError(f"path does not exist: {relative_path}")
+        if not target.is_dir():
+            raise ValueError(f"not a directory: {relative_path}")
         return target
 
     def build_session_title(self, entry: dict[str, object]) -> str:

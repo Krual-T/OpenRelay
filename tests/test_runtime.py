@@ -8,6 +8,7 @@ from openrelay.backends.base import Backend, BackendContext
 from openrelay.config import AppConfig, BackendConfig, FeishuConfig
 from openrelay.models import BackendReply, IncomingMessage, SessionRecord
 from openrelay.runtime import AgentRuntime, is_systemd_service_process
+from openrelay.session_ux import SessionUX
 from openrelay.state import StateStore
 
 
@@ -259,6 +260,72 @@ async def test_runtime_top_level_p2p_cwd_prefers_thread_reply(tmp_path: Path) ->
 
     assert messenger.text_calls[-1]["force_new_message"] is False
     assert messenger.text_calls[-1]["reply_to_message_id"] == "om_cwd"
+    await runtime.shutdown()
+
+
+def test_session_ux_resolve_cwd_expands_home_path(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("HOME", str(tmp_path))
+    config = make_config(tmp_path)
+    config.workspace_root.mkdir(parents=True, exist_ok=True)
+    config.main_workspace_dir.mkdir(parents=True, exist_ok=True)
+    config.develop_workspace_dir.mkdir(parents=True, exist_ok=True)
+    target = config.main_workspace_dir / "repo"
+    target.mkdir(parents=True, exist_ok=True)
+    store = StateStore(config)
+    session = store.load_session("p2p:oc_1")
+    ux = SessionUX(config, store)
+
+    resolved = ux.resolve_cwd(session.cwd, "~/main/repo", session)
+
+    assert resolved == target.resolve()
+    store.close()
+
+
+def test_session_ux_resolve_cwd_rejects_missing_path(tmp_path: Path) -> None:
+    config = make_config(tmp_path)
+    config.workspace_root.mkdir(parents=True, exist_ok=True)
+    config.main_workspace_dir.mkdir(parents=True, exist_ok=True)
+    config.develop_workspace_dir.mkdir(parents=True, exist_ok=True)
+    store = StateStore(config)
+    session = store.load_session("p2p:oc_1")
+    ux = SessionUX(config, store)
+
+    with pytest.raises(ValueError, match=r"path does not exist: missing-dir"):
+        ux.resolve_cwd(session.cwd, "missing-dir", session)
+    store.close()
+
+
+def test_session_ux_resolve_cwd_rejects_file_path(tmp_path: Path) -> None:
+    config = make_config(tmp_path)
+    config.workspace_root.mkdir(parents=True, exist_ok=True)
+    config.main_workspace_dir.mkdir(parents=True, exist_ok=True)
+    config.develop_workspace_dir.mkdir(parents=True, exist_ok=True)
+    file_path = config.main_workspace_dir / "README.md"
+    file_path.write_text("demo", encoding="utf-8")
+    store = StateStore(config)
+    session = store.load_session("p2p:oc_1")
+    ux = SessionUX(config, store)
+
+    with pytest.raises(ValueError, match=r"not a directory: README\.md"):
+        ux.resolve_cwd(session.cwd, "README.md", session)
+    store.close()
+
+
+@pytest.mark.asyncio
+async def test_runtime_cwd_command_rejects_missing_path(tmp_path: Path) -> None:
+    config = make_config(tmp_path)
+    config.workspace_root.mkdir(parents=True, exist_ok=True)
+    config.main_workspace_dir.mkdir(parents=True, exist_ok=True)
+    config.develop_workspace_dir.mkdir(parents=True, exist_ok=True)
+    store = StateStore(config)
+    messenger = FakeMessenger()
+    runtime = AgentRuntime(config, store, messenger, backends={"codex": FakeBackend()})
+
+    await runtime.dispatch_message(make_message("/cwd missing-dir", event_suffix="cwd_missing"))
+
+    session = store.load_session(runtime.build_session_key(make_message("x")))
+    assert session.cwd == str(config.main_workspace_dir)
+    assert messenger.messages[-1] == "cwd 切换失败：path does not exist: missing-dir"
     await runtime.shutdown()
 
 
