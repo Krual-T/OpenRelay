@@ -30,7 +30,7 @@ def test_build_streaming_content_prefers_partial_text_then_reasoning() -> None:
 
 
 @pytest.mark.asyncio
-async def test_streaming_session_throttles_updates_to_one_second(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_streaming_session_throttles_updates_to_short_cardkit_interval(monkeypatch: pytest.MonkeyPatch) -> None:
     session = FeishuStreamingSession(object())
     session.state = {
         "current_content": DEFAULT_THINKING_TEXT,
@@ -40,6 +40,7 @@ async def test_streaming_session_throttles_updates_to_one_second(monkeypatch: py
     async def fake_update_card_content(text: str) -> None:
         applied_contents.append(text)
         session.state["current_content"] = text
+        session.last_update_time = clock["now"] * 1000
 
     clock = {"now": 10.0}
     monkeypatch.setattr(streaming_card_module.time, "time", lambda: clock["now"])
@@ -49,12 +50,12 @@ async def test_streaming_session_throttles_updates_to_one_second(monkeypatch: py
     assert applied_contents == ["第一段"]
     assert session.pending_content == ""
 
-    clock["now"] = 10.5
+    clock["now"] = 10.05
     await session.update({"partial_text": "第二段"})
     assert applied_contents == ["第一段"]
     assert session.pending_content == "第二段"
 
-    clock["now"] = 11.1
+    clock["now"] = 10.2
     await session.update({"partial_text": "第二段"})
     assert applied_contents == ["第一段", "第二段"]
     assert session.pending_content == ""
