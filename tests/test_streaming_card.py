@@ -58,7 +58,7 @@ def test_build_streaming_content_shows_process_before_answer() -> None:
         }
     )
 
-    assert "• **Explored**" in content
+    assert "🔵 **Explored**" in content
     assert "└ Search Voyager" in content
     assert "└ `Gemini Voyager`" in content
     assert "Worked for" in content
