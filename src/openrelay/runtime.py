@@ -369,8 +369,8 @@ class AgentRuntime:
         pending_streaming_states: deque[dict[str, Any]] = deque()
         live_state = create_live_reply_state(session, self.session_ux.format_cwd)
         if session.backend != "codex":
-            live_state["heading"] = "正在生成回复"
-            live_state["status"] = "等待流式输出"
+            live_state["heading"] = "Generating reply"
+            live_state["status"] = "Waiting for streamed output"
 
         def stop_spinner_task() -> None:
             nonlocal spinner_task
@@ -448,8 +448,8 @@ class AgentRuntime:
             async def on_partial_text(partial_text: str) -> None:
                 if not partial_text.strip():
                     return
-                live_state["heading"] = "正在生成回复"
-                live_state["status"] = "正在输出内容"
+                live_state["heading"] = "Generating reply"
+                live_state["status"] = "Streaming output"
                 live_state["partial_text"] = partial_text
                 request_streaming_update()
 

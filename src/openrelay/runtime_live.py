@@ -195,8 +195,8 @@ def create_live_reply_state(
         "cwd": format_cwd(session.cwd, session),
         "history": [],
         "history_items": [],
-        "heading": "正在启动 Codex",
-        "status": "等待响应",
+        "heading": "Starting Codex",
+        "status": "Waiting for response",
         "current_command": "",
         "last_command": None,
         "commands": [],
@@ -245,39 +245,39 @@ def apply_live_progress(state: LiveReplyState, event: dict[str, Any] | None) -> 
         return
     event_type = event.get("type")
     if event_type == "run.started":
-        state["heading"] = "正在启动 Codex"
-        state["status"] = "正在准备回复"
+        state["heading"] = "Starting Codex"
+        state["status"] = "Preparing reply"
         _append_status_item(state, "Starting Codex", "Preparing reply")
         push_live_history(state, state["status"])
         return
     if event_type == "thread.started":
         state["native_session_id"] = str(event.get("threadId") or state.get("native_session_id") or "")
-        state["heading"] = "原生会话已连接"
-        state["status"] = "正在准备回复"
+        state["heading"] = "Connected native session"
+        state["status"] = "Preparing reply"
         _append_status_item(state, "Connected session", f"`{state['native_session_id']}`" if state["native_session_id"] else "")
-        push_live_history(state, "原生会话已连接")
+        push_live_history(state, "Connected native session")
         push_live_history(state, state["status"])
         return
     if event_type == "assistant.partial":
         finalize_reasoning_timing(state)
         _complete_reasoning_item(state)
-        state["heading"] = "正在生成回复"
-        state["status"] = "正在输出内容"
+        state["heading"] = "Generating reply"
+        state["status"] = "Streaming output"
         if isinstance(event.get("text"), str):
             state["partial_text"] = event["text"]
         push_live_history(state, state["status"])
         return
     if event_type == "reasoning.started":
-        state["heading"] = "正在分析"
-        state["status"] = "整理上下文与计划"
+        state["heading"] = "Analyzing"
+        state["status"] = "Planning next step"
         state["reasoning_started_at"] = utc_now()
         state["reasoning_elapsed_ms"] = 0
         _ensure_reasoning_item(state)
         push_live_history(state, state["status"])
         return
     if event_type == "reasoning.delta":
-        state["heading"] = "正在分析"
-        state["status"] = "整理上下文与计划"
+        state["heading"] = "Analyzing"
+        state["status"] = "Planning next step"
         if not str(state.get("reasoning_started_at") or "").strip():
             state["reasoning_started_at"] = utc_now()
         if isinstance(event.get("text"), str):
@@ -290,16 +290,16 @@ def apply_live_progress(state: LiveReplyState, event: dict[str, Any] | None) -> 
         command = event.get("command") if isinstance(event.get("command"), dict) else {}
         finalize_reasoning_timing(state)
         _complete_reasoning_item(state)
-        state["heading"] = "正在执行命令"
-        state["status"] = f"执行 {command.get('command')}" if command.get("command") else "正在执行命令"
+        state["heading"] = "Running command"
+        state["status"] = f"Run {command.get('command')}" if command.get("command") else "Running command"
         state["current_command"] = str(command.get("command") or "")
         _resolve_command_item(state, command)
         push_live_history(state, state["status"])
         return
     if event_type == "command.completed":
         command = event.get("command") if isinstance(event.get("command"), dict) else {}
-        state["heading"] = "正在整理结果"
-        state["status"] = f"完成 {command.get('command')}" if command.get("command") else "命令已完成"
+        state["heading"] = "Summarizing result"
+        state["status"] = f"Completed {command.get('command')}" if command.get("command") else "Command completed"
         state["current_command"] = ""
         state["last_command"] = command or None
         commands = state.setdefault("commands", [])
@@ -310,8 +310,8 @@ def apply_live_progress(state: LiveReplyState, event: dict[str, Any] | None) -> 
         push_live_history(state, state["status"])
         return
     if event_type == "reasoning.completed":
-        state["heading"] = "正在分析"
-        state["status"] = "整理上下文与计划"
+        state["heading"] = "Analyzing"
+        state["status"] = "Planning next step"
         if isinstance(event.get("text"), str):
             state["last_reasoning"] = event["text"]
             state["reasoning_text"] = event["text"]
@@ -322,7 +322,7 @@ def apply_live_progress(state: LiveReplyState, event: dict[str, Any] | None) -> 
     if event_type == "agent.message":
         finalize_reasoning_timing(state)
         _complete_reasoning_item(state)
-        state["heading"] = "正在整理回复"
+        state["heading"] = "Drafting response"
         if isinstance(event.get("text"), str) and event["text"].strip():
             state["status"] = event["text"]
         push_live_history(state, state["status"])
@@ -330,8 +330,8 @@ def apply_live_progress(state: LiveReplyState, event: dict[str, Any] | None) -> 
     if event_type == "turn.completed":
         finalize_reasoning_timing(state)
         _complete_reasoning_item(state)
-        state["heading"] = "即将完成"
-        state["status"] = "正在收尾输出"
+        state["heading"] = "Finishing up"
+        state["status"] = "Wrapping up output"
         push_live_history(state, state["status"])
 
 

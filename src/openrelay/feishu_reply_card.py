@@ -163,6 +163,34 @@ def _append_tree_lines(lines: list[str], text: object) -> None:
     lines.extend(f"  {line}" for line in raw_lines[1:])
 
 
+def _split_detail_lines(text: object, *, code: bool = False, max_lines: int = 6, max_length: int = 120) -> list[str]:
+    normalized_lines = [line.strip() for line in str(text or "").splitlines() if line.strip()]
+    if not normalized_lines:
+        return []
+    visible_lines = normalized_lines[:max_lines]
+    hidden = max(0, len(normalized_lines) - len(visible_lines))
+    result: list[str] = []
+    for line in visible_lines:
+        rendered = shorten_inline(line.replace("`", "'"), max_length)
+        result.append(f"`{rendered}`" if code else rendered)
+    if hidden > 0:
+        result.append(f"... +{hidden} lines")
+    return result
+
+
+def _append_tree_entries(lines: list[str], entries: list[list[str]]) -> None:
+    normalized_entries = [entry for entry in entries if entry]
+    if not normalized_entries:
+        return
+    for index, entry in enumerate(normalized_entries):
+        is_last = index == len(normalized_entries) - 1
+        branch = "└" if is_last else "├"
+        continuation = " " if is_last else "│"
+        lines.append(f"{branch} {entry[0]}")
+        for line in entry[1:]:
+            lines.append(f"{continuation} {line}")
+
+
 def _format_worked_for(started_at: object) -> str:
     raw_value = str(started_at or "").strip()
     if not raw_value:
@@ -207,6 +235,8 @@ def _history_item_tone(item: dict[str, Any]) -> str:
     state = str(item.get("state") or "").strip().lower()
     if state == "running":
         return "running"
+    if state in {"cancelled", "canceled", "interrupted", "stopped", "skipped"}:
+        return "cancelled"
     if state in {"failed", "error"}:
         return "error"
     if str(item.get("type") or "").strip() == "command":
@@ -225,8 +255,10 @@ def _history_item_tone(item: dict[str, Any]) -> str:
 def _history_item_bullet(item: dict[str, Any], spinner_frame: int) -> str:
     tone = _history_item_tone(item)
     if tone == "running":
-        frames = ("🟡", "🟠", "🟡", "🟠")
+        frames = ("⚪", "◯", "⚪", "◯")
         return frames[abs(int(spinner_frame or 0)) % len(frames)]
+    if tone == "cancelled":
+        return "🟡"
     if tone == "exploration":
         return "🔵"
     if tone == "error":
@@ -246,6 +278,7 @@ def _render_history_item(item: dict[str, Any], spinner_frame: int) -> list[str]:
 
     bullet = _history_item_bullet(item, spinner_frame)
     lines = [f"{bullet} **{title}**"]
+    detail_entries: list[list[str]] = []
 
     if item_type == "command":
         command_value = str(item.get("command") or "").strip()
@@ -254,26 +287,27 @@ def _render_history_item(item: dict[str, Any], spinner_frame: int) -> list[str]:
         if mode == "exploration":
             detail = _describe_exploration_command(command_value)
             if detail:
-                _append_tree_lines(lines, detail)
+                detail_entries.append([detail])
         elif command_text:
             lines[0] = f"{lines[0]} {command_text}"
         exit_code = item.get("exit_code")
         if exit_code is not None and str(item.get("state") or "") != "running" and int(exit_code) != 0:
-            _append_tree_lines(lines, f"exit {exit_code}")
-        output_preview = first_non_empty_line(item.get("output_preview") or "")
-        if output_preview:
-            _append_tree_lines(lines, _sanitize_code_inline(output_preview, 120))
+            detail_entries.append([f"exit {exit_code}"])
+        output_preview_lines = _split_detail_lines(item.get("output_preview"), code=True)
+        if output_preview_lines:
+            detail_entries.extend([[line] for line in output_preview_lines])
+        _append_tree_entries(lines, detail_entries)
         return lines
 
     if item_type == "reasoning":
         reasoning_text = clean_reasoning_prefix(item.get("text"))
-        if reasoning_text:
-            _append_tree_lines(lines, reasoning_text)
+        detail_entries.extend([[line] for line in _split_detail_lines(reasoning_text)])
+        _append_tree_entries(lines, detail_entries)
         return lines
 
     detail = str(item.get("detail") or "").strip()
-    if detail:
-        _append_tree_lines(lines, detail)
+    detail_entries.extend([[line] for line in _split_detail_lines(detail)])
+    _append_tree_entries(lines, detail_entries)
     return lines
 
 

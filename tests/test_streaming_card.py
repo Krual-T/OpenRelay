@@ -33,7 +33,7 @@ def test_build_streaming_content_prefers_partial_text_then_reasoning() -> None:
             "started_at": "2026-03-11T00:00:00+00:00",
         }
     )
-    assert "🟡 **Thinking**" in reasoning_content
+    assert "⚪ **Thinking**" in reasoning_content
     assert "└ 先看代码" in reasoning_content
     assert "Worked for" in reasoning_content
     assert build_streaming_content({}) == ""
@@ -50,7 +50,7 @@ def test_build_streaming_content_shows_process_before_answer() -> None:
                     "mode": "exploration",
                     "command": "rg -n Voyager",
                     "exit_code": 0,
-                    "output_preview": "Gemini Voyager",
+                    "output_preview": "Gemini Voyager\nGemini Voyager 2",
                 }
             ],
             "started_at": "2026-03-11T00:00:00+00:00",
@@ -59,8 +59,9 @@ def test_build_streaming_content_shows_process_before_answer() -> None:
     )
 
     assert "🔵 **Explored**" in content
-    assert "└ Search Voyager" in content
-    assert "└ `Gemini Voyager`" in content
+    assert "├ Search Voyager" in content
+    assert "├ `Gemini Voyager`" in content
+    assert "└ `Gemini Voyager 2`" in content
     assert "Worked for" in content
     assert "---" in content
     assert "找到结果，准备整理。" in content
@@ -77,7 +78,7 @@ def test_build_streaming_content_marks_failed_command_with_red_dot() -> None:
                     "mode": "command",
                     "command": "pytest",
                     "exit_code": 1,
-                    "output_preview": "1 failed",
+                    "output_preview": "1 failed\nAssertionError",
                 }
             ],
             "started_at": "2026-03-11T00:00:00+00:00",
@@ -85,7 +86,9 @@ def test_build_streaming_content_marks_failed_command_with_red_dot() -> None:
     )
 
     assert "🔴 **Ran** `pytest`" in content
-    assert "└ exit 1" in content
+    assert "├ exit 1" in content
+    assert "├ `1 failed`" in content
+    assert "└ `AssertionError`" in content
     assert "Worked for" in content
 
 

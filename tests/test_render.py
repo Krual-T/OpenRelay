@@ -20,17 +20,17 @@ def test_build_activity_summary_renders_reasoning_and_commands() -> None:
 def test_render_live_status_markdown_contains_header_details_and_body() -> None:
     markdown = render_live_status_markdown(
         {
-            "heading": "正在执行命令",
-            "status": "执行 ls -la",
+            "heading": "Running command",
+            "status": "Run ls -la",
             "current_command": "ls -la",
             "partial_text": "partial reply",
             "started_at": "2026-03-09T00:00:00+00:00",
         }
     )
-    assert "`进行中`" in markdown
-    assert "🟡 ⚪ ⚪" in markdown
-    assert "**正在执行命令**" in markdown
-    assert "当前：执行 `ls -la`" in markdown
+    assert "`Running`" in markdown
+    assert "⚪ ◯ ◯" in markdown
+    assert "**Running command**" in markdown
+    assert "Current: running `ls -la`" in markdown
     assert "partial reply" in markdown
 
 
@@ -38,23 +38,23 @@ def test_render_live_status_markdown_contains_header_details_and_body() -> None:
 def test_render_live_status_sections_splits_fields() -> None:
     sections = render_live_status_sections(
         {
-            "heading": "正在生成回复",
-            "status": "正在输出内容",
+            "heading": "Generating reply",
+            "status": "Streaming output",
             "partial_text": "hello",
         }
     )
     assert sections["header"]
     assert sections["details"]
     assert sections["body"] == "hello"
-    assert "`进行中`" in sections["header"]
+    assert "`Running`" in sections["header"]
     assert "```text" in sections["details"]
 
 
 def test_render_live_status_sections_show_reasoning_when_answer_not_started() -> None:
     sections = render_live_status_sections(
         {
-            "heading": "正在分析",
-            "status": "整理上下文与计划",
+            "heading": "Analyzing",
+            "status": "Planning next step",
             "reasoning_text": "先检查 runtime 和 card 渲染。",
         }
     )
