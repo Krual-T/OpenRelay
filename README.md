@@ -1,5 +1,8 @@
 # openrelay
 
+> 当前主线：自 2026-03-11 起，`openrelay` 是正在继续演进的 Python 实现。
+> 旧的 Node.js 版 [`opencodex`](../opencodex/README.md) 已归档，只保留为历史原型和迁移参考。
+
 `openrelay` 是一个通过飞书附着到本机 agent CLI 会话的远程终端入口。
 
 当前目标是把体验打磨成 `openrelay` 自己的一致命令心智：清晰的会话隔离、`main/develop` 工作区切换，以及 Feishu thread-first 使用方式。
