@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from openrelay.card_theme import build_status_heading, status_emoji
+from openrelay.card_theme import status_emoji
 
 
 def normalize_inline(text: object) -> str:
@@ -56,7 +56,7 @@ def dedupe_strings(values: list[object]) -> list[str]:
 
 
 def resolve_spinner_dots(state: dict[str, Any]) -> str:
-    frames = [["🟡", "⚪", "⚪"], ["⚪", "🟡", "⚪"], ["⚪", "⚪", "🟡"]]
+    frames = [["⚪", "◯", "◯"], ["◯", "⚪", "◯"], ["◯", "◯", "⚪"]]
     index = abs(int(state.get("spinner_frame", 0) or 0)) % len(frames)
     return " ".join(frames[index])
 
@@ -64,23 +64,24 @@ def resolve_spinner_dots(state: dict[str, Any]) -> str:
 
 def resolve_semantic_emoji(text: object = "") -> str:
     value = normalize_inline(text)
+    lowered = value.lower()
     if not value:
         return "⏳"
-    if "启动" in value or "start" in value.lower():
+    if "启动" in value or "start" in lowered:
         return "🚀"
-    if "连接" in value or "thread" in value.lower() or "会话已连接" in value:
+    if "连接" in value or "thread" in lowered or "会话已连接" in value or "connected" in lowered:
         return "🔗"
-    if "准备" in value:
+    if "准备" in value or "prepare" in lowered:
         return "🧭"
-    if any(token in value for token in ["执行", "命令", "shell", "bash"]):
+    if any(token in value for token in ["执行", "命令", "shell", "bash"]) or any(token in lowered for token in ["run", "command", "shell", "bash"]):
         return "💻"
-    if any(token in value for token in ["输出", "生成回复", "回复", "assistant"]):
+    if any(token in value for token in ["输出", "生成回复", "回复", "assistant"]) or any(token in lowered for token in ["stream", "generate", "reply", "draft"]):
         return "✍️"
-    if any(token in value for token in ["分析", "计划", "reason"]):
+    if any(token in value for token in ["分析", "计划", "reason"]) or any(token in lowered for token in ["analy", "plan", "think", "reason"]):
         return "🧠"
-    if any(token in value for token in ["整理结果", "结果", "收尾"]):
+    if any(token in value for token in ["整理结果", "结果", "收尾"]) or any(token in lowered for token in ["summar", "result", "wrap", "finish"]):
         return "📦"
-    if any(token in value for token in ["完成", "done", "success"]):
+    if any(token in value for token in ["完成", "done", "success"]) or any(token in lowered for token in ["done", "success", "completed"]):
         return "✅"
     return "⏳"
 
@@ -178,36 +179,39 @@ def build_activity_summary(activity: dict[str, Any] | None = None) -> str:
 
 def build_live_status_view(state: dict[str, Any] | None = None) -> dict[str, object]:
     state = state or {}
-    heading = shorten(state.get("heading") or state.get("status") or "正在处理中", 90)
+    heading = shorten(state.get("heading") or state.get("status") or "Working", 90)
     spinner = resolve_spinner_dots(state)
     semantic_source = f"{state.get('heading', '')} {state.get('status', '')}"
     heading_emoji = resolve_semantic_emoji(semantic_source)
-    header_lines = [build_status_heading("running", heading, prefix=f"{spinner} {heading_emoji}")]
+    header_lines = [f"{spinner} {heading_emoji} `Running` **{heading}**".strip()]
     detail_lines: list[str] = []
 
     current_text = ""
     if state.get("current_command"):
-        current_text = f"执行 `{shorten(state['current_command'], 72)}`"
-    elif any(token in semantic_source for token in ["分析", "计划", "reason"]) and state.get("last_reasoning"):
-        current_text = f"分析 {extract_reasoning_title(state['last_reasoning'])}"
+        current_text = f"running `{shorten(state['current_command'], 72)}`"
+    elif (
+        any(token in semantic_source for token in ["分析", "计划", "reason"])
+        or any(token in semantic_source.lower() for token in ["analy", "plan", "think", "reason"])
+    ) and state.get("last_reasoning"):
+        current_text = f"thinking {extract_reasoning_title(state['last_reasoning'])}"
     elif state.get("status"):
         current_text = shorten(state["status"], 90)
     elif heading:
         current_text = heading
     if current_text:
-        detail_lines.append(f"> {status_emoji('running')} 当前：{current_text}")
+        detail_lines.append(f"> {status_emoji('running')} Current: {current_text}")
 
     reasoning_title = extract_reasoning_title(state.get("last_reasoning")) if state.get("last_reasoning") else ""
-    if reasoning_title and not any(token in current_text for token in ["分析", "计划", "reason"]):
-        detail_lines.append(f"> 🧠 目的：{reasoning_title}")
+    if reasoning_title and not any(token in current_text.lower() for token in ["thinking", "analysis", "plan", "reason"]):
+        detail_lines.append(f"> 🧠 Goal: {reasoning_title}")
     else:
         last_command = state.get("last_command") if isinstance(state.get("last_command"), dict) else {}
         if last_command.get("command") and isinstance(last_command.get("exitCode"), int) and int(last_command.get("exitCode")) != 0:
-            detail_lines.append(f"> ⚠️ 最近结果：`{shorten(last_command.get('command', ''), 56)}` · exit {last_command.get('exitCode')}")
+            detail_lines.append(f"> ⚠️ Last result: `{shorten(last_command.get('command', ''), 56)}` · exit {last_command.get('exitCode')}")
 
     elapsed = format_elapsed(state.get("started_at") or state.get("startedAt"))
     if elapsed:
-        detail_lines.append(f"> ⏱️ 已处理：{elapsed}")
+        detail_lines.append(f"> ⏱️ Elapsed: {elapsed}")
 
     body_text = str(state.get("partial_text") or "").strip()
     if not body_text:

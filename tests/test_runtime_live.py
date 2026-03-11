@@ -25,7 +25,7 @@ def test_build_process_panel_text_collects_status_command_and_reasoning() -> Non
         {
             "history_items": [
                 {"type": "status", "state": "completed", "title": "Starting Codex", "detail": "Preparing reply"},
-                {"type": "reasoning", "state": "completed", "title": "Thought for 1.2s", "text": "先检查 runtime。"},
+                {"type": "reasoning", "state": "completed", "title": "Thought for 1.2s", "text": "先检查 runtime。\n再看 card 渲染。"},
                 {
                     "type": "command",
                     "state": "completed",
@@ -43,10 +43,12 @@ def test_build_process_panel_text_collects_status_command_and_reasoning() -> Non
     assert "• **Starting Codex**" in text
     assert "└ Preparing reply" in text
     assert "• **Thought for 1.2s**" in text
-    assert "└ 先检查 runtime。" in text
+    assert "├ 先检查 runtime。" in text
+    assert "└ 再看 card 渲染。" in text
     assert "🔵 **Explored**" in text
-    assert "└ ls -la" in text
-    assert "└ `file1`" in text
+    assert "├ ls -la" in text
+    assert "├ `file1`" in text
+    assert "└ `file2`" in text
     assert "Worked for" in text
 
 
@@ -61,14 +63,16 @@ def test_build_process_panel_text_marks_failed_command_with_red_dot() -> None:
                     "mode": "command",
                     "command": "pytest",
                     "exit_code": 1,
-                    "output_preview": "1 failed",
+                    "output_preview": "1 failed\nAssertionError",
                 },
             ]
         }
     )
 
     assert "🔴 **Ran** `pytest`" in text
-    assert "└ exit 1" in text
+    assert "├ exit 1" in text
+    assert "├ `1 failed`" in text
+    assert "└ `AssertionError`" in text
 
 
 def test_apply_live_progress_accumulates_codex_style_history_items() -> None:
