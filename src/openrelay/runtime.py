@@ -80,6 +80,7 @@ class AgentRuntime:
         self._locks: dict[str, asyncio.Lock] = defaultdict(asyncio.Lock)
         self._pending_session_inputs: dict[str, deque[IncomingMessage | QueuedFollowUp]] = defaultdict(deque)
         self.active_runs: dict[str, ActiveRun] = {}
+        self._top_level_thread_keys: dict[str, str] = {}
         self.streaming_session_factory = streaming_session_factory or (lambda current_messenger: FeishuStreamingSession(current_messenger))
         self.typing_manager = typing_manager or FeishuTypingManager(messenger)
         self.session_browser = SessionBrowser(config, store)
@@ -127,31 +128,60 @@ class AgentRuntime:
                 thread_ids.append(thread_id)
         return [self._compose_session_key(message, thread_id=thread_id) for thread_id in thread_ids]
 
+    def _is_command_message(self, message: IncomingMessage) -> bool:
+        return str(message.text or "").strip().startswith("/")
+
+    def _is_top_level_message(self, message: IncomingMessage) -> bool:
+        return not message.root_id and not message.thread_id
+
+    def _is_top_level_control_command(self, message: IncomingMessage) -> bool:
+        return self._is_top_level_message(message) and self._is_command_message(message)
+
     def build_session_key(self, message: IncomingMessage) -> str:
         if message.session_key:
             return self.store.find_session_key_alias(message.session_key) or message.session_key
         thread_candidates = self._thread_session_key_candidates(message)
-        if not thread_candidates:
+        if thread_candidates:
+            for candidate in thread_candidates:
+                resolved = self.store.find_session_key_alias(candidate)
+                if resolved:
+                    return resolved
+            for candidate in thread_candidates:
+                if self.store.has_session_scope(candidate):
+                    return candidate
+            return thread_candidates[0]
+        if self._is_command_message(message):
             return self._compose_session_key(message)
-        for candidate in thread_candidates:
-            resolved = self.store.find_session_key_alias(candidate)
-            if resolved:
-                return resolved
-        for candidate in thread_candidates:
-            if self.store.has_session_scope(candidate):
-                return candidate
-        top_level_key = self._compose_session_key(message)
-        if self.store.has_session_scope(top_level_key):
-            return top_level_key
-        return thread_candidates[0]
+        control_key = self._compose_session_key(message)
+        active_thread_key = self._top_level_thread_keys.get(control_key)
+        if active_thread_key:
+            return active_thread_key
+        return self._compose_session_key(message, thread_id=message.message_id)
+
+    def _remember_top_level_thread_key(self, message: IncomingMessage, session_key: str) -> None:
+        if self._is_top_level_message(message) and not self._is_command_message(message):
+            self._top_level_thread_keys[self._compose_session_key(message)] = session_key
+
+    def _release_top_level_thread_key(self, message: IncomingMessage, session_key: str) -> None:
+        if not self._is_top_level_message(message) or self._is_command_message(message):
+            return
+        control_key = self._compose_session_key(message)
+        if self._top_level_thread_keys.get(control_key) == session_key:
+            self._top_level_thread_keys.pop(control_key, None)
 
     def _remember_thread_session_alias(self, message: IncomingMessage, session_key: str) -> None:
         if self._is_card_action_message(message):
             return
-        if message.root_id or message.thread_id:
-            return
-        alias_key = self._compose_session_key(message, thread_id=message.message_id)
-        self.store.save_session_key_alias(alias_key, session_key)
+        alias_source_ids: list[str] = []
+        for value in (message.root_id, message.thread_id):
+            candidate = str(value or "").strip()
+            if candidate and candidate not in alias_source_ids:
+                alias_source_ids.append(candidate)
+        if not alias_source_ids and self._is_top_level_message(message):
+            alias_source_ids.append(message.message_id)
+        for alias_source_id in alias_source_ids:
+            alias_key = self._compose_session_key(message, thread_id=alias_source_id)
+            self.store.save_session_key_alias(alias_key, session_key)
 
     def is_allowed_user(self, sender_open_id: str) -> bool:
         if sender_open_id in self.config.feishu.admin_open_ids:
@@ -163,11 +193,65 @@ class AgentRuntime:
     def is_admin(self, sender_open_id: str) -> bool:
         return bool(self.config.feishu.admin_open_ids) and sender_open_id in self.config.feishu.admin_open_ids
 
-    def _build_execution_key(self, session_key: str, session: SessionRecord) -> str:
+    def _build_execution_key(self, session_key: str, session: SessionRecord, *, force_session_scope: bool = False) -> str:
+        if force_session_scope:
+            return f"session:{session_key}"
         native_session_id = str(session.native_session_id or "").strip()
         if native_session_id:
             return f"native:{native_session_id}"
         return f"session:{session_key}"
+
+    def _is_placeholder_control_session(self, session: SessionRecord, session_key: str) -> bool:
+        if session.base_key != session_key or session.native_session_id:
+            return False
+        if self.store.list_messages(session.session_id):
+            return False
+        release_channel = session.release_channel or "main"
+        return (
+            session.label == ""
+            and session.backend == self.config.backend.default_backend
+            and session.cwd == str(get_release_workspace(self.config, release_channel))
+            and session.model_override == self.config.backend.default_model
+            and session.safety_mode == self.config.backend.default_safety_mode
+            and release_channel == "main"
+        )
+
+    def _find_visible_control_session(self, session_key: str) -> SessionRecord | None:
+        for summary in self.store.list_sessions(session_key, limit=50):
+            if summary.base_key == session_key and summary.message_count == 0 and not summary.native_session_id:
+                continue
+            return self.store.get_session(summary.session_id)
+        return None
+
+    def _load_session_for_message(self, message: IncomingMessage, session_key: str) -> SessionRecord:
+        if self._is_top_level_control_command(message):
+            current = self.store.find_session(session_key)
+            visible = self._find_visible_control_session(session_key)
+            if current is not None:
+                if visible is not None and self._is_placeholder_control_session(current, session_key):
+                    return visible
+                return current
+            if visible is not None:
+                return visible
+            return self.store.load_session(session_key)
+        if self.store.has_session_scope(session_key):
+            return self.store.load_session(session_key)
+        control_key = self._compose_session_key(message)
+        template = self.store.find_session(control_key) if session_key != control_key else None
+        return self.store.load_session(session_key, template=template)
+
+    def _resolve_stop_execution_key(self, message: IncomingMessage, session_key: str, session: SessionRecord) -> str:
+        control_execution_key = self._build_execution_key(
+            session_key,
+            session,
+            force_session_scope=self._is_top_level_control_command(message),
+        )
+        if control_execution_key in self.active_runs:
+            return control_execution_key
+        selected_execution_key = self._build_execution_key(session.base_key, session)
+        if selected_execution_key in self.active_runs:
+            return selected_execution_key
+        return control_execution_key
 
     def _message_summary_text(self, message: IncomingMessage) -> str:
         text = str(message.text or "").strip()
@@ -199,11 +283,16 @@ class AgentRuntime:
                 return
 
             session_key = self.build_session_key(message)
+            self._remember_top_level_thread_key(message, session_key)
             self._remember_thread_session_alias(message, session_key)
-            session = self.store.load_session(session_key)
-            execution_key = self._build_execution_key(session_key, session)
+            session = self._load_session_for_message(message, session_key)
+            execution_key = self._build_execution_key(
+                session_key,
+                session,
+                force_session_scope=self._is_top_level_control_command(message),
+            )
             if self._is_stop_command(message.text):
-                await self._handle_stop(message, execution_key)
+                await self._handle_stop(message, self._resolve_stop_execution_key(message, session_key, session))
                 return
 
             session_lock = self._locks[execution_key]
@@ -218,7 +307,10 @@ class AgentRuntime:
                 return
 
             async with session_lock:
-                await self._handle_message_serialized(message, execution_key)
+                try:
+                    await self._handle_message_serialized(message, execution_key)
+                finally:
+                    self._release_top_level_thread_key(message, session_key)
         except Exception:
             LOGGER.exception("dispatch_message failed for event_id=%s chat_id=%s", message.event_id, message.chat_id)
 
@@ -231,8 +323,9 @@ class AgentRuntime:
     async def _handle_single_serialized_input(self, pending_input: IncomingMessage | QueuedFollowUp, execution_key: str) -> None:
         message = pending_input.to_message() if isinstance(pending_input, QueuedFollowUp) else pending_input
         session_key = self.build_session_key(message)
+        self._remember_top_level_thread_key(message, session_key)
         self._remember_thread_session_alias(message, session_key)
-        session = self.store.load_session(session_key)
+        session = self._load_session_for_message(message, session_key)
         if message.text.startswith("/"):
             handled = await self._handle_command(message, session_key, session)
             if handled:
@@ -457,7 +550,7 @@ class AgentRuntime:
         if not workspace_dir.exists():
             await self._reply(message, f"{target_channel} 工作目录不存在：{workspace_dir}", command_reply=True)
             return
-        active = self.active_runs.get(self._build_execution_key(session_key, session))
+        active = self.active_runs.get(self._build_execution_key(session.base_key, session))
         cancelled_active_run = active is not None
         if active is not None:
             await active.cancel(f"interrupted by {command_name}")

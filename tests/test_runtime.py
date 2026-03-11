@@ -425,8 +425,8 @@ async def test_runtime_panel_shortcuts_switch_cwd_from_button(tmp_path: Path) ->
     )
     assert parsed.message is not None
     await runtime.dispatch_message(parsed.message)
-    session = store.load_session(runtime.build_session_key(make_message("x")))
-    assert session.cwd == str(main_docs)
+    await runtime.dispatch_message(make_message("check cwd", event_suffix="panel_docs_prompt"))
+    assert runtime.backends["codex"].calls[-1][0].cwd == str(main_docs)
 
     await runtime.dispatch_message(make_message("/develop bugfix", event_suffix="panel_shortcuts_develop_switch"))
     await runtime.dispatch_message(make_message("/panel", event_suffix="panel_shortcuts_develop"))
@@ -738,11 +738,12 @@ async def test_runtime_main_switch_creates_release_session(tmp_path: Path) -> No
 
     await runtime.dispatch_message(make_message("/develop bugfix", sender_open_id="ou_user", event_suffix="dev"))
     await runtime.dispatch_message(make_message("/main restore", sender_open_id="ou_user", event_suffix="main"))
+    await runtime.dispatch_message(make_message("after main", sender_open_id="ou_user", event_suffix="main_prompt"))
 
-    session = store.load_session(runtime.build_session_key(make_message("x")))
+    session = runtime.backends["codex"].calls[-1][0]
     assert session.release_channel == "main"
     assert session.safety_mode == "read-only"
-    assert "已强制切到 main 稳定版本。" in messenger.messages[-1]
+    assert any("已强制切到 main 稳定版本。" in message for message in messenger.messages)
     await runtime.shutdown()
 
 
@@ -960,10 +961,10 @@ async def test_runtime_serializes_messages_sharing_same_native_session(tmp_path:
     runtime = AgentRuntime(config, store, messenger, backends={"codex": backend})
 
     shared_native = "native_shared"
-    first_session = store.load_session("p2p:chat-a")
+    first_session = store.load_session("p2p:chat-a:thread:root-a")
     first_session.native_session_id = shared_native
     store.save_session(first_session)
-    second_session = store.load_session("p2p:chat-b")
+    second_session = store.load_session("p2p:chat-b:thread:root-b")
     second_session.native_session_id = shared_native
     store.save_session(second_session)
 
@@ -973,6 +974,8 @@ async def test_runtime_serializes_messages_sharing_same_native_session(tmp_path:
         chat_id="chat-a",
         chat_type="p2p",
         sender_open_id="ou_user",
+        root_id="root-a",
+        thread_id="thread-a",
         text="first shared",
         actionable=True,
     )
@@ -982,6 +985,8 @@ async def test_runtime_serializes_messages_sharing_same_native_session(tmp_path:
         chat_id="chat-b",
         chat_type="p2p",
         sender_open_id="ou_user",
+        root_id="root-b",
+        thread_id="thread-b",
         text="second shared",
         actionable=True,
     )
@@ -1017,10 +1022,10 @@ async def test_runtime_allows_parallel_messages_for_different_native_sessions(tm
     backend = NativeSessionConcurrencyBackend()
     runtime = AgentRuntime(config, store, messenger, backends={"codex": backend})
 
-    first_session = store.load_session("p2p:chat-a")
+    first_session = store.load_session("p2p:chat-a:thread:root-a")
     first_session.native_session_id = "native_a"
     store.save_session(first_session)
-    second_session = store.load_session("p2p:chat-b")
+    second_session = store.load_session("p2p:chat-b:thread:root-b")
     second_session.native_session_id = "native_b"
     store.save_session(second_session)
 
@@ -1030,6 +1035,8 @@ async def test_runtime_allows_parallel_messages_for_different_native_sessions(tm
         chat_id="chat-a",
         chat_type="p2p",
         sender_open_id="ou_user",
+        root_id="root-a",
+        thread_id="thread-a",
         text="first parallel",
         actionable=True,
     )
@@ -1039,6 +1046,8 @@ async def test_runtime_allows_parallel_messages_for_different_native_sessions(tm
         chat_id="chat-b",
         chat_type="p2p",
         sender_open_id="ou_user",
+        root_id="root-b",
+        thread_id="thread-b",
         text="second parallel",
         actionable=True,
     )
@@ -1113,7 +1122,7 @@ async def test_runtime_top_level_p2p_cwd_prefers_thread_reply(tmp_path: Path) ->
 
 
 @pytest.mark.asyncio
-async def test_runtime_thread_reply_reuses_top_level_session_scope(tmp_path: Path) -> None:
+async def test_runtime_thread_reply_reuses_top_level_thread_scope(tmp_path: Path) -> None:
     config = make_config(tmp_path)
     config.workspace_root.mkdir(parents=True, exist_ok=True)
     config.main_workspace_dir.mkdir(parents=True, exist_ok=True)
@@ -1125,6 +1134,7 @@ async def test_runtime_thread_reply_reuses_top_level_session_scope(tmp_path: Pat
 
     top_level = make_message("first task", event_suffix="root")
     await runtime.dispatch_message(top_level)
+    control_message = make_message("/help", event_suffix="root_help")
 
     thread_reply = IncomingMessage(
         event_id="evt_thread_follow_up",
@@ -1138,6 +1148,8 @@ async def test_runtime_thread_reply_reuses_top_level_session_scope(tmp_path: Pat
         actionable=True,
     )
 
+    assert runtime.build_session_key(top_level) == "p2p:oc_1:thread:om_root"
+    assert runtime.build_session_key(control_message) == "p2p:oc_1"
     assert runtime.build_session_key(thread_reply) == runtime.build_session_key(top_level)
 
     await runtime.dispatch_message(thread_reply)
@@ -1155,7 +1167,7 @@ async def test_runtime_thread_reply_reuses_top_level_session_scope(tmp_path: Pat
 
 
 @pytest.mark.asyncio
-async def test_runtime_group_thread_reply_reuses_top_level_sender_scope(tmp_path: Path) -> None:
+async def test_runtime_group_thread_reply_reuses_top_level_thread_scope(tmp_path: Path) -> None:
     config = make_config(tmp_path)
     config.workspace_root.mkdir(parents=True, exist_ok=True)
     config.main_workspace_dir.mkdir(parents=True, exist_ok=True)
@@ -1188,6 +1200,7 @@ async def test_runtime_group_thread_reply_reuses_top_level_sender_scope(tmp_path
         actionable=True,
     )
 
+    assert runtime.build_session_key(top_level) == "group:oc_group_1:thread:om_group_root:sender:ou_user"
     assert runtime.build_session_key(thread_reply) == runtime.build_session_key(top_level)
 
     await runtime.dispatch_message(thread_reply)
@@ -1199,6 +1212,31 @@ async def test_runtime_group_thread_reply_reuses_top_level_sender_scope(tmp_path
         "group follow up",
         "echo: group follow up",
     ]
+    await runtime.shutdown()
+
+
+@pytest.mark.asyncio
+async def test_runtime_top_level_resume_list_is_not_blocked_by_active_thread_run(tmp_path: Path) -> None:
+    config = make_config(tmp_path)
+    config.workspace_root.mkdir(parents=True, exist_ok=True)
+    config.main_workspace_dir.mkdir(parents=True, exist_ok=True)
+    config.develop_workspace_dir.mkdir(parents=True, exist_ok=True)
+    store = StateStore(config)
+    messenger = FakeMessenger()
+    backend = InterruptibleBackend()
+    runtime = AgentRuntime(config, store, messenger, backends={"codex": backend})
+
+    run_task = asyncio.create_task(runtime.dispatch_message(make_message("long running", event_suffix="resume_lock_run")))
+    await asyncio.wait_for(backend.started.wait(), timeout=1)
+
+    await runtime.dispatch_message(make_message("/resume list", event_suffix="resume_lock_list"))
+
+    assert messenger.cards
+    assert "会话列表" in extract_card_text(messenger.cards[-1])
+    assert all("已收到补充" not in message for message in messenger.messages)
+
+    await runtime.dispatch_message(make_message("/stop", event_suffix="resume_lock_stop"))
+    await asyncio.wait_for(run_task, timeout=1)
     await runtime.shutdown()
 
 

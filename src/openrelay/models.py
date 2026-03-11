@@ -48,6 +48,7 @@ class SessionRecord:
 @dataclass(slots=True)
 class SessionSummary:
     session_id: str
+    base_key: str
     backend: str
     label: str
     cwd: str
