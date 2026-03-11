@@ -25,8 +25,29 @@ def test_build_streaming_card_json_uses_single_streaming_element() -> None:
 def test_build_streaming_content_prefers_partial_text_then_reasoning() -> None:
     assert build_streaming_content({"partial_text": "# Title\ncontent"}) == "#### Title\ncontent"
     assert build_streaming_content({"partial_text": "<think>先看代码</think>\n答案"}) == "答案"
-    assert build_streaming_content({"reasoning_text": "先看代码"}) == "💭 **Thinking...**\n\n先看代码"
+    assert "**补充内容**" in build_streaming_content({"reasoning_text": "先看代码"})
+    assert "先看代码" in build_streaming_content({"reasoning_text": "先看代码"})
     assert build_streaming_content({}) == ""
+
+
+def test_build_streaming_content_shows_process_before_answer() -> None:
+    content = build_streaming_content(
+        {
+            "heading": "正在执行命令",
+            "status": "执行 rg -n Voyager",
+            "current_command": "rg -n Voyager",
+            "history": ["正在准备回复", "执行 rg -n Voyager"],
+            "commands": [{"command": "rg -n Voyager", "exitCode": 0, "outputPreview": "Gemini Voyager"}],
+            "partial_text": "找到结果，准备整理。",
+        }
+    )
+
+    assert "**正在执行命令**" in content
+    assert "正在执行：`rg -n Voyager`" in content
+    assert "**状态**" in content
+    assert "**命令**" in content
+    assert "---" in content
+    assert "找到结果，准备整理。" in content
 
 
 @pytest.mark.asyncio

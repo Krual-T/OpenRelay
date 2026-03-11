@@ -128,6 +128,70 @@ def strip_markdown_for_summary(text: object, max_length: int = 120) -> str:
     return summary[: max_length - 3] + "..."
 
 
+def first_non_empty_line(text: object) -> str:
+    for line in str(text or "").splitlines():
+        stripped = line.strip()
+        if stripped:
+            return stripped
+    return ""
+
+
+def build_process_panel_text(state: dict[str, Any] | None) -> str:
+    if not isinstance(state, dict):
+        return ""
+
+    lines: list[str] = []
+    heading = str(state.get("heading") or "").strip()
+    status = str(state.get("status") or "").strip()
+    current_command = str(state.get("current_command") or "").strip()
+
+    if heading:
+        lines.append(f"**{heading}**")
+    if status and status != heading:
+        lines.append(f"> {status}")
+    if current_command:
+        lines.append(f"> 正在执行：`{current_command}`")
+
+    history = state.get("history") if isinstance(state.get("history"), list) else []
+    history_lines = [str(item).strip() for item in history if str(item).strip()]
+    if history_lines:
+        if lines:
+            lines.append("")
+        lines.append("**状态**")
+        lines.extend(f"- {item}" for item in history_lines[-6:])
+
+    commands = state.get("commands") if isinstance(state.get("commands"), list) else []
+    command_lines: list[str] = []
+    for command in commands[-4:]:
+        if not isinstance(command, dict):
+            continue
+        command_text = str(command.get("command") or "").strip()
+        if not command_text:
+            continue
+        exit_code = command.get("exitCode")
+        preview = first_non_empty_line(command.get("outputPreview") or "")
+        line = f"- `{command_text}`"
+        if exit_code is not None:
+            line += f" · exit {exit_code}"
+        if preview:
+            line += f"\n  输出：`{preview}`"
+        command_lines.append(line)
+    if command_lines:
+        if lines:
+            lines.append("")
+        lines.append("**命令**")
+        lines.extend(command_lines)
+
+    reasoning_text = str(state.get("reasoning_text") or state.get("last_reasoning") or "").strip()
+    if reasoning_text:
+        if lines:
+            lines.append("")
+        lines.append("**补充内容**")
+        lines.append(reasoning_text)
+
+    return "\n".join(lines).strip()
+
+
 def build_thinking_card_json() -> dict[str, Any]:
     return {
         "schema": "2.0",
@@ -162,18 +226,21 @@ def build_thinking_card_json() -> dict[str, Any]:
 
 def build_streaming_content(live_state: dict[str, Any] | None = None) -> str:
     live_state = live_state or {}
+    process_text = build_process_panel_text(live_state)
     partial_text = str(live_state.get("partial_text") or "").strip()
     if partial_text:
         partial_reasoning, partial_answer = split_reasoning_text(partial_text)
         answer = partial_answer or strip_reasoning_tags(partial_text)
         if answer:
-            return optimize_markdown_style(answer)
+            rendered_answer = optimize_markdown_style(answer)
+            if process_text:
+                return f"{process_text}\n\n---\n{rendered_answer}"
+            return rendered_answer
         if partial_reasoning:
+            if process_text:
+                return process_text
             return f"💭 **Thinking...**\n\n{partial_reasoning}"
-    reasoning_text = str(live_state.get("reasoning_text") or live_state.get("last_reasoning") or "").strip()
-    if reasoning_text:
-        return f"💭 **Thinking...**\n\n{reasoning_text}"
-    return ""
+    return process_text
 
 
 def build_complete_card(
