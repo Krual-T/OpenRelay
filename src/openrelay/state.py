@@ -78,6 +78,13 @@ class StateStore:
               message_id TEXT PRIMARY KEY,
               seen_at INTEGER NOT NULL
             );
+            CREATE TABLE IF NOT EXISTS session_key_aliases (
+              alias_key TEXT PRIMARY KEY,
+              base_key TEXT NOT NULL,
+              created_at TEXT NOT NULL,
+              updated_at TEXT NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS idx_session_key_aliases_base_key ON session_key_aliases(base_key);
             CREATE TABLE IF NOT EXISTS directory_shortcuts (
               name TEXT PRIMARY KEY COLLATE NOCASE,
               path TEXT NOT NULL,
@@ -215,6 +222,49 @@ class StateStore:
             (session_id,),
         ).fetchone()
         return int(row["count"] or 0)
+
+    def find_session_key_alias(self, alias_key: str) -> str | None:
+        row = self.connection.execute(
+            "SELECT base_key FROM session_key_aliases WHERE alias_key = ?",
+            (alias_key.strip(),),
+        ).fetchone()
+        if row is None:
+            return None
+        return str(row["base_key"] or "").strip() or None
+
+    def save_session_key_alias(self, alias_key: str, base_key: str) -> None:
+        alias = alias_key.strip()
+        base = base_key.strip()
+        if not alias or not base or alias == base:
+            return
+        now = utc_now()
+        self.connection.execute(
+            """
+            INSERT INTO session_key_aliases(alias_key, base_key, created_at, updated_at)
+            VALUES(?, ?, ?, ?)
+            ON CONFLICT(alias_key) DO UPDATE SET
+              base_key = excluded.base_key,
+              updated_at = excluded.updated_at
+            """,
+            (alias, base, now, now),
+        )
+        self.connection.commit()
+
+    def has_session_scope(self, base_key: str) -> bool:
+        key = base_key.strip()
+        if not key:
+            return False
+        pointer = self.connection.execute(
+            "SELECT 1 FROM session_pointers WHERE base_key = ? LIMIT 1",
+            (key,),
+        ).fetchone()
+        if pointer is not None:
+            return True
+        row = self.connection.execute(
+            "SELECT 1 FROM sessions WHERE base_key = ? LIMIT 1",
+            (key,),
+        ).fetchone()
+        return row is not None
 
     def remember_message(self, message_id: str) -> bool:
         now = int(time.time())

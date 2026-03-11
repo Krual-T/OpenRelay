@@ -1112,6 +1112,96 @@ async def test_runtime_top_level_p2p_cwd_prefers_thread_reply(tmp_path: Path) ->
     await runtime.shutdown()
 
 
+@pytest.mark.asyncio
+async def test_runtime_thread_reply_reuses_top_level_session_scope(tmp_path: Path) -> None:
+    config = make_config(tmp_path)
+    config.workspace_root.mkdir(parents=True, exist_ok=True)
+    config.main_workspace_dir.mkdir(parents=True, exist_ok=True)
+    config.develop_workspace_dir.mkdir(parents=True, exist_ok=True)
+    store = StateStore(config)
+    messenger = FakeMessenger()
+    backend = FakeBackend()
+    runtime = AgentRuntime(config, store, messenger, backends={"codex": backend})
+
+    top_level = make_message("first task", event_suffix="root")
+    await runtime.dispatch_message(top_level)
+
+    thread_reply = IncomingMessage(
+        event_id="evt_thread_follow_up",
+        message_id="om_thread_follow_up",
+        chat_id="oc_1",
+        chat_type="p2p",
+        sender_open_id="ou_user",
+        root_id="om_root",
+        thread_id="thread_1",
+        text="follow up in thread",
+        actionable=True,
+    )
+
+    assert runtime.build_session_key(thread_reply) == runtime.build_session_key(top_level)
+
+    await runtime.dispatch_message(thread_reply)
+
+    assert len(backend.calls) == 2
+    assert backend.calls[1][0].native_session_id == "native_1"
+    session = store.load_session(runtime.build_session_key(top_level))
+    assert [entry["content"] for entry in store.list_messages(session.session_id)] == [
+        "first task",
+        "echo: first task",
+        "follow up in thread",
+        "echo: follow up in thread",
+    ]
+    await runtime.shutdown()
+
+
+@pytest.mark.asyncio
+async def test_runtime_group_thread_reply_reuses_top_level_sender_scope(tmp_path: Path) -> None:
+    config = make_config(tmp_path)
+    config.workspace_root.mkdir(parents=True, exist_ok=True)
+    config.main_workspace_dir.mkdir(parents=True, exist_ok=True)
+    config.develop_workspace_dir.mkdir(parents=True, exist_ok=True)
+    store = StateStore(config)
+    messenger = FakeMessenger()
+    backend = FakeBackend()
+    runtime = AgentRuntime(config, store, messenger, backends={"codex": backend})
+
+    top_level = IncomingMessage(
+        event_id="evt_group_root",
+        message_id="om_group_root",
+        chat_id="oc_group_1",
+        chat_type="group",
+        sender_open_id="ou_user",
+        text="group first task",
+        actionable=True,
+    )
+    await runtime.dispatch_message(top_level)
+
+    thread_reply = IncomingMessage(
+        event_id="evt_group_thread",
+        message_id="om_group_thread",
+        chat_id="oc_group_1",
+        chat_type="group",
+        sender_open_id="ou_user",
+        root_id="om_group_root",
+        thread_id="thread_group_1",
+        text="group follow up",
+        actionable=True,
+    )
+
+    assert runtime.build_session_key(thread_reply) == runtime.build_session_key(top_level)
+
+    await runtime.dispatch_message(thread_reply)
+
+    session = store.load_session(runtime.build_session_key(top_level))
+    assert [entry["content"] for entry in store.list_messages(session.session_id)] == [
+        "group first task",
+        "echo: group first task",
+        "group follow up",
+        "echo: group follow up",
+    ]
+    await runtime.shutdown()
+
+
 def test_session_ux_resolve_cwd_expands_home_path(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("HOME", str(tmp_path))
     config = make_config(tmp_path)

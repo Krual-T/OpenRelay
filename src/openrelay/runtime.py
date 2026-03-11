@@ -111,16 +111,47 @@ class AgentRuntime:
         await self.messenger.close()
         self.store.close()
 
-    def build_session_key(self, message: IncomingMessage) -> str:
-        if message.session_key:
-            return message.session_key
+    def _compose_session_key(self, message: IncomingMessage, *, thread_id: str = "") -> str:
         parts = [message.chat_type or "unknown", message.chat_id]
-        thread_id = message.root_id or message.thread_id
         if thread_id:
             parts.extend(["thread", thread_id])
         if message.chat_type == "group" and self.config.feishu.group_session_scope != "shared":
             parts.extend(["sender", message.session_owner_open_id or message.sender_open_id or "unknown"])
         return ":".join(parts)
+
+    def _thread_session_key_candidates(self, message: IncomingMessage) -> list[str]:
+        thread_ids: list[str] = []
+        for value in (message.root_id, message.thread_id):
+            thread_id = str(value or "").strip()
+            if thread_id and thread_id not in thread_ids:
+                thread_ids.append(thread_id)
+        return [self._compose_session_key(message, thread_id=thread_id) for thread_id in thread_ids]
+
+    def build_session_key(self, message: IncomingMessage) -> str:
+        if message.session_key:
+            return self.store.find_session_key_alias(message.session_key) or message.session_key
+        thread_candidates = self._thread_session_key_candidates(message)
+        if not thread_candidates:
+            return self._compose_session_key(message)
+        for candidate in thread_candidates:
+            resolved = self.store.find_session_key_alias(candidate)
+            if resolved:
+                return resolved
+        for candidate in thread_candidates:
+            if self.store.has_session_scope(candidate):
+                return candidate
+        top_level_key = self._compose_session_key(message)
+        if self.store.has_session_scope(top_level_key):
+            return top_level_key
+        return thread_candidates[0]
+
+    def _remember_thread_session_alias(self, message: IncomingMessage, session_key: str) -> None:
+        if self._is_card_action_message(message):
+            return
+        if message.root_id or message.thread_id:
+            return
+        alias_key = self._compose_session_key(message, thread_id=message.message_id)
+        self.store.save_session_key_alias(alias_key, session_key)
 
     def is_allowed_user(self, sender_open_id: str) -> bool:
         if sender_open_id in self.config.feishu.admin_open_ids:
@@ -168,6 +199,7 @@ class AgentRuntime:
                 return
 
             session_key = self.build_session_key(message)
+            self._remember_thread_session_alias(message, session_key)
             session = self.store.load_session(session_key)
             execution_key = self._build_execution_key(session_key, session)
             if self._is_stop_command(message.text):
@@ -199,6 +231,7 @@ class AgentRuntime:
     async def _handle_single_serialized_input(self, pending_input: IncomingMessage | QueuedFollowUp, execution_key: str) -> None:
         message = pending_input.to_message() if isinstance(pending_input, QueuedFollowUp) else pending_input
         session_key = self.build_session_key(message)
+        self._remember_thread_session_alias(message, session_key)
         session = self.store.load_session(session_key)
         if message.text.startswith("/"):
             handled = await self._handle_command(message, session_key, session)
