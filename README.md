@@ -148,7 +148,7 @@ http://your-host:3000/feishu/webhook
 
 - 命令与会话体验已收敛到 `openrelay` 当前形态
 - `codex app-server` 本机 smoke test 已跑通
-- Feishu WebSocket、流式卡片、typing 和原生 session 导入列表已经补上；还未完全补齐的是更细的流式活动面板与外部 provider 行为差异
+- Feishu WebSocket、流式卡片和 typing 已经补上；还未完全补齐的是更细的流式活动面板与外部 provider 行为差异
 - 但 runtime 主流程已经按“可插拔 CLI 适配器”设计好了，后续扩展不会再把产品绑死到某一家 CLI
 
 ## 连续消息的默认心智
