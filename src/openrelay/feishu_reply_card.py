@@ -162,11 +162,31 @@ def _append_tree_lines(lines: list[str], text: object) -> None:
     lines.extend(f"  {line}" for line in raw_lines[1:])
 
 
+def _history_item_tone(item: dict[str, Any]) -> str:
+    state = str(item.get("state") or "").strip().lower()
+    if state == "running":
+        return "running"
+    if state in {"failed", "error"}:
+        return "error"
+    if str(item.get("type") or "").strip() == "command":
+        exit_code = item.get("exit_code")
+        if isinstance(exit_code, int) and exit_code != 0:
+            return "error"
+    if state == "completed":
+        return "success"
+    return "neutral"
+
+
 def _history_item_bullet(item: dict[str, Any], spinner_frame: int) -> str:
-    if str(item.get("state") or "") == "running":
-        frames = ("◔", "◑", "◕", "◐")
+    tone = _history_item_tone(item)
+    if tone == "running":
+        frames = ("🟡", "🟠", "🟡", "🟠")
         return frames[abs(int(spinner_frame or 0)) % len(frames)]
-    return "•"
+    if tone == "error":
+        return "🔴"
+    if tone == "success":
+        return "🟢"
+    return "⚪"
 
 
 def _render_history_item(item: dict[str, Any], spinner_frame: int) -> list[str]:

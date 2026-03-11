@@ -56,7 +56,7 @@ def dedupe_strings(values: list[object]) -> list[str]:
 
 
 def resolve_spinner_dots(state: dict[str, Any]) -> str:
-    frames = [["·", "•", "●"], ["●", "·", "•"], ["•", "●", "·"]]
+    frames = [["🟡", "⚪", "⚪"], ["⚪", "🟡", "⚪"], ["⚪", "⚪", "🟡"]]
     index = abs(int(state.get("spinner_frame", 0) or 0)) % len(frames)
     return " ".join(frames[index])
 
