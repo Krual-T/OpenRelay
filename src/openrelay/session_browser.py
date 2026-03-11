@@ -80,10 +80,19 @@ class SessionBrowser:
     ) -> list[SessionListEntry]:
         fetch_limit = max(limit, browse_limit)
         local_sessions = self.store.list_sessions(session_key, limit=fetch_limit)
+        has_thread_scopes = any(":thread:" in entry.base_key for entry in local_sessions)
         merged: list[SessionListEntry] = []
         seen: set[str] = set()
 
         for entry in local_sessions:
+            if (
+                has_thread_scopes
+                and ":thread:" not in session_key
+                and entry.base_key == session_key
+                and not entry.native_session_id
+                and entry.message_count == 0
+            ):
+                continue
             item = self._local_entry(entry)
             seen.add(item.dedup_key)
             merged.append(item)

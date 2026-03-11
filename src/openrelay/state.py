@@ -266,6 +266,15 @@ class StateStore:
         ).fetchone()
         return row is not None
 
+    def find_session(self, base_key: str) -> SessionRecord | None:
+        pointer = self.connection.execute(
+            "SELECT active_session_id FROM session_pointers WHERE base_key = ?",
+            (base_key,),
+        ).fetchone()
+        if pointer is None:
+            return None
+        return self.get_session(pointer["active_session_id"])
+
     def remember_message(self, message_id: str) -> bool:
         now = int(time.time())
         cutoff = now - DEDUP_TTL_SECONDS
@@ -279,25 +288,25 @@ class StateStore:
         self.connection.commit()
         return duplicate
 
-    def load_session(self, base_key: str) -> SessionRecord:
-        pointer = self.connection.execute(
-            "SELECT active_session_id FROM session_pointers WHERE base_key = ?",
-            (base_key,),
-        ).fetchone()
-        if pointer is None:
-            session = SessionRecord(
-                session_id=self._new_session_id(),
-                base_key=base_key,
-                backend=self._default_backend(),
-                cwd=self._default_cwd("main"),
-                model_override=self._default_model(),
-                safety_mode=self._default_mode(),
-                release_channel="main",
-                last_usage={},
-            )
-            self.save_session(session)
-            return session
-        return self.get_session(pointer["active_session_id"])
+    def load_session(self, base_key: str, template: SessionRecord | None = None) -> SessionRecord:
+        existing = self.find_session(base_key)
+        if existing is not None:
+            return existing
+        release_channel = template.release_channel if template and template.release_channel else "main"
+        session = SessionRecord(
+            session_id=self._new_session_id(),
+            base_key=base_key,
+            backend=template.backend if template else self._default_backend(),
+            cwd=template.cwd if template else self._default_cwd(release_channel),
+            label=template.label if template else "",
+            model_override=template.model_override if template else self._default_model(),
+            safety_mode=template.safety_mode if template else self._default_mode(),
+            native_session_id="",
+            release_channel=release_channel,
+            last_usage={},
+        )
+        self.save_session(session)
+        return session
 
     def get_session(self, session_id: str) -> SessionRecord:
         row = self.connection.execute(
@@ -383,22 +392,40 @@ class StateStore:
         )
         return self.save_session(session)
 
+    def _session_scope_patterns(self, base_key: str) -> list[str]:
+        key = base_key.strip()
+        if not key:
+            return []
+        if ":thread:" in key:
+            return [key]
+        if ":sender:" in key:
+            prefix, suffix = key.split(":sender:", 1)
+            return [key, f"{prefix}:thread:%:sender:{suffix}"]
+        return [key, f"{key}:thread:%"]
+
     def list_sessions(self, base_key: str, limit: int = 20) -> list[SessionSummary]:
         pointer = self.connection.execute(
             "SELECT active_session_id FROM session_pointers WHERE base_key = ?",
             (base_key,),
         ).fetchone()
         active_id = pointer["active_session_id"] if pointer else ""
+        patterns = self._session_scope_patterns(base_key)
+        if not patterns:
+            return []
+        query_limit = max(limit * 10, 50)
+        where_clause = " OR ".join("base_key LIKE ?" if "%" in pattern else "base_key = ?" for pattern in patterns)
         rows = self.connection.execute(
-            "SELECT * FROM sessions WHERE base_key = ? ORDER BY updated_at DESC LIMIT ?",
-            (base_key, limit),
+            f"SELECT * FROM sessions WHERE {where_clause} ORDER BY updated_at DESC LIMIT ?",
+            (*patterns, query_limit),
         ).fetchall()
         summaries: list[SessionSummary] = []
         for row in rows:
             session_id = row["session_id"]
+            message_count = self.count_messages(session_id)
             summaries.append(
                 SessionSummary(
                     session_id=session_id,
+                    base_key=row["base_key"],
                     backend=row["backend"],
                     label=row["label"] or "",
                     cwd=row["cwd"],
@@ -408,11 +435,11 @@ class StateStore:
                     release_channel=row["release_channel"] or "main",
                     first_user_message=self._first_message(session_id, "user"),
                     last_assistant_message=self._last_message(session_id, "assistant"),
-                    message_count=self.count_messages(session_id),
+                    message_count=message_count,
                 )
             )
         summaries.sort(key=lambda entry: (entry.active, entry.updated_at), reverse=True)
-        return summaries
+        return summaries[:limit]
 
     def resume_session(self, base_key: str, target: str) -> SessionRecord | None:
         target = target.strip()
