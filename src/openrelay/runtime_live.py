@@ -3,7 +3,6 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any, Callable
 
-from openrelay.card_theme import build_collapsible_panel, build_status_heading, infer_final_tone
 from openrelay.models import SessionRecord, utc_now
 
 
@@ -61,18 +60,16 @@ def finalize_reasoning_timing(state: LiveReplyState) -> None:
 
 def format_reasoning_duration(reasoning_elapsed_ms: object) -> str:
     try:
-        total_seconds = max(0, int(int(reasoning_elapsed_ms or 0) / 1000))
+        total_milliseconds = max(0, float(reasoning_elapsed_ms or 0))
     except Exception:
         return "Thought"
-    if total_seconds <= 0:
+    if total_milliseconds <= 0:
         return "Thought"
+    total_seconds = total_milliseconds / 1000
     if total_seconds < 60:
-        return f"{total_seconds}s"
+        return f"Thought for {total_seconds:.1f}s"
     minutes, seconds = divmod(total_seconds, 60)
-    if minutes < 60:
-        return f"{minutes}m {seconds:02d}s"
-    hours, minutes = divmod(minutes, 60)
-    return f"{hours}h {minutes:02d}m"
+    return f"Thought for {int(minutes)}m {round(seconds)}s"
 
 
 def truncate_summary(text: object, max_length: int = 120) -> str:
@@ -86,6 +83,38 @@ def truncate_summary(text: object, max_length: int = 120) -> str:
     if len(summary) <= max_length:
         return summary
     return f"{summary[:max_length - 3]}..."
+
+
+def build_reasoning_panel(title: str, content: object) -> dict[str, Any] | None:
+    normalized_title = str(title or "").strip()
+    normalized_content = str(content or "").strip()
+    if not normalized_title or not normalized_content:
+        return None
+    return {
+        "tag": "collapsible_panel",
+        "expanded": False,
+        "header": {
+            "title": {"tag": "markdown", "content": normalized_title},
+            "vertical_align": "center",
+            "icon": {
+                "tag": "standard_icon",
+                "token": "down-small-ccm_outlined",
+                "size": "16px 16px",
+            },
+            "icon_position": "follow_text",
+            "icon_expanded_angle": -180,
+        },
+        "border": {"color": "grey", "corner_radius": "5px"},
+        "vertical_spacing": "8px",
+        "padding": "8px 8px 8px 8px",
+        "elements": [
+            {
+                "tag": "markdown",
+                "content": normalized_content,
+                "text_size": "notation",
+            }
+        ],
+    }
 
 
 def apply_live_progress(state: LiveReplyState, event: dict[str, Any] | None) -> None:
@@ -175,24 +204,15 @@ def build_reply_card(
     reasoning_elapsed_ms: int | None = None,
 ) -> dict[str, object]:
     content = text.strip() or "回复为空。"
-    tone = infer_final_tone(content)
-    elements: list[dict[str, Any]] = [{"tag": "markdown", "content": build_status_heading(tone, title)}]
-    reasoning_panel = build_collapsible_panel(
+    elements: list[dict[str, Any]] = []
+    reasoning_panel = build_reasoning_panel(
         f"💭 {format_reasoning_duration(reasoning_elapsed_ms)}",
         reasoning_text,
-        expanded=False,
     )
     if reasoning_panel is not None:
         elements.append(reasoning_panel)
     elements.append({"tag": "markdown", "content": content})
-    elements.append(
-        {
-            "tag": "markdown",
-            "content": "继续追问时直接回复当前线程即可。如果目标没变，不用先发命令，直接补充任务 / 报错 / 文件路径。",
-            "text_size": "notation",
-        }
-    )
-    config: dict[str, Any] = {"streaming_mode": False}
+    config: dict[str, Any] = {"wide_screen_mode": True, "update_multi": True}
     summary = truncate_summary(content)
     if summary:
         config["summary"] = {"content": summary}

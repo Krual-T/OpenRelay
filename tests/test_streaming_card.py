@@ -1,66 +1,84 @@
 import pytest
 
 import openrelay.streaming_card as streaming_card_module
-from openrelay.streaming_card import FeishuStreamingSession, build_card_json, sections_signature
+from openrelay.streaming_card import (
+    DEFAULT_THINKING_TEXT,
+    FeishuStreamingSession,
+    STREAMING_ELEMENT_ID,
+    build_streaming_card_json,
+    build_streaming_content,
+)
 
 
-def test_build_card_json_keeps_section_order() -> None:
-    card = build_card_json({"header": "h", "details": "d", "body": "b"})
+def test_build_streaming_card_json_uses_single_streaming_element() -> None:
+    card = build_streaming_card_json()
 
     assert card["schema"] == "2.0"
-    assert [element["element_id"] for element in card["body"]["elements"]] == ["header", "details", "body"]
+    assert card["config"]["streaming_mode"] is True
+    assert card["config"]["summary"]["content"] == DEFAULT_THINKING_TEXT
+    assert card["body"]["elements"] == [{"tag": "markdown", "element_id": STREAMING_ELEMENT_ID, "content": DEFAULT_THINKING_TEXT}]
+
+
+def test_build_streaming_content_prefers_partial_text_then_reasoning() -> None:
+    assert build_streaming_content({"partial_text": "answer"}) == "answer"
+    assert build_streaming_content({"reasoning_text": "先看代码"}) == "💭 **Thinking...**\n\n先看代码"
+    assert build_streaming_content({}) == DEFAULT_THINKING_TEXT
 
 
 @pytest.mark.asyncio
 async def test_streaming_session_throttles_updates_to_one_second(monkeypatch: pytest.MonkeyPatch) -> None:
     session = FeishuStreamingSession(object())
     session.state = {
-        "current_sections": {"header": "", "details": "", "body": ""},
-        "current_signature": sections_signature({"header": "", "details": "", "body": ""}),
+        "current_content": DEFAULT_THINKING_TEXT,
     }
-    applied_sections: list[dict[str, str]] = []
+    applied_contents: list[str] = []
 
-    async def fake_apply_sections(sections: dict[str, str], animate_body: bool = True) -> None:
-        applied_sections.append(sections)
-        session.state["current_sections"] = sections
-        session.state["current_signature"] = sections_signature(sections)
+    async def fake_update_card_content(text: str) -> None:
+        applied_contents.append(text)
+        session.state["current_content"] = text
 
     clock = {"now": 10.0}
     monkeypatch.setattr(streaming_card_module.time, "time", lambda: clock["now"])
-    monkeypatch.setattr(session, "apply_sections", fake_apply_sections)
+    monkeypatch.setattr(session, "update_card_content", fake_update_card_content)
 
-    await session.update({"heading": "正在生成回复", "status": "第一段"})
-    assert len(applied_sections) == 1
-    assert session.pending_sections is None
+    await session.update({"partial_text": "第一段"})
+    assert applied_contents == ["第一段"]
+    assert session.pending_content == ""
 
     clock["now"] = 10.5
-    await session.update({"heading": "正在生成回复", "status": "第二段"})
-    assert len(applied_sections) == 1
-    assert session.pending_sections is not None
+    await session.update({"partial_text": "第二段"})
+    assert applied_contents == ["第一段"]
+    assert session.pending_content == "第二段"
 
     clock["now"] = 11.1
-    await session.update({"heading": "正在生成回复", "status": "第二段"})
-    assert len(applied_sections) == 2
-    assert session.pending_sections is None
+    await session.update({"partial_text": "第二段"})
+    assert applied_contents == ["第一段", "第二段"]
+    assert session.pending_content == ""
 
 
 @pytest.mark.asyncio
-async def test_streaming_session_close_with_final_card_uses_full_card_update(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_streaming_session_close_disables_streaming_before_final_card_update(monkeypatch: pytest.MonkeyPatch) -> None:
     session = FeishuStreamingSession(object())
     session.state = {
         "card_id": "c1",
         "sequence": 1,
-        "current_sections": {"header": "", "details": "", "body": ""},
-        "current_signature": sections_signature({"header": "", "details": "", "body": ""}),
+        "current_content": DEFAULT_THINKING_TEXT,
     }
-    calls: list[dict[str, object]] = []
+    calls: list[tuple[str, object]] = []
+
+    async def fake_set_streaming_mode(enabled: bool) -> None:
+        calls.append(("settings", enabled))
 
     async def fake_update_card_json(card_json: dict[str, object]) -> None:
-        calls.append(card_json)
+        calls.append(("update", card_json))
 
+    monkeypatch.setattr(session, "set_streaming_mode", fake_set_streaming_mode)
     monkeypatch.setattr(session, "update_card_json", fake_update_card_json)
 
     await session.close({"schema": "2.0", "config": {"streaming_mode": False}, "body": {"elements": []}})
 
     assert session.closed is True
-    assert calls == [{"schema": "2.0", "config": {"streaming_mode": False}, "body": {"elements": []}}]
+    assert calls == [
+        ("settings", False),
+        ("update", {"schema": "2.0", "config": {"streaming_mode": False}, "body": {"elements": []}}),
+    ]
