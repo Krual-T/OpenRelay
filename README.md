@@ -26,7 +26,7 @@
 - `/panel` 仍会按 `main / develop` 作用域显示常用目录快捷按钮，点击后直接复用 `/cwd` 切换
 - `/resume` 现在只恢复本地 backend session；thread 只作为会话绑定，不再直接暴露成恢复目标
 - `FEISHU_STREAM_MODE=card` 时会显示 `openrelay` 的运行中状态卡片与 typing
-- 主回复卡片、运行中卡片和常驻操作卡片已收敛到一套更接近 Codex CLI 的低噪音主题语义；最终回复会把 reasoning 折叠进同一张卡
+- 主回复卡片、运行中卡片和常驻操作卡片已收敛到一套更接近 Codex CLI 的低噪音主题语义；`card` 模式下会在同一张 CardKit 卡里收口最终回复并折叠 reasoning
 - 当前回复还没结束时，继续发消息会自动排到下一轮；连续补充会合并成一轮 follow-up
 - `/ping`、`/status`、`/usage`、`/help`、`/panel` 这类诊断命令在当前回复尚未结束时也会立即返回，不再被同 session 串行锁静默卡住
 - 串行粒度现在按本地 backend `session_id` 收敛：同一个 session 的多 thread 串行，不同 session 可以并发

@@ -1,7 +1,7 @@
 import pytest
 
 import openrelay.streaming_card as streaming_card_module
-from openrelay.streaming_card import FeishuStreamingSession, build_card_json, build_final_sections, sections_signature
+from openrelay.streaming_card import FeishuStreamingSession, build_card_json, sections_signature
 
 
 def test_build_card_json_keeps_section_order() -> None:
@@ -9,15 +9,6 @@ def test_build_card_json_keeps_section_order() -> None:
 
     assert card["schema"] == "2.0"
     assert [element["element_id"] for element in card["body"]["elements"]] == ["header", "details", "body"]
-
-
-def test_build_final_sections_uses_semantic_status_heading() -> None:
-    failed = build_final_sections("处理失败：boom")
-    cancelled = build_final_sections("已停止当前回复。")
-
-    assert "`失败`" in failed["header"]
-    assert failed["body"] == "处理失败：boom"
-    assert "`已取消`" in cancelled["header"]
 
 
 @pytest.mark.asyncio
@@ -51,3 +42,25 @@ async def test_streaming_session_throttles_updates_to_one_second(monkeypatch: py
     await session.update({"heading": "正在生成回复", "status": "第二段"})
     assert len(applied_sections) == 2
     assert session.pending_sections is None
+
+
+@pytest.mark.asyncio
+async def test_streaming_session_close_with_final_card_uses_full_card_update(monkeypatch: pytest.MonkeyPatch) -> None:
+    session = FeishuStreamingSession(object())
+    session.state = {
+        "card_id": "c1",
+        "sequence": 1,
+        "current_sections": {"header": "", "details": "", "body": ""},
+        "current_signature": sections_signature({"header": "", "details": "", "body": ""}),
+    }
+    calls: list[dict[str, object]] = []
+
+    async def fake_update_card_json(card_json: dict[str, object]) -> None:
+        calls.append(card_json)
+
+    monkeypatch.setattr(session, "update_card_json", fake_update_card_json)
+
+    await session.close({"schema": "2.0", "config": {"streaming_mode": False}, "body": {"elements": []}})
+
+    assert session.closed is True
+    assert calls == [{"schema": "2.0", "config": {"streaming_mode": False}, "body": {"elements": []}}]

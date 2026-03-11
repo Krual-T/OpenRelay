@@ -16,7 +16,6 @@ from lark_oapi.api.cardkit.v1 import (
     UpdateCardRequestBody,
 )
 
-from openrelay.card_theme import build_status_heading, infer_final_tone
 from openrelay.feishu import FeishuMessenger, _read_text
 from openrelay.render import render_live_status_sections
 
@@ -66,17 +65,6 @@ def list_section_elements(sections: dict[str, str] | None = None) -> list[str]:
 
 def has_same_layout(left: dict[str, str] | None, right: dict[str, str] | None) -> bool:
     return list_section_elements(left) == list_section_elements(right)
-
-
-
-def build_final_sections(text: str) -> dict[str, str]:
-    content = normalize_section_text(text)
-    tone = infer_final_tone(content)
-    return {
-        "header": build_status_heading(tone, "openrelay 回复"),
-        "details": "",
-        "body": content,
-    }
 
 
 
@@ -188,6 +176,19 @@ class FeishuStreamingSession:
         )
         self.messenger.ensure_success(response, "Feishu update card")
 
+    async def update_card_json(self, card_json: dict[str, Any]) -> None:
+        if self.state is None:
+            return
+        sequence = self.next_sequence()
+        response = await self.messenger.client.cardkit.v1.card.aupdate(
+            UpdateCardRequest.builder().card_id(self.state["card_id"]).request_body(
+                UpdateCardRequestBody.builder().card(
+                    Card.builder().type("card_json").data(json.dumps(card_json, ensure_ascii=False)).build()
+                ).sequence(sequence).uuid(f"j_{self.state['card_id']}_{sequence}").build()
+            ).build()
+        )
+        self.messenger.ensure_success(response, "Feishu update card json")
+
     async def apply_sections(self, sections: dict[str, str], animate_body: bool = True) -> None:
         if self.state is None:
             return
@@ -225,15 +226,12 @@ class FeishuStreamingSession:
         self.last_update_time = now_ms
         await self.apply_sections(next_sections, animate_body=True)
 
-    async def close(self, final_text: str | None) -> None:
+    async def close(self, final_card: dict[str, Any] | None = None) -> None:
         if self.state is None or self.closed:
             return
         self.closed = True
-        if final_text is not None:
-            next_sections = build_final_sections(final_text)
-            await self.update_card(next_sections, streaming_mode=False, force_body=True)
-            self.state["current_sections"] = next_sections
-            self.state["current_signature"] = sections_signature(next_sections)
+        if final_card is not None:
+            await self.update_card_json(final_card)
             return
         next_sections = normalize_sections(self.pending_sections or self.state.get("current_sections"))
         if sections_signature(next_sections) == self.state.get("current_signature"):
