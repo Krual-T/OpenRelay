@@ -39,13 +39,34 @@ def test_build_process_panel_text_collects_status_command_and_reasoning() -> Non
         }
     )
 
-    assert "• **Starting Codex**" in text
+    assert "🟢 **Starting Codex**" in text
     assert "└ Preparing reply" in text
-    assert "• **Thought for 1.2s**" in text
+    assert "🟢 **Thought for 1.2s**" in text
     assert "└ 先检查 runtime。" in text
-    assert "• **Explored codebase** `ls -la`" in text
+    assert "🟢 **Explored codebase** `ls -la`" in text
     assert "└ exit 0" in text
     assert "└ `file1`" in text
+
+
+def test_build_process_panel_text_marks_failed_command_with_red_dot() -> None:
+    text = build_process_panel_text(
+        {
+            "history_items": [
+                {
+                    "type": "command",
+                    "state": "completed",
+                    "title": "Ran shell command",
+                    "mode": "command",
+                    "command": "pytest",
+                    "exit_code": 1,
+                    "output_preview": "1 failed",
+                },
+            ]
+        }
+    )
+
+    assert "🔴 **Ran shell command** `pytest`" in text
+    assert "└ exit 1" in text
 
 
 def test_apply_live_progress_accumulates_codex_style_history_items() -> None:

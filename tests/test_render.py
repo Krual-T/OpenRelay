@@ -28,6 +28,7 @@ def test_render_live_status_markdown_contains_header_details_and_body() -> None:
         }
     )
     assert "`进行中`" in markdown
+    assert "🟡 ⚪ ⚪" in markdown
     assert "**正在执行命令**" in markdown
     assert "当前：执行 `ls -la`" in markdown
     assert "partial reply" in markdown

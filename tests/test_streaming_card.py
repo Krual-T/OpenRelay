@@ -32,7 +32,7 @@ def test_build_streaming_content_prefers_partial_text_then_reasoning() -> None:
             ]
         }
     )
-    assert "◔ **Thinking**" in reasoning_content
+    assert "🟡 **Thinking**" in reasoning_content
     assert "└ 先看代码" in reasoning_content
     assert build_streaming_content({}) == ""
 
@@ -55,11 +55,32 @@ def test_build_streaming_content_shows_process_before_answer() -> None:
         }
     )
 
-    assert "• **Explored codebase** `rg -n Voyager`" in content
+    assert "🟢 **Explored codebase** `rg -n Voyager`" in content
     assert "└ exit 0" in content
     assert "└ `Gemini Voyager`" in content
     assert "---" in content
     assert "找到结果，准备整理。" in content
+
+
+def test_build_streaming_content_marks_failed_command_with_red_dot() -> None:
+    content = build_streaming_content(
+        {
+            "history_items": [
+                {
+                    "type": "command",
+                    "state": "completed",
+                    "title": "Ran shell command",
+                    "mode": "command",
+                    "command": "pytest",
+                    "exit_code": 1,
+                    "output_preview": "1 failed",
+                }
+            ]
+        }
+    )
+
+    assert "🔴 **Ran shell command** `pytest`" in content
+    assert "└ exit 1" in content
 
 
 @pytest.mark.asyncio
