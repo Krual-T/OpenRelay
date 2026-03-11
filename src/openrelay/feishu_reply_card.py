@@ -136,10 +136,84 @@ def first_non_empty_line(text: object) -> str:
     return ""
 
 
-def build_process_panel_text(state: dict[str, Any] | None) -> str:
-    if not isinstance(state, dict):
-        return ""
+def normalize_inline(text: object) -> str:
+    return " ".join(str(text or "").split()).strip()
 
+
+def shorten_inline(text: object, max_length: int = 120) -> str:
+    value = normalize_inline(text)
+    if len(value) <= max_length:
+        return value
+    return f"{value[: max_length - 3]}..."
+
+
+def _sanitize_code_inline(text: object, max_length: int = 96) -> str:
+    value = shorten_inline(str(text or "").replace("`", "'"), max_length)
+    if not value:
+        return ""
+    return f"`{value}`"
+
+
+def _append_tree_lines(lines: list[str], text: object) -> None:
+    raw_lines = [line.strip() for line in str(text or "").splitlines() if line.strip()]
+    if not raw_lines:
+        return
+    lines.append(f"└ {raw_lines[0]}")
+    lines.extend(f"  {line}" for line in raw_lines[1:])
+
+
+def _history_item_bullet(item: dict[str, Any], spinner_frame: int) -> str:
+    if str(item.get("state") or "") == "running":
+        frames = ("◔", "◑", "◕", "◐")
+        return frames[abs(int(spinner_frame or 0)) % len(frames)]
+    return "•"
+
+
+def _render_history_item(item: dict[str, Any], spinner_frame: int) -> list[str]:
+    item_type = str(item.get("type") or "").strip()
+    title = normalize_inline(item.get("title"))
+    if not item_type or not title:
+        return []
+
+    bullet = _history_item_bullet(item, spinner_frame)
+    lines = [f"{bullet} **{title}**"]
+
+    if item_type == "command":
+        command_text = _sanitize_code_inline(item.get("command"))
+        if command_text:
+            lines[0] = f"{lines[0]} {command_text}"
+        exit_code = item.get("exit_code")
+        if exit_code is not None and str(item.get("state") or "") != "running":
+            _append_tree_lines(lines, f"exit {exit_code}")
+        output_preview = first_non_empty_line(item.get("output_preview") or "")
+        if output_preview:
+            _append_tree_lines(lines, _sanitize_code_inline(output_preview, 120))
+        return lines
+
+    if item_type == "reasoning":
+        reasoning_text = clean_reasoning_prefix(item.get("text"))
+        if reasoning_text:
+            _append_tree_lines(lines, reasoning_text)
+        return lines
+
+    detail = str(item.get("detail") or "").strip()
+    if detail:
+        _append_tree_lines(lines, detail)
+    return lines
+
+
+def _render_history_items(items: list[dict[str, Any]], spinner_frame: int) -> str:
+    blocks: list[str] = []
+    for item in items[-12:]:
+        if not isinstance(item, dict):
+            continue
+        lines = _render_history_item(item, spinner_frame)
+        if lines:
+            blocks.append("\n".join(lines))
+    return "\n\n".join(blocks).strip()
+
+
+def _build_legacy_process_panel_text(state: dict[str, Any]) -> str:
     lines: list[str] = []
     heading = str(state.get("heading") or "").strip()
     status = str(state.get("status") or "").strip()
@@ -190,6 +264,16 @@ def build_process_panel_text(state: dict[str, Any] | None) -> str:
         lines.append(reasoning_text)
 
     return "\n".join(lines).strip()
+
+
+def build_process_panel_text(state: dict[str, Any] | None) -> str:
+    if not isinstance(state, dict):
+        return ""
+    history_items = state.get("history_items") if isinstance(state.get("history_items"), list) else []
+    rendered_history = _render_history_items(history_items, int(state.get("spinner_frame") or 0))
+    if rendered_history:
+        return rendered_history
+    return _build_legacy_process_panel_text(state)
 
 
 def build_thinking_card_json() -> dict[str, Any]:

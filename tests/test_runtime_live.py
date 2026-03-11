@@ -1,4 +1,4 @@
-from openrelay.runtime_live import build_process_panel_text, build_reply_card
+from openrelay.runtime_live import apply_live_progress, build_process_panel_text, build_reply_card
 
 
 def test_build_reply_card_uses_official_complete_card_shape() -> None:
@@ -23,19 +23,71 @@ def test_build_reply_card_adds_collapsible_process_panel() -> None:
 def test_build_process_panel_text_collects_status_command_and_reasoning() -> None:
     text = build_process_panel_text(
         {
-            "history": ["正在准备回复", "完成 ls -la"],
-            "commands": [{"command": "ls -la", "exitCode": 0, "outputPreview": "file1\nfile2"}],
-            "reasoning_text": "先检查 runtime。",
+            "history_items": [
+                {"type": "status", "state": "completed", "title": "Starting Codex", "detail": "Preparing reply"},
+                {"type": "reasoning", "state": "completed", "title": "Thought for 1.2s", "text": "先检查 runtime。"},
+                {
+                    "type": "command",
+                    "state": "completed",
+                    "title": "Explored codebase",
+                    "mode": "exploration",
+                    "command": "ls -la",
+                    "exit_code": 0,
+                    "output_preview": "file1\nfile2",
+                },
+            ]
         }
     )
 
-    assert "**状态**" in text
-    assert "- 正在准备回复" in text
-    assert "**命令**" in text
-    assert "- `ls -la` · exit 0" in text
-    assert "输出：`file1`" in text
-    assert "**补充内容**" in text
-    assert "先检查 runtime。" in text
+    assert "• **Starting Codex**" in text
+    assert "└ Preparing reply" in text
+    assert "• **Thought for 1.2s**" in text
+    assert "└ 先检查 runtime。" in text
+    assert "• **Explored codebase** `ls -la`" in text
+    assert "└ exit 0" in text
+    assert "└ `file1`" in text
+
+
+def test_apply_live_progress_accumulates_codex_style_history_items() -> None:
+    state = {
+        "history": [],
+        "history_items": [],
+        "commands": [],
+        "heading": "",
+        "status": "",
+        "current_command": "",
+        "last_command": None,
+        "last_reasoning": "",
+        "reasoning_text": "",
+        "reasoning_started_at": "",
+        "reasoning_elapsed_ms": 0,
+        "partial_text": "",
+        "spinner_frame": 0,
+        "started_at": "2026-03-11T00:00:00+00:00",
+    }
+
+    apply_live_progress(state, {"type": "run.started"})
+    apply_live_progress(state, {"type": "reasoning.started"})
+    apply_live_progress(state, {"type": "reasoning.delta", "text": "先检查 runtime。"})
+    apply_live_progress(state, {"type": "command.started", "command": {"id": "c1", "command": "rg -n runtime_live src/openrelay"}})
+    apply_live_progress(
+        state,
+        {
+            "type": "command.completed",
+            "command": {
+                "id": "c1",
+                "command": "rg -n runtime_live src/openrelay",
+                "exitCode": 0,
+                "outputPreview": "src/openrelay/runtime_live.py:1",
+            },
+        },
+    )
+
+    items = state["history_items"]
+    assert items[0]["title"] == "Starting Codex"
+    assert items[1]["title"] == "Thought"
+    assert items[2]["title"] == "Explored codebase"
+    assert items[2]["command"] == "rg -n runtime_live src/openrelay"
 
 
 def test_build_reply_card_splits_inline_thinking_tags() -> None:

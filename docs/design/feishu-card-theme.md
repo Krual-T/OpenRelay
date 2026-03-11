@@ -45,7 +45,8 @@
 ## 组件映射
 
 - 主回复卡片：`src/openrelay/runtime_live.py` 的 `build_reply_card()` 直接产出最终态 CardKit JSON，并在最终态把 reasoning 收敛进默认折叠的 `collapsible_panel`。
-- 运行中卡片：`src/openrelay/render.py` 负责把 live state 映射到统一主题文本；`src/openrelay/streaming_card.py` 负责把它落到 CardKit 结构。
+- 运行中卡片：`src/openrelay/runtime_live.py` 负责累计 live transcript，`src/openrelay/feishu_reply_card.py` 负责把 `history_items` 渲染成统一主题文本，`src/openrelay/streaming_card.py` 负责把它落到 CardKit 结构。
+- `card` 模式下的运行中 transcript 与最终折叠面板现在共用同一份 `history_items -> build_process_panel_text()` 渲染路径；中间态不再单独维护另一套摘要结构。
 - 聊天消息在 `card` 模式下从运行中到最终态都留在同一张 CardKit 消息上；turn 完成后直接把这张卡更新为带折叠 reasoning 的最终态。
 - 常驻操作卡片：`/help`、`/panel`、`/resume list` 统一复用同一 shell，避免继续复制 header/config 约定。
 

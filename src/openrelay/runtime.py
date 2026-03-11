@@ -12,11 +12,11 @@ from typing import Any, Awaitable, Callable
 from openrelay.backends import Backend, BackendDescriptor, BackendContext, CodexBackend, build_builtin_backend_descriptors, instantiate_builtin_backends
 from openrelay.config import AppConfig
 from openrelay.feishu import FeishuMessenger
+from openrelay.feishu_reply_card import build_streaming_content
 from openrelay.follow_up import QueuedFollowUp
 from openrelay.help_renderer import HelpRenderer
 from openrelay.models import ActiveRun, IncomingMessage, SessionRecord, utc_now
 from openrelay.panel_card import build_panel_card
-from openrelay.render import render_live_status_markdown
 from openrelay.streaming_card import FeishuStreamingSession
 from openrelay.typing import FeishuTypingManager
 from openrelay.release import (
@@ -389,7 +389,7 @@ class AgentRuntime:
             nonlocal streaming, streaming_broken, last_live_text
             if self.config.feishu.stream_mode != "card" or streaming_broken:
                 return
-            live_text = render_live_status_markdown(snapshot)
+            live_text = build_streaming_content(snapshot)
             if not live_text or live_text == last_live_text:
                 return
             try:
