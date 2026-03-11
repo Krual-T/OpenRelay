@@ -60,6 +60,51 @@ def finalize_reasoning_timing(state: LiveReplyState) -> None:
         state["reasoning_elapsed_ms"] = elapsed_ms
 
 
+def build_process_panel_text(state: LiveReplyState | dict[str, Any] | None) -> str:
+    if not isinstance(state, dict):
+        return ""
+    lines: list[str] = []
+
+    history = state.get("history") if isinstance(state.get("history"), list) else []
+    history_lines = [str(item).strip() for item in history if str(item).strip()]
+    if history_lines:
+        lines.append("**状态**")
+        lines.extend(f"- {item}" for item in history_lines[-6:])
+
+    commands = state.get("commands") if isinstance(state.get("commands"), list) else []
+    command_lines: list[str] = []
+    for command in commands[-4:]:
+        if not isinstance(command, dict):
+            continue
+        command_text = str(command.get("command") or "").strip()
+        if not command_text:
+            continue
+        exit_code = command.get("exitCode")
+        preview = str(command.get("outputPreview") or "").strip()
+        line = f"- `{command_text}`"
+        if exit_code is not None:
+            line += f" · exit {exit_code}"
+        if preview:
+            first_line = next((part.strip() for part in preview.splitlines() if part.strip()), "")
+            if first_line:
+                line += f"\n  输出：`{first_line}`"
+        command_lines.append(line)
+    if command_lines:
+        if lines:
+            lines.append("")
+        lines.append("**命令**")
+        lines.extend(command_lines)
+
+    reasoning_text = str(state.get("reasoning_text") or state.get("last_reasoning") or "").strip()
+    if reasoning_text:
+        if lines:
+            lines.append("")
+        lines.append("**补充内容**")
+        lines.append(reasoning_text)
+
+    return "\n".join(lines).strip()
+
+
 def apply_live_progress(state: LiveReplyState, event: dict[str, Any] | None) -> None:
     if not event:
         return
@@ -147,20 +192,10 @@ def build_reply_card(
     text: str,
     title: str = "openrelay",
     *,
-    reasoning_text: str = "",
-    reasoning_elapsed_ms: int | None = None,
-    commands: list[dict[str, Any]] | None = None,
+    process_text: str = "",
 ) -> dict[str, object]:
-    tool_calls: list[dict[str, str]] = []
-    for command in commands or []:
-        name = str(command.get("command") or "").strip() if isinstance(command, dict) else ""
-        if not name:
-            continue
-        exit_code = command.get("exitCode") if isinstance(command, dict) else None
-        tool_calls.append({"name": name, "status": "complete" if exit_code in {None, 0} else "failed"})
     return build_complete_card(
         text,
-        reasoning_text=reasoning_text,
-        reasoning_elapsed_ms=reasoning_elapsed_ms,
-        tool_calls=tool_calls,
+        panel_text=process_text,
+        panel_title="🧾 中间过程",
     )
