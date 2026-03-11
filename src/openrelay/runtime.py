@@ -840,6 +840,7 @@ class AgentRuntime:
         reasoning_text = str(live_state.get("reasoning_text") or live_state.get("last_reasoning") or "").strip()
         raw_reasoning_elapsed_ms = live_state.get("reasoning_elapsed_ms")
         reasoning_elapsed_ms = int(raw_reasoning_elapsed_ms) if isinstance(raw_reasoning_elapsed_ms, int) and raw_reasoning_elapsed_ms > 0 else None
+        commands = live_state.get("commands") if isinstance(live_state.get("commands"), list) else []
         if self.config.feishu.stream_mode == "card" and streaming is not None and streaming.has_started():
             try:
                 await streaming.close(
@@ -848,6 +849,7 @@ class AgentRuntime:
                         "openrelay 回复",
                         reasoning_text=reasoning_text,
                         reasoning_elapsed_ms=reasoning_elapsed_ms,
+                        commands=commands,
                     )
                 )
                 return

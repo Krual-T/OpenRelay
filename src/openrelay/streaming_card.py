@@ -17,48 +17,11 @@ from lark_oapi.api.cardkit.v1 import (
     UpdateCardRequestBody,
 )
 
+from openrelay.feishu_reply_card import DEFAULT_THINKING_TEXT, STREAMING_ELEMENT_ID, build_streaming_content, build_thinking_card_json
 from openrelay.feishu import FeishuMessenger, _read_text
 
-
-STREAMING_ELEMENT_ID = "streaming_content"
-BLANK_MARKDOWN = "\u200b"
 DEFAULT_STREAM_UPDATE_THROTTLE_MS = 1000
-DEFAULT_THINKING_TEXT = "思考中..."
-
-
-def ensure_card_text(text: object) -> str:
-    value = str(text or "")
-    return value if value.strip() else BLANK_MARKDOWN
-
-
-def build_streaming_card_json(content: str = DEFAULT_THINKING_TEXT) -> dict[str, Any]:
-    return {
-        "schema": "2.0",
-        "config": {
-            "streaming_mode": True,
-            "summary": {"content": DEFAULT_THINKING_TEXT},
-        },
-        "body": {
-            "elements": [
-                {
-                    "tag": "markdown",
-                    "element_id": STREAMING_ELEMENT_ID,
-                    "content": ensure_card_text(content),
-                }
-            ]
-        },
-    }
-
-
-def build_streaming_content(live_state: dict[str, Any] | None = None) -> str:
-    live_state = live_state or {}
-    partial_text = str(live_state.get("partial_text") or "").strip()
-    if partial_text:
-        return partial_text
-    reasoning_text = str(live_state.get("reasoning_text") or live_state.get("last_reasoning") or "").strip()
-    if reasoning_text:
-        return f"💭 **Thinking...**\n\n{reasoning_text}"
-    return DEFAULT_THINKING_TEXT
+build_streaming_card_json = build_thinking_card_json
 
 
 class FeishuStreamingSession:
@@ -81,10 +44,9 @@ class FeishuStreamingSession:
     async def start(self, receive_id: str, *, reply_to_message_id: str = "", root_id: str = "") -> None:
         if self.state is not None:
             return
-        initial_content = DEFAULT_THINKING_TEXT
         create_response = await self.messenger.client.cardkit.v1.card.acreate(
             CreateCardRequest.builder().request_body(
-                CreateCardRequestBody.builder().type("card_json").data(json.dumps(build_streaming_card_json(initial_content), ensure_ascii=False)).build()
+                CreateCardRequestBody.builder().type("card_json").data(json.dumps(build_thinking_card_json(), ensure_ascii=False)).build()
             ).build()
         )
         self.messenger.ensure_success(create_response, "Feishu create cardkit card")
@@ -99,7 +61,7 @@ class FeishuStreamingSession:
                     "card_id": card_id,
                     "message_id": _read_text(payload.get("data", {}).get("message_id")),
                     "sequence": 1,
-                    "current_content": initial_content,
+                    "current_content": "",
                 }
                 return
             except Exception:
@@ -109,7 +71,7 @@ class FeishuStreamingSession:
             "card_id": card_id,
             "message_id": _read_text(payload.get("data", {}).get("message_id")),
             "sequence": 1,
-            "current_content": initial_content,
+            "current_content": "",
         }
         if self.log is not None:
             self.log(f"streaming card started: {card_id}")
@@ -120,7 +82,7 @@ class FeishuStreamingSession:
         sequence = self.next_sequence()
         response = await self.messenger.client.cardkit.v1.card_element.acontent(
             ContentCardElementRequest.builder().card_id(self.state["card_id"]).element_id(STREAMING_ELEMENT_ID).request_body(
-                ContentCardElementRequestBody.builder().content(ensure_card_text(text)).sequence(sequence).uuid(f"c_{self.state['card_id']}_{sequence}").build()
+                ContentCardElementRequestBody.builder().content(text).sequence(sequence).uuid(f"c_{self.state['card_id']}_{sequence}").build()
             ).build()
         )
         self.messenger.ensure_success(response, "Feishu update card element content")
