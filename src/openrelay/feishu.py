@@ -47,6 +47,52 @@ def _safe_json_loads(text: str | None) -> dict[str, Any]:
         return {}
 
 
+def _dedupe_preserve_order(values: list[str]) -> tuple[str, ...]:
+    seen: set[str] = set()
+    ordered: list[str] = []
+    for value in values:
+        normalized = value.strip() if isinstance(value, str) else ""
+        if not normalized or normalized in seen:
+            continue
+        seen.add(normalized)
+        ordered.append(normalized)
+    return tuple(ordered)
+
+
+def _collect_post_message_parts(node: object, texts: list[str], image_keys: list[str]) -> None:
+    if isinstance(node, list):
+        for item in node:
+            _collect_post_message_parts(item, texts, image_keys)
+        return
+    if not isinstance(node, dict):
+        return
+
+    tag = _read_text(node.get("tag")).lower()
+    if tag == "img":
+        image_key = _read_text(node.get("image_key"))
+        if image_key:
+            image_keys.append(image_key)
+    elif tag in {"text", "a", "at"}:
+        text = _read_text(node.get("text"))
+        if text:
+            texts.append(text)
+
+    title = _read_text(node.get("title"))
+    if title:
+        texts.append(title)
+
+    for value in node.values():
+        if isinstance(value, (dict, list)):
+            _collect_post_message_parts(value, texts, image_keys)
+
+
+def _extract_post_message_content(content: dict[str, Any]) -> tuple[str, tuple[str, ...]]:
+    texts: list[str] = []
+    image_keys: list[str] = []
+    _collect_post_message_parts(content, texts, image_keys)
+    return _normalize_spaces(" ".join(texts)), _dedupe_preserve_order(image_keys)
+
+
 
 def _read_text(value: object) -> str:
     return value.strip() if isinstance(value, str) and value.strip() else ""
@@ -174,17 +220,27 @@ def parse_message_event(config: AppConfig, event: dict[str, Any] | P2ImMessageRe
     if not _read_attr_text(message, "message_id") or not _read_attr_text(message, "chat_id"):
         return ParsedWebhook(type="ignore")
     message_type = _read_attr_text(message, "message_type")
-    if message_type not in {"text", "image"}:
+    if message_type not in {"text", "image", "post"}:
         return ParsedWebhook(type="ignore")
     mentions = list(getattr(message, "mentions", None) or [])
     content = _safe_json_loads(_read_attr_text(message, "content"))
-    text = strip_mentions(_read_text(content.get("text")), mentions) if message_type == "text" else IMAGE_MESSAGE_PLACEHOLDER
     remote_image_keys: tuple[str, ...] = ()
-    if message_type == "image":
+    if message_type == "text":
+        text = strip_mentions(_read_text(content.get("text")), mentions)
+    elif message_type == "image":
+        text = IMAGE_MESSAGE_PLACEHOLDER
         image_key = _read_text(content.get("image_key"))
         if not image_key:
             return ParsedWebhook(type="ignore")
         remote_image_keys = (image_key,)
+    else:
+        post_text, post_image_keys = _extract_post_message_content(content)
+        text = strip_mentions(post_text, mentions)
+        remote_image_keys = post_image_keys
+        if not text and remote_image_keys:
+            text = IMAGE_MESSAGE_PLACEHOLDER
+        if not text and not remote_image_keys:
+            return ParsedWebhook(type="ignore")
     sender = event_data.sender if event_data is not None else None
     sender_open_id = _read_nested_attr_text(sender, "sender_id", "open_id")
     chat_type = _read_attr_text(message, "chat_type") or "unknown"
