@@ -35,17 +35,19 @@ def test_build_process_panel_text_collects_status_command_and_reasoning() -> Non
                     "exit_code": 0,
                     "output_preview": "file1\nfile2",
                 },
-            ]
+            ],
+            "started_at": "2026-03-11T00:00:00+00:00",
         }
     )
 
-    assert "🟢 **Starting Codex**" in text
+    assert "• **Starting Codex**" in text
     assert "└ Preparing reply" in text
-    assert "🟢 **Thought for 1.2s**" in text
+    assert "• **Thought for 1.2s**" in text
     assert "└ 先检查 runtime。" in text
-    assert "🟢 **Explored codebase** `ls -la`" in text
-    assert "└ exit 0" in text
+    assert "• **Explored**" in text
+    assert "└ ls -la" in text
     assert "└ `file1`" in text
+    assert "Worked for" in text
 
 
 def test_build_process_panel_text_marks_failed_command_with_red_dot() -> None:
@@ -65,7 +67,7 @@ def test_build_process_panel_text_marks_failed_command_with_red_dot() -> None:
         }
     )
 
-    assert "🔴 **Ran shell command** `pytest`" in text
+    assert "🔴 **Ran** `pytest`" in text
     assert "└ exit 1" in text
 
 

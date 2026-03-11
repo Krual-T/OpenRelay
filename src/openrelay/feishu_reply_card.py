@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+from datetime import datetime
 from typing import Any
 
 
@@ -162,6 +163,46 @@ def _append_tree_lines(lines: list[str], text: object) -> None:
     lines.extend(f"  {line}" for line in raw_lines[1:])
 
 
+def _format_worked_for(started_at: object) -> str:
+    raw_value = str(started_at or "").strip()
+    if not raw_value:
+        return ""
+    try:
+        started = datetime.fromisoformat(raw_value)
+        now = datetime.now(started.tzinfo) if started.tzinfo is not None else datetime.now()
+        elapsed_seconds = max(0, int((now - started).total_seconds()))
+    except Exception:
+        return ""
+    minutes, seconds = divmod(elapsed_seconds, 60)
+    hours, minutes = divmod(minutes, 60)
+    if hours > 0:
+        return f"{hours}h {minutes:02d}m"
+    if minutes > 0:
+        return f"{minutes}m {seconds:02d}s"
+    return f"{seconds}s"
+
+
+def _normalize_history_title(item: dict[str, Any]) -> str:
+    title = normalize_inline(item.get("title"))
+    mode = str(item.get("mode") or "").strip()
+    if title in {"Explored codebase", "Exploring codebase"}:
+        return "Explored" if mode == "exploration" and str(item.get("state") or "") != "running" else "Exploring"
+    if title in {"Ran shell command", "Running shell command"}:
+        return "Ran" if str(item.get("state") or "") != "running" else "Running"
+    return title
+
+
+def _describe_exploration_command(command_text: object) -> str:
+    normalized = normalize_inline(command_text)
+    if not normalized:
+        return ""
+    lowered = normalized.lower()
+    if lowered.startswith("rg ") or lowered.startswith("grep "):
+        detail = re.sub(r"^(?:rg|grep)\s+(?:-[A-Za-z]+\s+)*", "", normalized, count=1).strip()
+        return f"Search {detail}" if detail else "Search"
+    return normalized
+
+
 def _history_item_tone(item: dict[str, Any]) -> str:
     state = str(item.get("state") or "").strip().lower()
     if state == "running":
@@ -172,6 +213,8 @@ def _history_item_tone(item: dict[str, Any]) -> str:
         exit_code = item.get("exit_code")
         if isinstance(exit_code, int) and exit_code != 0:
             return "error"
+        if str(item.get("mode") or "").strip() == "command" and state == "completed":
+            return "success"
     if state == "completed":
         return "success"
     return "neutral"
@@ -185,13 +228,15 @@ def _history_item_bullet(item: dict[str, Any], spinner_frame: int) -> str:
     if tone == "error":
         return "🔴"
     if tone == "success":
-        return "🟢"
-    return "⚪"
+        if str(item.get("type") or "").strip() == "command" and str(item.get("mode") or "").strip() == "command":
+            return "🟢"
+        return "•"
+    return "•"
 
 
 def _render_history_item(item: dict[str, Any], spinner_frame: int) -> list[str]:
     item_type = str(item.get("type") or "").strip()
-    title = normalize_inline(item.get("title"))
+    title = _normalize_history_title(item)
     if not item_type or not title:
         return []
 
@@ -199,11 +244,17 @@ def _render_history_item(item: dict[str, Any], spinner_frame: int) -> list[str]:
     lines = [f"{bullet} **{title}**"]
 
     if item_type == "command":
-        command_text = _sanitize_code_inline(item.get("command"))
-        if command_text:
+        command_value = str(item.get("command") or "").strip()
+        mode = str(item.get("mode") or "").strip()
+        command_text = _sanitize_code_inline(command_value)
+        if mode == "exploration":
+            detail = _describe_exploration_command(command_value)
+            if detail:
+                _append_tree_lines(lines, detail)
+        elif command_text:
             lines[0] = f"{lines[0]} {command_text}"
         exit_code = item.get("exit_code")
-        if exit_code is not None and str(item.get("state") or "") != "running":
+        if exit_code is not None and str(item.get("state") or "") != "running" and int(exit_code) != 0:
             _append_tree_lines(lines, f"exit {exit_code}")
         output_preview = first_non_empty_line(item.get("output_preview") or "")
         if output_preview:
@@ -291,7 +342,10 @@ def build_process_panel_text(state: dict[str, Any] | None) -> str:
         return ""
     history_items = state.get("history_items") if isinstance(state.get("history_items"), list) else []
     rendered_history = _render_history_items(history_items, int(state.get("spinner_frame") or 0))
+    worked_for = _format_worked_for(state.get("started_at") or state.get("startedAt"))
     if rendered_history:
+        if worked_for:
+            return f"{rendered_history}\n\n- Worked for {worked_for}"
         return rendered_history
     return _build_legacy_process_panel_text(state)
 
