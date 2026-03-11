@@ -29,7 +29,7 @@ from openrelay.release import (
     infer_release_channel,
 )
 from openrelay.state import StateStore
-from openrelay.runtime_live import apply_live_progress, build_reply_card, create_live_reply_state
+from openrelay.runtime_live import apply_live_progress, build_process_panel_text, build_reply_card, create_live_reply_state
 from openrelay.runtime_commands import PanelCommandArgs, RuntimeCommandHooks, RuntimeCommandRouter
 from openrelay.session_browser import SessionBrowser, SessionSortMode
 from openrelay.session_list_card import build_session_list_card
@@ -836,19 +836,14 @@ class AgentRuntime:
         live_state: dict[str, Any] | None = None,
     ) -> None:
         live_state = live_state or {}
-        reasoning_text = str(live_state.get("reasoning_text") or live_state.get("last_reasoning") or "").strip()
-        raw_reasoning_elapsed_ms = live_state.get("reasoning_elapsed_ms")
-        reasoning_elapsed_ms = int(raw_reasoning_elapsed_ms) if isinstance(raw_reasoning_elapsed_ms, int) and raw_reasoning_elapsed_ms > 0 else None
-        commands = live_state.get("commands") if isinstance(live_state.get("commands"), list) else []
+        process_text = build_process_panel_text(live_state)
         if self.config.feishu.stream_mode == "card" and streaming is not None and streaming.has_started():
             try:
                 await streaming.close(
                     build_reply_card(
                         text,
                         "openrelay 回复",
-                        reasoning_text=reasoning_text,
-                        reasoning_elapsed_ms=reasoning_elapsed_ms,
-                        commands=commands,
+                        process_text=process_text,
                     )
                 )
                 return

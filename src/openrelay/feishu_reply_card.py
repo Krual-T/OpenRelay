@@ -179,24 +179,22 @@ def build_streaming_content(live_state: dict[str, Any] | None = None) -> str:
 def build_complete_card(
     text: object,
     *,
-    reasoning_text: object = "",
-    reasoning_elapsed_ms: object = 0,
-    tool_calls: list[dict[str, str]] | None = None,
+    panel_text: object = "",
+    panel_title: object = "🧾 中间过程",
 ) -> dict[str, Any]:
     raw_text = str(text or "").strip() or "回复为空。"
     extracted_reasoning, extracted_answer = split_reasoning_text(raw_text)
-    final_reasoning = str(reasoning_text or "").strip() or extracted_reasoning
+    final_panel_text = str(panel_text or "").strip() or extracted_reasoning
     final_answer = extracted_answer or raw_text
 
     elements: list[dict[str, Any]] = []
-    if final_reasoning:
-        duration_label = format_reasoning_duration(reasoning_elapsed_ms)
+    if final_panel_text:
         elements.append(
             {
                 "tag": "collapsible_panel",
                 "expanded": False,
                 "header": {
-                    "title": {"tag": "markdown", "content": f"💭 {duration_label}"},
+                    "title": {"tag": "markdown", "content": str(panel_title or "🧾 中间过程").strip()},
                     "vertical_align": "center",
                     "icon": {
                         "tag": "standard_icon",
@@ -212,7 +210,7 @@ def build_complete_card(
                 "elements": [
                     {
                         "tag": "markdown",
-                        "content": final_reasoning,
+                        "content": final_panel_text,
                         "text_size": "notation",
                     }
                 ],
@@ -220,15 +218,6 @@ def build_complete_card(
         )
 
     elements.append({"tag": "markdown", "content": optimize_markdown_style(final_answer)})
-
-    normalized_tool_calls = [item for item in (tool_calls or []) if str(item.get("name") or "").strip()]
-    if normalized_tool_calls:
-        lines = []
-        for tool_call in normalized_tool_calls:
-            status = str(tool_call.get("status") or "").strip().lower()
-            icon = "✅" if status == "complete" else "❌"
-            lines.append(f"{icon} **{str(tool_call.get('name') or '').strip()}** - {status or 'complete'}")
-        elements.append({"tag": "markdown", "content": "\n".join(lines), "text_size": "notation"})
 
     summary = strip_markdown_for_summary(final_answer)
     config: dict[str, Any] = {"wide_screen_mode": True, "update_multi": True}
