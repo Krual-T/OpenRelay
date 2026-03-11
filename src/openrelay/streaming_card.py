@@ -22,6 +22,7 @@ from openrelay.render import render_live_status_sections
 
 
 BLANK_MARKDOWN = "\u200b"
+DEFAULT_STREAM_UPDATE_THROTTLE_MS = 1000
 
 
 
@@ -102,7 +103,7 @@ class FeishuStreamingSession:
         self.closed = False
         self.pending_sections: dict[str, str] | None = None
         self.last_update_time = 0.0
-        self.update_throttle_ms = 500
+        self.update_throttle_ms = DEFAULT_STREAM_UPDATE_THROTTLE_MS
         import asyncio
 
         self.queue = asyncio.get_running_loop().create_future()
