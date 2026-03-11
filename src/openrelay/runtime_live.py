@@ -105,6 +105,38 @@ def _command_item_title(mode: object, *, completed: bool) -> str:
     return "Ran shell command" if completed else "Running shell command"
 
 
+def _normalize_search_query(search: dict[str, Any]) -> str:
+    query = _normalize_inline(search.get("query"))
+    if query:
+        return query
+    action = search.get("action") if isinstance(search.get("action"), dict) else {}
+    action_query = _normalize_inline(action.get("query"))
+    if action_query:
+        return action_query
+    queries = action.get("queries")
+    if isinstance(queries, list):
+        for entry in queries:
+            normalized = _normalize_inline(entry)
+            if normalized:
+                return normalized
+    return ""
+
+
+def _search_queries(search: dict[str, Any]) -> list[str]:
+    values: list[str] = []
+    primary = _normalize_search_query(search)
+    if primary:
+        values.append(primary)
+    action = search.get("action") if isinstance(search.get("action"), dict) else {}
+    queries = action.get("queries")
+    if isinstance(queries, list):
+        for entry in queries:
+            normalized = _normalize_inline(entry)
+            if normalized and normalized not in values:
+                values.append(normalized)
+    return values
+
+
 def _ensure_reasoning_item(state: LiveReplyState) -> dict[str, Any]:
     item = _find_history_item(state, lambda entry: entry.get("type") == "reasoning" and entry.get("state") == "running")
     if item is not None:
@@ -183,6 +215,38 @@ def _complete_command_item(state: LiveReplyState, command: dict[str, Any]) -> No
     output_preview = str(command.get("outputPreview") or item.get("output_preview") or "").strip()
     if output_preview:
         item["output_preview"] = output_preview
+
+
+def _resolve_web_search_item(state: LiveReplyState, search: dict[str, Any]) -> dict[str, Any]:
+    search_id = str(search.get("id") or "").strip()
+    item = _find_history_item(
+        state,
+        lambda entry: entry.get("type") == "web_search"
+        and ((search_id and str(entry.get("search_id") or "") == search_id) or (not search_id and entry.get("state") == "running")),
+    )
+    queries = _search_queries(search)
+    if item is None:
+        item = _append_history_item(
+            state,
+            {
+                "type": "web_search",
+                "state": "running",
+                "title": "Searching web",
+                "search_id": search_id,
+                "query": queries[0] if queries else "",
+                "queries": queries,
+            },
+        )
+    else:
+        item["query"] = queries[0] if queries else str(item.get("query") or "")
+        item["queries"] = queries or list(item.get("queries") or [])
+    return item
+
+
+def _complete_web_search_item(state: LiveReplyState, search: dict[str, Any]) -> None:
+    item = _resolve_web_search_item(state, search)
+    item["state"] = "completed"
+    item["title"] = "Searched web"
 
 
 def create_live_reply_state(
@@ -284,6 +348,24 @@ def apply_live_progress(state: LiveReplyState, event: dict[str, Any] | None) -> 
             state["reasoning_text"] = event["text"]
             state["last_reasoning"] = event["text"]
             _ensure_reasoning_item(state)["text"] = event["text"].strip()
+        push_live_history(state, state["status"])
+        return
+    if event_type == "web_search.started":
+        search = event.get("search") if isinstance(event.get("search"), dict) else {}
+        finalize_reasoning_timing(state)
+        _complete_reasoning_item(state)
+        state["heading"] = "Searching web"
+        query = _normalize_search_query(search)
+        state["status"] = f"Search {query}" if query else "Searching the web"
+        _resolve_web_search_item(state, search)
+        push_live_history(state, state["status"])
+        return
+    if event_type == "web_search.completed":
+        search = event.get("search") if isinstance(event.get("search"), dict) else {}
+        state["heading"] = "Reviewing search results"
+        query = _normalize_search_query(search)
+        state["status"] = f"Searched {query}" if query else "Search completed"
+        _complete_web_search_item(state, search)
         push_live_history(state, state["status"])
         return
     if event_type == "command.started":

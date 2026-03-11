@@ -75,6 +75,29 @@ def test_build_process_panel_text_marks_failed_command_with_red_dot() -> None:
     assert "└ `AssertionError`" in text
 
 
+def test_build_process_panel_text_renders_web_search_items() -> None:
+    text = build_process_panel_text(
+        {
+            "history_items": [
+                {
+                    "type": "web_search",
+                    "state": "completed",
+                    "title": "Searched web",
+                    "query": "AI news March 11 2026 Reuters AI official blog",
+                    "queries": [
+                        "AI news March 11 2026 Reuters AI official blog",
+                        "site:openai.com March 2026 OpenAI announcement",
+                    ],
+                }
+            ]
+        }
+    )
+
+    assert "🔵 **Searched**" in text
+    assert "├ Search AI news March 11 2026 Reuters AI official blog" in text
+    assert "└ Search site:openai.com March 2026 OpenAI announcement" in text
+
+
 def test_apply_live_progress_accumulates_codex_style_history_items() -> None:
     state = {
         "history": [],
@@ -115,6 +138,48 @@ def test_apply_live_progress_accumulates_codex_style_history_items() -> None:
     assert items[1]["title"] == "Thought"
     assert items[2]["title"] == "Explored codebase"
     assert items[2]["command"] == "rg -n runtime_live src/openrelay"
+
+
+def test_apply_live_progress_tracks_web_search_items() -> None:
+    state = {
+        "history": [],
+        "history_items": [],
+        "commands": [],
+        "heading": "",
+        "status": "",
+        "current_command": "",
+        "last_command": None,
+        "last_reasoning": "",
+        "reasoning_text": "",
+        "reasoning_started_at": "",
+        "reasoning_elapsed_ms": 0,
+        "partial_text": "",
+        "spinner_frame": 0,
+        "started_at": "2026-03-11T00:00:00+00:00",
+    }
+
+    apply_live_progress(state, {"type": "reasoning.started"})
+    apply_live_progress(state, {"type": "reasoning.delta", "text": "先搜一下今天 AI 新闻。"})
+    apply_live_progress(
+        state,
+        {"type": "web_search.started", "search": {"id": "ws1", "query": "", "action": {"type": "other"}}},
+    )
+    apply_live_progress(
+        state,
+        {
+            "type": "web_search.completed",
+            "search": {
+                "id": "ws1",
+                "query": "AI news March 11 2026 Reuters AI official blog",
+                "action": {"type": "search", "queries": ["AI news March 11 2026 Reuters AI official blog"]},
+            },
+        },
+    )
+
+    items = state["history_items"]
+    assert items[0]["title"] == "Thought"
+    assert items[1]["title"] == "Searched web"
+    assert items[1]["query"] == "AI news March 11 2026 Reuters AI official blog"
 
 
 def test_build_reply_card_splits_inline_thinking_tags() -> None:

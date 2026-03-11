@@ -131,6 +131,19 @@ class CodexTurn:
                 if self.on_progress is not None:
                     await self.on_progress({"type": "reasoning.started"})
                 return
+            if item.get("type") == "webSearch":
+                if self.on_progress is not None:
+                    await self.on_progress(
+                        {
+                            "type": "web_search.started",
+                            "search": {
+                                "id": str(item.get("id") or ""),
+                                "query": str(item.get("query") or ""),
+                                "action": item.get("action") if isinstance(item.get("action"), dict) else {},
+                            },
+                        }
+                    )
+                return
             if item.get("type") == "commandExecution":
                 command = {
                     "id": str(item.get("id") or ""),
@@ -170,6 +183,19 @@ class CodexTurn:
                     self.reasoning_by_id[item_id] = text
                 if self.on_progress is not None:
                     await self.on_progress({"type": "reasoning.completed", "text": self._combined_reasoning_text() or text})
+                return
+            if item_type == "webSearch":
+                if self.on_progress is not None:
+                    await self.on_progress(
+                        {
+                            "type": "web_search.completed",
+                            "search": {
+                                "id": str(item.get("id") or ""),
+                                "query": str(item.get("query") or ""),
+                                "action": item.get("action") if isinstance(item.get("action"), dict) else {},
+                            },
+                        }
+                    )
                 return
             if item_type == "commandExecution":
                 item_id = str(item.get("id") or "")
