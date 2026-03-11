@@ -92,6 +92,29 @@ def test_build_streaming_content_marks_failed_command_with_red_dot() -> None:
     assert "Worked for" in content
 
 
+def test_build_streaming_content_renders_web_search_as_blue_exploration() -> None:
+    content = build_streaming_content(
+        {
+            "history_items": [
+                {
+                    "type": "web_search",
+                    "state": "completed",
+                    "title": "Searched web",
+                    "query": "March 11 2026 AI news Reuters generative AI",
+                    "queries": [
+                        "March 11 2026 AI news Reuters generative AI",
+                        "site:techcrunch.com AI March 11 2026",
+                    ],
+                }
+            ]
+        }
+    )
+
+    assert "🔵 **Searched**" in content
+    assert "├ Search March 11 2026 AI news Reuters generative AI" in content
+    assert "└ Search site:techcrunch.com AI March 11 2026" in content
+
+
 @pytest.mark.asyncio
 async def test_streaming_session_throttles_updates_to_short_cardkit_interval(monkeypatch: pytest.MonkeyPatch) -> None:
     session = FeishuStreamingSession(object())

@@ -217,6 +217,8 @@ def _normalize_history_title(item: dict[str, Any]) -> str:
         return "Explored" if mode == "exploration" and str(item.get("state") or "") != "running" else "Exploring"
     if title in {"Ran shell command", "Running shell command"}:
         return "Ran" if str(item.get("state") or "") != "running" else "Running"
+    if title in {"Searched web", "Searching web"}:
+        return "Searched" if str(item.get("state") or "") != "running" else "Searching"
     return title
 
 
@@ -231,6 +233,21 @@ def _describe_exploration_command(command_text: object) -> str:
     return normalized
 
 
+def _describe_web_search_queries(item: dict[str, Any]) -> list[str]:
+    lines: list[str] = []
+    query = normalize_inline(item.get("query"))
+    if query:
+        lines.append(f"Search {query}")
+    queries = item.get("queries")
+    if isinstance(queries, list):
+        for entry in queries:
+            normalized = normalize_inline(entry)
+            rendered = f"Search {normalized}" if normalized else ""
+            if rendered and rendered not in lines:
+                lines.append(rendered)
+    return lines[:4]
+
+
 def _history_item_tone(item: dict[str, Any]) -> str:
     state = str(item.get("state") or "").strip().lower()
     if state == "running":
@@ -239,6 +256,8 @@ def _history_item_tone(item: dict[str, Any]) -> str:
         return "cancelled"
     if state in {"failed", "error"}:
         return "error"
+    if str(item.get("type") or "").strip() == "web_search" and state == "completed":
+        return "exploration"
     if str(item.get("type") or "").strip() == "command":
         if str(item.get("mode") or "").strip() == "exploration" and state == "completed":
             return "exploration"
@@ -296,6 +315,11 @@ def _render_history_item(item: dict[str, Any], spinner_frame: int) -> list[str]:
         output_preview_lines = _split_detail_lines(item.get("output_preview"), code=True)
         if output_preview_lines:
             detail_entries.extend([[line] for line in output_preview_lines])
+        _append_tree_entries(lines, detail_entries)
+        return lines
+
+    if item_type == "web_search":
+        detail_entries.extend([[line] for line in _describe_web_search_queries(item)])
         _append_tree_entries(lines, detail_entries)
         return lines
 
