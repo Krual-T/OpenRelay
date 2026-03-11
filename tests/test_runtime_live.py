@@ -44,7 +44,7 @@ def test_build_process_panel_text_collects_status_command_and_reasoning() -> Non
     assert "└ Preparing reply" in text
     assert "• **Thought for 1.2s**" in text
     assert "└ 先检查 runtime。" in text
-    assert "• **Explored**" in text
+    assert "🔵 **Explored**" in text
     assert "└ ls -la" in text
     assert "└ `file1`" in text
     assert "Worked for" in text

@@ -210,6 +210,8 @@ def _history_item_tone(item: dict[str, Any]) -> str:
     if state in {"failed", "error"}:
         return "error"
     if str(item.get("type") or "").strip() == "command":
+        if str(item.get("mode") or "").strip() == "exploration" and state == "completed":
+            return "exploration"
         exit_code = item.get("exit_code")
         if isinstance(exit_code, int) and exit_code != 0:
             return "error"
@@ -225,6 +227,8 @@ def _history_item_bullet(item: dict[str, Any], spinner_frame: int) -> str:
     if tone == "running":
         frames = ("🟡", "🟠", "🟡", "🟠")
         return frames[abs(int(spinner_frame or 0)) % len(frames)]
+    if tone == "exploration":
+        return "🔵"
     if tone == "error":
         return "🔴"
     if tone == "success":
