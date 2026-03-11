@@ -100,6 +100,20 @@ cp .env.example .env
 uv run openrelayd
 ```
 
+如果你本机按仓库当前约定安装成 systemd service，默认使用的是用户级 unit，而不是系统级 unit：
+
+```bash
+XDG_RUNTIME_DIR=/run/user/$(id -u) DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/$(id -u)/bus \
+  systemctl --user status openrelay.service
+
+XDG_RUNTIME_DIR=/run/user/$(id -u) DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/$(id -u)/bus \
+  systemctl --user restart openrelay.service
+```
+
+- unit 文件路径：`~/.config/systemd/user/openrelay.service`
+- 不要直接用系统级 `systemctl status openrelay.service` 判断服务是否存在；那会把用户级 unit 误判成“没有这个服务”
+- 当前用户级 unit 的 `ExecStart` 约定是 `uv run openrelayd`
+
 4. 如果你使用 webhook 模式，在飞书开放平台把事件订阅地址指向：
 
 ```text
