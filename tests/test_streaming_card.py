@@ -29,11 +29,13 @@ def test_build_streaming_content_prefers_partial_text_then_reasoning() -> None:
         {
             "history_items": [
                 {"type": "reasoning", "state": "running", "title": "Thinking", "text": "先看代码"},
-            ]
+            ],
+            "started_at": "2026-03-11T00:00:00+00:00",
         }
     )
     assert "🟡 **Thinking**" in reasoning_content
     assert "└ 先看代码" in reasoning_content
+    assert "Worked for" in reasoning_content
     assert build_streaming_content({}) == ""
 
 
@@ -51,13 +53,15 @@ def test_build_streaming_content_shows_process_before_answer() -> None:
                     "output_preview": "Gemini Voyager",
                 }
             ],
+            "started_at": "2026-03-11T00:00:00+00:00",
             "partial_text": "找到结果，准备整理。",
         }
     )
 
-    assert "🟢 **Explored codebase** `rg -n Voyager`" in content
-    assert "└ exit 0" in content
+    assert "• **Explored**" in content
+    assert "└ Search Voyager" in content
     assert "└ `Gemini Voyager`" in content
+    assert "Worked for" in content
     assert "---" in content
     assert "找到结果，准备整理。" in content
 
@@ -75,12 +79,14 @@ def test_build_streaming_content_marks_failed_command_with_red_dot() -> None:
                     "exit_code": 1,
                     "output_preview": "1 failed",
                 }
-            ]
+            ],
+            "started_at": "2026-03-11T00:00:00+00:00",
         }
     )
 
-    assert "🔴 **Ran shell command** `pytest`" in content
+    assert "🔴 **Ran** `pytest`" in content
     assert "└ exit 1" in content
+    assert "Worked for" in content
 
 
 @pytest.mark.asyncio
