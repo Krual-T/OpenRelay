@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any, Callable
 
+from openrelay.feishu_reply_card import build_complete_card
 from openrelay.models import SessionRecord, utc_now
 
 
@@ -22,6 +23,7 @@ def create_live_reply_state(
         "status": "等待响应",
         "current_command": "",
         "last_command": None,
+        "commands": [],
         "last_reasoning": "",
         "reasoning_text": "",
         "reasoning_started_at": "",
@@ -56,65 +58,6 @@ def finalize_reasoning_timing(state: LiveReplyState) -> None:
         return
     if elapsed_ms > 0:
         state["reasoning_elapsed_ms"] = elapsed_ms
-
-
-def format_reasoning_duration(reasoning_elapsed_ms: object) -> str:
-    try:
-        total_milliseconds = max(0, float(reasoning_elapsed_ms or 0))
-    except Exception:
-        return "Thought"
-    if total_milliseconds <= 0:
-        return "Thought"
-    total_seconds = total_milliseconds / 1000
-    if total_seconds < 60:
-        return f"Thought for {total_seconds:.1f}s"
-    minutes, seconds = divmod(total_seconds, 60)
-    return f"Thought for {int(minutes)}m {round(seconds)}s"
-
-
-def truncate_summary(text: object, max_length: int = 120) -> str:
-    normalized = str(text or "").strip()
-    if not normalized:
-        return ""
-    summary = normalized
-    for marker in ["*", "_", "`", "#", ">", "[", "]", "(", ")", "~"]:
-        summary = summary.replace(marker, "")
-    summary = " ".join(summary.split())
-    if len(summary) <= max_length:
-        return summary
-    return f"{summary[:max_length - 3]}..."
-
-
-def build_reasoning_panel(title: str, content: object) -> dict[str, Any] | None:
-    normalized_title = str(title or "").strip()
-    normalized_content = str(content or "").strip()
-    if not normalized_title or not normalized_content:
-        return None
-    return {
-        "tag": "collapsible_panel",
-        "expanded": False,
-        "header": {
-            "title": {"tag": "markdown", "content": normalized_title},
-            "vertical_align": "center",
-            "icon": {
-                "tag": "standard_icon",
-                "token": "down-small-ccm_outlined",
-                "size": "16px 16px",
-            },
-            "icon_position": "follow_text",
-            "icon_expanded_angle": -180,
-        },
-        "border": {"color": "grey", "corner_radius": "5px"},
-        "vertical_spacing": "8px",
-        "padding": "8px 8px 8px 8px",
-        "elements": [
-            {
-                "tag": "markdown",
-                "content": normalized_content,
-                "text_size": "notation",
-            }
-        ],
-    }
 
 
 def apply_live_progress(state: LiveReplyState, event: dict[str, Any] | None) -> None:
@@ -171,6 +114,10 @@ def apply_live_progress(state: LiveReplyState, event: dict[str, Any] | None) -> 
         state["status"] = f"完成 {command.get('command')}" if command.get("command") else "命令已完成"
         state["current_command"] = ""
         state["last_command"] = command or None
+        commands = state.setdefault("commands", [])
+        if isinstance(commands, list) and command:
+            commands.append(command)
+            state["commands"] = commands[-8:]
         push_live_history(state, state["status"])
         return
     if event_type == "reasoning.completed":
@@ -202,22 +149,18 @@ def build_reply_card(
     *,
     reasoning_text: str = "",
     reasoning_elapsed_ms: int | None = None,
+    commands: list[dict[str, Any]] | None = None,
 ) -> dict[str, object]:
-    content = text.strip() or "回复为空。"
-    elements: list[dict[str, Any]] = []
-    reasoning_panel = build_reasoning_panel(
-        f"💭 {format_reasoning_duration(reasoning_elapsed_ms)}",
-        reasoning_text,
+    tool_calls: list[dict[str, str]] = []
+    for command in commands or []:
+        name = str(command.get("command") or "").strip() if isinstance(command, dict) else ""
+        if not name:
+            continue
+        exit_code = command.get("exitCode") if isinstance(command, dict) else None
+        tool_calls.append({"name": name, "status": "complete" if exit_code in {None, 0} else "failed"})
+    return build_complete_card(
+        text,
+        reasoning_text=reasoning_text,
+        reasoning_elapsed_ms=reasoning_elapsed_ms,
+        tool_calls=tool_calls,
     )
-    if reasoning_panel is not None:
-        elements.append(reasoning_panel)
-    elements.append({"tag": "markdown", "content": content})
-    config: dict[str, Any] = {"wide_screen_mode": True, "update_multi": True}
-    summary = truncate_summary(content)
-    if summary:
-        config["summary"] = {"content": summary}
-    return {
-        "schema": "2.0",
-        "config": config,
-        "body": {"elements": elements},
-    }

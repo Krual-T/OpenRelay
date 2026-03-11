@@ -16,13 +16,17 @@ def test_build_streaming_card_json_uses_single_streaming_element() -> None:
     assert card["schema"] == "2.0"
     assert card["config"]["streaming_mode"] is True
     assert card["config"]["summary"]["content"] == DEFAULT_THINKING_TEXT
-    assert card["body"]["elements"] == [{"tag": "markdown", "element_id": STREAMING_ELEMENT_ID, "content": DEFAULT_THINKING_TEXT}]
+    assert card["body"]["elements"][0]["element_id"] == STREAMING_ELEMENT_ID
+    assert card["body"]["elements"][0]["content"] == ""
+    assert card["body"]["elements"][1]["element_id"] == "loading_icon"
+    assert card["body"]["elements"][1]["icon"]["img_key"].startswith("img_")
 
 
 def test_build_streaming_content_prefers_partial_text_then_reasoning() -> None:
-    assert build_streaming_content({"partial_text": "answer"}) == "answer"
+    assert build_streaming_content({"partial_text": "# Title\ncontent"}) == "#### Title\ncontent"
+    assert build_streaming_content({"partial_text": "<think>先看代码</think>\n答案"}) == "答案"
     assert build_streaming_content({"reasoning_text": "先看代码"}) == "💭 **Thinking...**\n\n先看代码"
-    assert build_streaming_content({}) == DEFAULT_THINKING_TEXT
+    assert build_streaming_content({}) == ""
 
 
 @pytest.mark.asyncio
