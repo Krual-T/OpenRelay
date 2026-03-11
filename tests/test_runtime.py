@@ -186,6 +186,18 @@ class ProgressBackend(Backend):
         return BackendReply(text=f"done: {prompt}", native_session_id="native_2")
 
 
+class ReasoningBackend(Backend):
+    name = "fake"
+
+    async def run(self, session: SessionRecord, prompt: str, context: BackendContext) -> BackendReply:
+        if context.on_progress is not None:
+            await context.on_progress({"type": "run.started"})
+            await context.on_progress({"type": "reasoning.started"})
+            await context.on_progress({"type": "reasoning.delta", "text": "先检查 runtime。"})
+            await context.on_progress({"type": "reasoning.completed", "text": "先检查 runtime。\n再收敛 card 渲染。"})
+        return BackendReply(text=f"done: {prompt}", native_session_id="native_reasoning")
+
+
 class InterruptibleBackend(Backend):
     name = "fake"
 
@@ -802,6 +814,47 @@ async def test_runtime_card_stream_mode_uses_streaming_session(tmp_path: Path) -
     assert messenger.cards[-1]["header"]["title"]["content"] == "openrelay 回复"
     assert typing.added == ["om_stream"]
     assert typing.removed
+    await runtime.shutdown()
+
+
+@pytest.mark.asyncio
+async def test_runtime_card_stream_mode_puts_reasoning_into_collapsible_panel(tmp_path: Path) -> None:
+    config = make_config(tmp_path)
+    config.feishu.stream_mode = "card"
+    config.workspace_root.mkdir(parents=True, exist_ok=True)
+    config.main_workspace_dir.mkdir(parents=True, exist_ok=True)
+    config.develop_workspace_dir.mkdir(parents=True, exist_ok=True)
+    store = StateStore(config)
+    messenger = FakeMessenger()
+    typing = FakeTypingManager()
+    sessions: list[FakeStreamingSession] = []
+
+    def factory(current_messenger):
+        session = FakeStreamingSession(current_messenger)
+        sessions.append(session)
+        return session
+
+    runtime = AgentRuntime(
+        config,
+        store,
+        messenger,
+        backends={"codex": ReasoningBackend()},
+        streaming_session_factory=factory,
+        typing_manager=typing,
+    )
+
+    await runtime.dispatch_message(make_message("hello reasoning", event_suffix="reasoning"))
+
+    assert sessions
+    assert messenger.cards
+    assert messenger.card_calls[-1]["update_message_id"] == "om_stream_card"
+    reasoning_panel = next(
+        element
+        for element in messenger.cards[-1]["elements"]
+        if isinstance(element, dict) and element.get("tag") == "collapsible_panel"
+    )
+    assert reasoning_panel["expanded"] is False
+    assert "先检查 runtime。" in reasoning_panel["elements"][0]["content"]
     await runtime.shutdown()
 
 

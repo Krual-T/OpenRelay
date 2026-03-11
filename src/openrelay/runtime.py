@@ -485,19 +485,13 @@ class AgentRuntime:
             updated = self.store.save_session(updated)
             self.store.append_message(updated.session_id, "assistant", reply.text)
             stop_spinner_task()
-            await self._reply_final(message, reply.text or "(empty reply)", streaming)
+            await self._reply_final(message, reply.text or "(empty reply)", streaming, live_state)
         except Exception as exc:
             stop_spinner_task()
             if "interrupted by /stop" in str(exc).lower() or "interrupted" in str(exc).lower():
-                if streaming is not None and streaming.has_started():
-                    try:
-                        await streaming.close("已停止当前回复。")
-                    except Exception:
-                        LOGGER.exception("streaming close failed after interrupt")
-                else:
-                    await self._reply_final(message, "已停止当前回复。", None)
+                await self._reply_final(message, "已停止当前回复。", streaming, live_state)
             else:
-                await self._reply_final(message, f"处理失败：{exc}", streaming)
+                await self._reply_final(message, f"处理失败：{exc}", streaming, live_state)
         finally:
             stop_spinner_task()
             self.active_runs.pop(execution_key, None)
@@ -842,17 +836,34 @@ class AgentRuntime:
         title: str = "openrelay 回复",
         *,
         update_message_id: str = "",
+        reasoning_text: str = "",
+        reasoning_elapsed_ms: int | None = None,
     ) -> None:
         await self.messenger.send_interactive_card(
             message.chat_id,
-            build_reply_card(text, title),
+            build_reply_card(
+                text,
+                title,
+                reasoning_text=reasoning_text,
+                reasoning_elapsed_ms=reasoning_elapsed_ms,
+            ),
             reply_to_message_id=message.reply_to_message_id or ("" if self._is_card_action_message(message) else message.message_id),
             root_id=self._root_id_for_message(message),
             update_message_id=update_message_id,
         )
 
-    async def _reply_final(self, message: IncomingMessage, text: str, streaming: FeishuStreamingSession | None) -> None:
+    async def _reply_final(
+        self,
+        message: IncomingMessage,
+        text: str,
+        streaming: FeishuStreamingSession | None,
+        live_state: dict[str, Any] | None = None,
+    ) -> None:
         update_message_id = ""
+        live_state = live_state or {}
+        reasoning_text = str(live_state.get("reasoning_text") or live_state.get("last_reasoning") or "").strip()
+        raw_reasoning_elapsed_ms = live_state.get("reasoning_elapsed_ms")
+        reasoning_elapsed_ms = int(raw_reasoning_elapsed_ms) if isinstance(raw_reasoning_elapsed_ms, int) and raw_reasoning_elapsed_ms > 0 else None
         if streaming is not None and streaming.has_started():
             try:
                 update_message_id = streaming.message_id()
@@ -862,7 +873,14 @@ class AgentRuntime:
                 update_message_id = ""
         if self.config.feishu.stream_mode == "card":
             try:
-                await self._send_reply_card(message, text, "openrelay 回复", update_message_id=update_message_id)
+                await self._send_reply_card(
+                    message,
+                    text,
+                    "openrelay 回复",
+                    update_message_id=update_message_id,
+                    reasoning_text=reasoning_text,
+                    reasoning_elapsed_ms=reasoning_elapsed_ms,
+                )
                 return
             except Exception:
                 LOGGER.exception("reply card fallback failed for event_id=%s", message.event_id)

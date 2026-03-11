@@ -93,6 +93,38 @@ def build_note_bar(items: list[object]) -> dict[str, Any] | None:
     return {"tag": "note", "elements": elements}
 
 
+def build_collapsible_panel(title: str, content: object, *, expanded: bool = False) -> dict[str, Any] | None:
+    normalized_title = str(title or "").strip()
+    normalized_content = str(content or "").strip()
+    if not normalized_title or not normalized_content:
+        return None
+    return {
+        "tag": "collapsible_panel",
+        "expanded": expanded,
+        "header": {
+            "title": {"tag": "markdown", "content": normalized_title},
+            "vertical_align": "center",
+            "icon": {
+                "tag": "standard_icon",
+                "token": "down-small-ccm_outlined",
+                "size": "16px 16px",
+            },
+            "icon_position": "follow_text",
+            "icon_expanded_angle": -180,
+        },
+        "border": {"color": "grey", "corner_radius": "5px"},
+        "vertical_spacing": "8px",
+        "padding": "8px 8px 8px 8px",
+        "elements": [
+            {
+                "tag": "markdown",
+                "content": normalized_content,
+                "text_size": "notation",
+            }
+        ],
+    }
+
+
 def build_status_hero(
     title: str,
     *,
