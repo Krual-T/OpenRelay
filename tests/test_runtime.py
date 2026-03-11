@@ -810,12 +810,9 @@ async def test_runtime_card_stream_mode_uses_streaming_session(tmp_path: Path) -
     assert sessions[0].closed is True
     assert sessions[0].final_card is not None
     assert sessions[0].final_card["schema"] == "2.0"
-    assert sessions[0].final_card["config"]["streaming_mode"] is False
-    assert any(
-        element.get("tag") == "markdown" and "openrelay 回复" in element.get("content", "")
-        for element in sessions[0].final_card["body"]["elements"]
-        if isinstance(element, dict)
-    )
+    assert sessions[0].final_card["config"]["wide_screen_mode"] is True
+    assert sessions[0].final_card["config"]["update_multi"] is True
+    assert sessions[0].final_card["body"]["elements"][-1]["content"] == "echo: hello stream"
     assert typing.added == ["om_stream"]
     assert typing.removed
     await runtime.shutdown()
@@ -857,6 +854,7 @@ async def test_runtime_card_stream_mode_puts_reasoning_into_collapsible_panel(tm
     )
     assert reasoning_panel["expanded"] is False
     assert "先检查 runtime。" in reasoning_panel["elements"][0]["content"]
+    assert sessions[0].final_card["body"]["elements"][-1]["content"] == "done: hello reasoning"
     await runtime.shutdown()
 
 
@@ -892,7 +890,7 @@ async def test_runtime_streaming_update_does_not_block_backend_turn(tmp_path: Pa
     assert sessions[0].started is True
     assert sessions[0].closed is True
     assert sessions[0].final_card is not None
-    assert sessions[0].final_card["config"]["streaming_mode"] is False
+    assert sessions[0].final_card["config"]["wide_screen_mode"] is True
     session = store.load_session(runtime.build_session_key(make_message("hello blocked stream", event_suffix="blocked_stream")))
     assert session.native_session_id == "native_2"
     await runtime.shutdown()
