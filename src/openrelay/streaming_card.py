@@ -20,7 +20,7 @@ from lark_oapi.api.cardkit.v1 import (
 from openrelay.feishu_reply_card import DEFAULT_THINKING_TEXT, STREAMING_ELEMENT_ID, build_streaming_content, build_thinking_card_json
 from openrelay.feishu import FeishuMessenger, _read_text
 
-DEFAULT_STREAM_UPDATE_THROTTLE_MS = 1000
+DEFAULT_STREAM_UPDATE_THROTTLE_MS = 100
 build_streaming_card_json = build_thinking_card_json
 
 
@@ -34,6 +34,7 @@ class FeishuStreamingSession:
         self.last_update_time = 0.0
         self.update_throttle_ms = DEFAULT_STREAM_UPDATE_THROTTLE_MS
         self._lock = asyncio.Lock()
+        self._pending_flush_task: asyncio.Task[None] | None = None
 
     def next_sequence(self) -> int:
         if self.state is None:
@@ -86,6 +87,38 @@ class FeishuStreamingSession:
             ).build()
         )
         self.messenger.ensure_success(response, "Feishu update card element content")
+        self.last_update_time = time.time() * 1000
+
+    async def flush_pending_content(self) -> None:
+        if self.state is None:
+            return
+        next_content = self.pending_content
+        if not next_content or next_content == str(self.state.get("current_content") or ""):
+            return
+        self.pending_content = ""
+        await self.update_card_content(next_content)
+        self.state["current_content"] = next_content
+
+    def _cancel_pending_flush_task(self) -> None:
+        if self._pending_flush_task is None:
+            return
+        self._pending_flush_task.cancel()
+        self._pending_flush_task = None
+
+    def _schedule_pending_flush(self, delay_seconds: float) -> None:
+        self._cancel_pending_flush_task()
+
+        async def run() -> None:
+            try:
+                await asyncio.sleep(delay_seconds)
+                async with self._lock:
+                    if self.state is None or self.closed:
+                        return
+                    await self.flush_pending_content()
+            except asyncio.CancelledError:
+                return
+
+        self._pending_flush_task = asyncio.create_task(run())
 
     async def set_streaming_mode(self, enabled: bool) -> None:
         if self.state is None:
@@ -122,9 +155,11 @@ class FeishuStreamingSession:
         now_ms = time.time() * 1000
         if now_ms - self.last_update_time < self.update_throttle_ms:
             self.pending_content = next_content
+            remaining_ms = max(0.0, self.update_throttle_ms - (now_ms - self.last_update_time))
+            self._schedule_pending_flush(remaining_ms / 1000)
             return
         self.pending_content = ""
-        self.last_update_time = now_ms
+        self._cancel_pending_flush_task()
         async with self._lock:
             if self.state is None or self.closed:
                 return
@@ -137,17 +172,15 @@ class FeishuStreamingSession:
         if self.state is None or self.closed:
             return
         self.closed = True
+        self._cancel_pending_flush_task()
         async with self._lock:
             if self.state is None:
                 return
+            await self.flush_pending_content()
             if final_card is not None:
                 await self.set_streaming_mode(False)
                 await self.update_card_json(final_card)
                 return
-            next_content = self.pending_content.strip() or str(self.state.get("current_content") or "").strip()
-            if next_content and next_content != str(self.state.get("current_content") or ""):
-                await self.update_card_content(next_content)
-                self.state["current_content"] = next_content
             await self.set_streaming_mode(False)
 
     def message_id(self) -> str:
