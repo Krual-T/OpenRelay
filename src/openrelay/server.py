@@ -23,6 +23,16 @@ def _should_use_validated_handler(config: AppConfig) -> bool:
     return bool(config.feishu.verify_token)
 
 
+def _should_register_webhook_route(config: AppConfig) -> bool:
+    return config.feishu.connection_mode == "webhook"
+
+
+def resolve_bind_host(config: AppConfig) -> str:
+    if config.feishu.connection_mode == "websocket":
+        return "127.0.0.1"
+    return "0.0.0.0"
+
+
 
 def create_app(config: AppConfig | None = None) -> FastAPI:
     app_config = config or load_config()
@@ -49,7 +59,11 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
             ws_client = FeishuWebSocketClient(app_config, app.state.event_handler)
             await ws_client.start()
             app.state.ws_client = ws_client
-        LOGGER.info("openrelay listening on http://127.0.0.1:%s%s", app_config.port, app_config.webhook_path)
+        bind_host = resolve_bind_host(app_config)
+        if _should_register_webhook_route(app_config):
+            LOGGER.info("openrelay listening on http://%s:%s%s", bind_host, app_config.port, app_config.webhook_path)
+        else:
+            LOGGER.info("openrelay listening on http://%s:%s (websocket mode; webhook disabled)", bind_host, app_config.port)
 
     @app.on_event("shutdown")
     async def on_shutdown() -> None:
@@ -72,41 +86,42 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
             "feishu_ws_connected": bool(getattr(app.state, "ws_client", None) is not None and getattr(app.state.ws_client, "connected", False)),
         }
 
-    @app.post(app_config.webhook_path)
-    async def feishu_webhook(request: Request) -> Response:
-        content_length = request.headers.get("content-length", "")
-        if content_length:
+    if _should_register_webhook_route(app_config):
+        @app.post(app_config.webhook_path)
+        async def feishu_webhook(request: Request) -> Response:
+            content_length = request.headers.get("content-length", "")
+            if content_length:
+                try:
+                    if int(content_length) > app_config.max_request_bytes:
+                        raise HTTPException(status_code=413, detail="request body too large")
+                except ValueError:
+                    pass
+            body_bytes = await request.body()
+            if len(body_bytes) > app_config.max_request_bytes:
+                raise HTTPException(status_code=413, detail="request body too large")
             try:
-                if int(content_length) > app_config.max_request_bytes:
-                    raise HTTPException(status_code=413, detail="request body too large")
-            except ValueError:
-                pass
-        body_bytes = await request.body()
-        if len(body_bytes) > app_config.max_request_bytes:
-            raise HTTPException(status_code=413, detail="request body too large")
-        try:
-            body = json.loads(body_bytes.decode("utf-8")) if body_bytes else {}
-        except json.JSONDecodeError as exc:
-            raise HTTPException(status_code=400, detail=f"invalid json: {exc}") from exc
+                body = json.loads(body_bytes.decode("utf-8")) if body_bytes else {}
+            except json.JSONDecodeError as exc:
+                raise HTTPException(status_code=400, detail=f"invalid json: {exc}") from exc
 
-        event_handler = app.state.event_handler
-        if _should_use_validated_handler(app_config):
-            raw_request = build_raw_request(request.url.path, dict(request.headers.items()), body_bytes)
-            raw_response = event_handler.do(raw_request)
-            return Response(content=raw_response.content or b"", status_code=raw_response.status_code, headers=raw_response.headers)
+            event_handler = app.state.event_handler
+            if _should_use_validated_handler(app_config):
+                raw_request = build_raw_request(request.url.path, dict(request.headers.items()), body_bytes)
+                raw_response = event_handler.do(raw_request)
+                return Response(content=raw_response.content or b"", status_code=raw_response.status_code, headers=raw_response.headers)
 
-        webhook_type = body.get("type") if isinstance(body, dict) else ""
-        if webhook_type == "url_verification":
-            return JSONResponse({"challenge": body.get("challenge", "")})
+            webhook_type = body.get("type") if isinstance(body, dict) else ""
+            if webhook_type == "url_verification":
+                return JSONResponse({"challenge": body.get("challenge", "")})
 
-        try:
-            result = event_handler.do_without_validation(body_bytes)
-        except Exception as exc:
-            LOGGER.exception("failed handling Feishu webhook without validation")
-            return JSONResponse({"msg": str(exc)}, status_code=500)
-        if result is None:
-            return JSONResponse({"msg": "success"})
-        return JSONResponse(result)
+            try:
+                result = event_handler.do_without_validation(body_bytes)
+            except Exception as exc:
+                LOGGER.exception("failed handling Feishu webhook without validation")
+                return JSONResponse({"msg": str(exc)}, status_code=500)
+            if result is None:
+                return JSONResponse({"msg": "success"})
+            return JSONResponse(result)
 
     return app
 
@@ -117,4 +132,4 @@ def main() -> None:
         config = load_config()
     except ConfigError as exc:
         raise SystemExit(str(exc)) from exc
-    uvicorn.run(create_app(config), host="0.0.0.0", port=config.port)
+    uvicorn.run(create_app(config), host=resolve_bind_host(config), port=config.port)

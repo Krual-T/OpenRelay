@@ -120,7 +120,7 @@ XDG_RUNTIME_DIR=/run/user/$(id -u) DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/
 http://your-host:3000/feishu/webhook
 ```
 
-如果你使用 `FEISHU_CONNECTION_MODE=websocket`，则无需配置 webhook 地址，但飞书后台需要开启“使用长连接接收事件/回调”。
+如果你使用 `FEISHU_CONNECTION_MODE=websocket`，则无需配置 webhook 地址，飞书后台需要开启“使用长连接接收事件/回调”；`openrelay` 也会只监听 `127.0.0.1`，不再注册 `/feishu/webhook` 入站路由。
 
 ## 命令
 
