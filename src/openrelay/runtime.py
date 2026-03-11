@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import copy
 from collections import defaultdict, deque
 import logging
 import os
@@ -365,7 +366,7 @@ class AgentRuntime:
         last_live_text = ""
         spinner_task: asyncio.Task[None] | None = None
         streaming_update_event = asyncio.Event()
-        streaming_dirty = False
+        pending_streaming_states: deque[dict[str, Any]] = deque()
         live_state = create_live_reply_state(session, self.session_ux.format_cwd)
         if session.backend != "codex":
             live_state["heading"] = "正在生成回复"
@@ -379,17 +380,16 @@ class AgentRuntime:
             spinner_task = None
 
         def request_streaming_update() -> None:
-            nonlocal streaming_dirty
             if self.config.feishu.stream_mode != "card" or streaming_broken:
                 return
-            streaming_dirty = True
+            pending_streaming_states.append(copy.deepcopy(live_state))
             streaming_update_event.set()
 
-        async def update_streaming() -> None:
+        async def update_streaming(snapshot: dict[str, Any]) -> None:
             nonlocal streaming, streaming_broken, last_live_text
             if self.config.feishu.stream_mode != "card" or streaming_broken:
                 return
-            live_text = render_live_status_markdown(live_state)
+            live_text = render_live_status_markdown(snapshot)
             if not live_text or live_text == last_live_text:
                 return
             try:
@@ -402,7 +402,7 @@ class AgentRuntime:
                     )
                 if not streaming.is_active():
                     return
-                await streaming.update(live_state)
+                await streaming.update(snapshot)
                 last_live_text = live_text
             except Exception:
                 has_started = streaming.has_started() if streaming is not None else False
@@ -413,19 +413,17 @@ class AgentRuntime:
                 LOGGER.exception("streaming update failed for execution_key=%s", execution_key)
 
         async def spinner_loop() -> None:
-            nonlocal streaming_dirty
             while True:
                 try:
                     await asyncio.wait_for(streaming_update_event.wait(), timeout=1.0)
                     streaming_update_event.clear()
                 except asyncio.TimeoutError:
                     live_state["spinner_frame"] = (int(live_state.get("spinner_frame", 0) or 0) + 1) % 3
-                    streaming_dirty = True
-                if not streaming_dirty:
-                    continue
-                streaming_dirty = False
+                    pending_streaming_states.append(copy.deepcopy(live_state))
                 try:
-                    await update_streaming()
+                    while pending_streaming_states:
+                        snapshot = pending_streaming_states.popleft()
+                        await update_streaming(snapshot)
                 except Exception:
                     stop_spinner_task()
                     LOGGER.exception("streaming tick failed for execution_key=%s", execution_key)
@@ -443,7 +441,8 @@ class AgentRuntime:
                     LOGGER.exception("typing start failed for message_id=%s", message.message_id)
 
             if self.config.feishu.stream_mode == "card":
-                await update_streaming()
+                pending_streaming_states.append(copy.deepcopy(live_state))
+                await update_streaming(pending_streaming_states.popleft())
                 spinner_task = asyncio.create_task(spinner_loop())
 
             async def on_partial_text(partial_text: str) -> None:
