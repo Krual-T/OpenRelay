@@ -150,7 +150,7 @@ class SessionUX:
         if entry.message_count:
             parts.append(f"{entry.message_count} 条消息")
         if entry.native_session_id and entry.native_session_id != entry.session_id:
-            parts.append(f"native={entry.native_session_id}")
+            parts.append(f"thread={entry.native_session_id}")
         return " · ".join(parts)
 
     def build_session_display_entries(self, entries: list[SessionListEntry], start_index: int = 1) -> list[dict[str, Any]]:
@@ -179,7 +179,7 @@ class SessionUX:
             identifier = f"id={display['resume_token']}"
             native_id = str(display.get("native_session_id") or "")
             if native_id and native_id != display["session_id"]:
-                identifier += f" · native={native_id}"
+                identifier += f" · thread={native_id}"
             lines.append(f"   {identifier}")
             if display.get("meta"):
                 lines.append(f"   {display['meta']}")
@@ -207,7 +207,7 @@ class SessionUX:
             identifier = f"id={display['resume_token']}"
             native_id = str(display.get("native_session_id") or "")
             if native_id and native_id != display["session_id"]:
-                identifier += f" · native={native_id}"
+                identifier += f" · thread={native_id}"
             lines.append(f"   {identifier}")
             if display.get("meta"):
                 lines.append(f"   {display['meta']}")
@@ -216,14 +216,14 @@ class SessionUX:
             blocks.append("\n".join(lines))
         return "\n\n".join(blocks)
 
-    def format_resume_success(self, session: SessionRecord, *, imported: bool = False, entry: SessionListEntry | None = None) -> str:
+    def format_resume_success(self, session: SessionRecord, *, entry: SessionListEntry | None = None) -> str:
         lines = [
-            f"已恢复会话：{self.build_session_title(session.label, session.session_id)}{'（来自原生 Codex 历史）' if imported else ''}",
+            f"已恢复会话：{self.build_session_title(session.label, session.session_id)}",
             f"session_id={session.session_id}",
             f"cwd={self.format_cwd(session.cwd, session)}",
         ]
         if entry and entry.native_session_id and entry.native_session_id != session.session_id:
-            lines.append(f"native_session_id={entry.native_session_id}")
+            lines.append(f"backend_thread={entry.native_session_id}")
         history = self.store.list_messages(session.session_id)[-4:]
         if history:
             lines.extend(["", "最近历史："])
@@ -249,7 +249,7 @@ class SessionUX:
         messages = self.store.list_messages(session.session_id)[-limit:]
         if not messages:
             if session.native_session_id:
-                return [f"- 原生会话：{session.native_session_id}", "- 本地还没有缓存到更多上下文消息。"]
+                return [f"- 后端线程：{session.native_session_id}", "- 本地还没有缓存到更多上下文消息。"]
             return ["- 当前还没有上下文消息。发出第一条真实消息后，这里会显示最近上下文。"]
         lines: list[str] = []
         for item in messages:

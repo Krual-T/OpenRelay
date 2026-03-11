@@ -208,7 +208,7 @@ class RuntimeCommandRouter:
             fallback_page = self.session_browser.list_page(session_key, session, page=args.page, page_size=DEFAULT_SESSION_LIST_PAGE_SIZE, sort_mode=args.sort_mode)
             await self.hooks.reply(message, f"恢复失败。\n\n{self.session_ux.format_session_list_page(fallback_page)}", command_reply=True)
             return True
-        await self.hooks.reply(message, self.session_ux.format_resume_success(resumed.session, imported=resumed.imported, entry=resumed.entry), command_reply=True)
+        await self.hooks.reply(message, self.session_ux.format_resume_success(resumed.session, entry=resumed.entry), command_reply=True)
         return True
 
     def _parse_resume_command_args(self, arg_text: str) -> ResumeCommandArgs:
@@ -467,7 +467,7 @@ class RuntimeCommandRouter:
             f"sandbox={session.safety_mode}",
             f"cwd={self.session_ux.format_cwd(session.cwd, session)}",
             f"messages={len(self.store.list_messages(session.session_id))}",
-            f"native_session={session.native_session_id or 'pending'}",
+            f"backend_thread={session.native_session_id or 'pending'}",
             f"release_log={self.config.data_dir / 'release-events.jsonl'}",
             f"server_pid={os.getpid()}",
             f"last_release_event={summarize_release_event(latest_release_event[0]) if latest_release_event else 'none'}",

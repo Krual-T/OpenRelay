@@ -41,7 +41,7 @@ def test_help_renderer_describes_empty_session(tmp_path: Path) -> None:
 
     assert "OpenRelay 帮助" in text
     assert "- 会话阶段：未开始（还没发第一条真实需求）" in text
-    assert "- 原生会话：pending（直接发消息就会创建）" in text
+    assert "- 后端线程：pending（直接发消息就会创建）" in text
     assert "- 最近关注：还没有可总结的本地上下文" in text
     store.close()
 
@@ -62,7 +62,7 @@ def test_help_renderer_describes_active_session(tmp_path: Path) -> None:
 
     text = renderer.build_text(session, ["codex", "claude"])
 
-    assert "- 会话阶段：进行中（继续发消息会沿用当前原生会话）" in text
+    assert "- 会话阶段：进行中（继续发消息会沿用当前后端线程）" in text
     assert "- 上下文占用：17.0% (170/1000)" in text
     assert "- 最近关注：用户：hello help | 助手：echo: hello help" in text
     assert "- 切后端：/backend [list|codex|claude]。" in text

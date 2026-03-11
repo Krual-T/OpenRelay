@@ -54,7 +54,6 @@ def apply_live_progress(state: LiveReplyState, event: dict[str, Any] | None) -> 
         return
     if event_type == "thread.started":
         state["native_session_id"] = str(event.get("threadId") or state.get("native_session_id") or "")
-        state["session_id"] = state["native_session_id"] or state.get("session_id", "")
         state["heading"] = "原生会话已连接"
         state["status"] = "正在准备回复"
         push_live_history(state, "原生会话已连接")
