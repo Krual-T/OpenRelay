@@ -77,7 +77,7 @@
 
 本轮继续推进 Phase 2 与 Phase 3：
 - 新增 `src/openrelay/session_browser.py`
-- 把会话列表查询、原生会话合并和恢复决策从 `SessionUX` 移出
+- 把会话列表查询和恢复决策从 `SessionUX` 移出
 - `SessionUX` 收敛为会话列表文本 / 面板展示格式化
 - 为 `/resume` 卡片化和分页排序保留稳定的数据入口与测试落点
 - 新增 `src/openrelay/runtime_commands.py`

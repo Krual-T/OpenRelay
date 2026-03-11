@@ -713,7 +713,7 @@ async def test_runtime_help_command_shows_actionable_guidance(tmp_path: Path) ->
 
     help_card = messenger.cards[-1]
     help_text = extract_card_text(help_card)
-    assert "进行中（继续发消息会沿用当前原生会话）" in help_text
+    assert "进行中（继续发消息会沿用当前后端线程）" in help_text
     assert "17.0% (170/1000)" in help_text
     assert "最近关注：用户：hello help | 助手：echo: hello help" in help_text
     assert "这是一个进行中的会话；如果任务没变，直接补充信息最快。" in help_text
@@ -950,7 +950,7 @@ async def test_runtime_ping_bypasses_active_run_queue(tmp_path: Path) -> None:
 
 
 @pytest.mark.asyncio
-async def test_runtime_serializes_messages_sharing_same_native_session(tmp_path: Path) -> None:
+async def test_runtime_serializes_messages_sharing_same_local_session_across_threads(tmp_path: Path) -> None:
     config = make_config(tmp_path)
     config.workspace_root.mkdir(parents=True, exist_ok=True)
     config.main_workspace_dir.mkdir(parents=True, exist_ok=True)
@@ -960,13 +960,11 @@ async def test_runtime_serializes_messages_sharing_same_native_session(tmp_path:
     backend = NativeSessionConcurrencyBackend()
     runtime = AgentRuntime(config, store, messenger, backends={"codex": backend})
 
-    shared_native = "native_shared"
-    first_session = store.load_session("p2p:chat-a:thread:root-a")
-    first_session.native_session_id = shared_native
-    store.save_session(first_session)
-    second_session = store.load_session("p2p:chat-b:thread:root-b")
-    second_session.native_session_id = shared_native
-    store.save_session(second_session)
+    shared_session = store.load_session("p2p:chat-a")
+    shared_session.native_session_id = "native_shared"
+    store.save_session(shared_session)
+    store.bind_scope("p2p:chat-a:thread:root-a", shared_session.session_id)
+    store.bind_scope("p2p:chat-a:thread:root-b", shared_session.session_id)
 
     first_message = IncomingMessage(
         event_id="evt_native_shared_1",
@@ -982,7 +980,7 @@ async def test_runtime_serializes_messages_sharing_same_native_session(tmp_path:
     second_message = IncomingMessage(
         event_id="evt_native_shared_2",
         message_id="om_native_shared_2",
-        chat_id="chat-b",
+        chat_id="chat-a",
         chat_type="p2p",
         sender_open_id="ou_user",
         root_id="root-b",
@@ -1012,7 +1010,7 @@ async def test_runtime_serializes_messages_sharing_same_native_session(tmp_path:
 
 
 @pytest.mark.asyncio
-async def test_runtime_allows_parallel_messages_for_different_native_sessions(tmp_path: Path) -> None:
+async def test_runtime_allows_parallel_messages_for_different_local_sessions(tmp_path: Path) -> None:
     config = make_config(tmp_path)
     config.workspace_root.mkdir(parents=True, exist_ok=True)
     config.main_workspace_dir.mkdir(parents=True, exist_ok=True)
@@ -1022,12 +1020,14 @@ async def test_runtime_allows_parallel_messages_for_different_native_sessions(tm
     backend = NativeSessionConcurrencyBackend()
     runtime = AgentRuntime(config, store, messenger, backends={"codex": backend})
 
-    first_session = store.load_session("p2p:chat-a:thread:root-a")
+    first_session = store.load_session("p2p:chat-a")
     first_session.native_session_id = "native_a"
     store.save_session(first_session)
-    second_session = store.load_session("p2p:chat-b:thread:root-b")
+    second_session = store.create_next_session("p2p:chat-b", None, "parallel")
     second_session.native_session_id = "native_b"
     store.save_session(second_session)
+    store.bind_scope("p2p:chat-a:thread:root-a", first_session.session_id)
+    store.bind_scope("p2p:chat-b:thread:root-b", second_session.session_id)
 
     first_message = IncomingMessage(
         event_id="evt_native_parallel_1",

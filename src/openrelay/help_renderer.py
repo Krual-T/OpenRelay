@@ -32,7 +32,7 @@ class HelpRenderer:
             f"- 后端：{session.backend}",
             f"- 模型：{self.session_ux.effective_model(session)}",
             f"- sandbox：{session.safety_mode}",
-            f"- 原生会话：{session.native_session_id or 'pending（直接发消息就会创建）'}",
+            f"- 后端线程：{session.native_session_id or 'pending（直接发消息就会创建）'}",
             f"- 上下文占用：{self.session_ux.format_context_usage(session)}",
             f"- 本地消息数：{message_count}",
             f"- 最近关注：{context_preview or '还没有可总结的本地上下文'}",
@@ -78,7 +78,7 @@ class HelpRenderer:
                     ("通道", f"`{format_release_channel(infer_release_channel(self.config, session))}`"),
                     ("目录", f"`{self.session_ux.format_cwd(session.cwd, session)}`"),
                     ("后端 / 模型", f"`{session.backend}` · `{self.session_ux.effective_model(session)}`"),
-                    ("Sandbox / 原生会话", f"`{session.safety_mode}` · `{session.native_session_id or 'pending'}`"),
+                    ("Sandbox / 后端线程", f"`{session.safety_mode}` · `{session.native_session_id or 'pending'}`"),
                     ("上下文 / 本地消息", f"`{self.session_ux.format_context_usage(session)}` · `{message_count}`"),
                 ],
                 notes=[f"最近关注：{context_preview or '还没有可总结的本地上下文'}"],
@@ -111,21 +111,21 @@ class HelpRenderer:
 
     def describe_session_phase(self, session: SessionRecord, message_count: int) -> str:
         if message_count == 0 and session.native_session_id:
-            return "仅原生会话（可继续发消息，但本地暂未缓存上下文）"
+            return "仅后端线程已连接（可继续发消息，但本地暂未缓存上下文）"
         if message_count == 0:
             return "未开始（还没发第一条真实需求）"
         if session.native_session_id:
-            return "进行中（继续发消息会沿用当前原生会话）"
-        return "待启动（已有本地上下文，下一条真实消息会创建原生会话）"
+            return "进行中（继续发消息会沿用当前后端线程）"
+        return "待启动（已有本地上下文，下一条真实消息会创建后端线程）"
 
     def build_now_summary(self, session: SessionRecord, message_count: int) -> str:
         if message_count == 0 and session.native_session_id:
-            return "这是一个已连接原生会话但本地上下文为空的会话；直接发消息会继续原会话。"
+            return "这是一个已连接后端线程但本地上下文为空的会话；直接发消息会继续当前后端线程。"
         if message_count == 0:
             return "这是一个空会话；最有效的动作通常是直接发完整任务，而不是先试很多命令。"
         if session.native_session_id:
             return "这是一个进行中的会话；如果任务没变，直接补充信息最快。"
-        return "这是一个已有本地上下文但尚未重新连上原生执行的会话；下一条真实消息会自动接上。"
+        return "这是一个已有本地上下文但尚未重新连上后端执行的会话；下一条真实消息会自动接上。"
 
     def build_context_note(self, session: SessionRecord) -> str | None:
         usage_ratio = self.context_usage_ratio(session)
@@ -153,7 +153,7 @@ class HelpRenderer:
     def build_priority_actions(self, session: SessionRecord, message_count: int) -> list[str]:
         if message_count == 0 and session.native_session_id:
             return [
-                "- 想延续上个原生会话：直接发消息，不需要先补命令。",
+                "- 想延续当前 backend session：直接发消息，不需要先补命令。",
                 "- 想改成新任务：先 /new <label>，再发新需求，避免旧上下文干扰。",
                 "- 想先确认目录、模型、通道和最近上下文，发 /status。",
             ]
@@ -211,7 +211,8 @@ class HelpRenderer:
         lines = [
             "- 同一任务继续干：通常不用命令，直接发消息。",
             "- 当前回复还在跑时，继续发消息会进入下一轮；连续补充会自动合并。",
-            "- 开新任务或切话题：/new <label>；回旧会话：/resume list、/resume latest。",
+            "- 开新任务或切话题：/new <label>；回旧 backend session：/resume list、/resume latest。",
+            "- `/resume` 只恢复本地 session_id，不直接暴露原生 thread 历史。",
             "- 换执行位置：/cwd <path> 切目录；/main 回稳定工作区；/develop 进修复工作区。",
             "- 快捷目录：/shortcut add <name> <path> [all|main|develop]、/shortcut list、/shortcut cd <name>。",
             "- 看现场：/status 看会话、目录、最近上下文；/usage 看 token 和 context_usage。",

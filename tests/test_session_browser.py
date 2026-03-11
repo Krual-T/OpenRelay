@@ -40,7 +40,7 @@ def write_native_session(file_path: Path, session_id: str, cwd: Path, first_mess
 
 
 
-def test_session_browser_lists_local_and_native_entries(tmp_path: Path) -> None:
+def test_session_browser_lists_only_local_backend_sessions(tmp_path: Path) -> None:
     config = make_config(tmp_path)
     prepare_dirs(config)
     store = StateStore(config)
@@ -53,34 +53,32 @@ def test_session_browser_lists_local_and_native_entries(tmp_path: Path) -> None:
     previous = store.create_next_session(session_key, active, "older task")
     previous = store.get_session(previous.session_id)
     store.resume_session(session_key, active.session_id)
-    write_native_session(config.backend.codex_sessions_dir / "main" / "a.jsonl", "native_resume", config.main_workspace_dir / "repo", "resume me")
-
     entries = browser.list_entries(session_key, store.load_session(session_key), limit=10)
 
-    assert [entry.session_id for entry in entries] == [previous.session_id, active.session_id, "native_resume"]
+    assert [entry.session_id for entry in entries] == [previous.session_id, active.session_id]
     assert entries[0].resume_token == previous.session_id
     assert entries[1].active is True
     assert entries[1].origin == "local"
-    assert entries[2].origin == "native"
     store.close()
 
 
-
-def test_session_browser_imports_latest_native_when_local_resume_misses(tmp_path: Path) -> None:
+def test_session_browser_resume_latest_uses_local_backend_sessions(tmp_path: Path) -> None:
     config = make_config(tmp_path)
     prepare_dirs(config)
     store = StateStore(config)
     browser = SessionBrowser(config, store)
     session_key = "p2p:oc_1"
     current = store.load_session(session_key)
-    write_native_session(config.backend.codex_sessions_dir / "main" / "latest.jsonl", "native_latest", config.main_workspace_dir / "repo", "follow up")
+    previous = store.create_next_session(session_key, current, "older task")
+    previous.native_session_id = "native_previous"
+    store.save_session(previous)
+    store.resume_session(session_key, current.session_id)
 
     result = browser.resume(session_key, current, "latest", browser.list_entries(session_key, current, limit=10))
 
     assert result is not None
-    assert result.imported is True
-    assert result.session.session_id == "native_latest"
-    assert result.session.native_session_id == "native_latest"
+    assert result.session.session_id == previous.session_id
+    assert result.session.native_session_id == "native_previous"
     store.close()
 
 

@@ -266,6 +266,16 @@ class StateStore:
         ).fetchone()
         return row is not None
 
+    def owner_session_key(self, base_key: str) -> str:
+        key = base_key.strip()
+        if ":thread:" not in key:
+            return key
+        prefix, suffix = key.split(":thread:", 1)
+        if ":sender:" in suffix:
+            _thread_id, sender_suffix = suffix.split(":sender:", 1)
+            return f"{prefix}:sender:{sender_suffix}"
+        return prefix
+
     def find_session(self, base_key: str) -> SessionRecord | None:
         pointer = self.connection.execute(
             "SELECT active_session_id FROM session_pointers WHERE base_key = ?",
@@ -274,6 +284,21 @@ class StateStore:
         if pointer is None:
             return None
         return self.get_session(pointer["active_session_id"])
+
+    def bind_scope(self, base_key: str, session_id: str) -> None:
+        scope_key = base_key.strip()
+        target_session_id = session_id.strip()
+        if not scope_key or not target_session_id:
+            return
+        self.connection.execute(
+            """
+            INSERT INTO session_pointers(base_key, active_session_id, updated_at)
+            VALUES(?, ?, ?)
+            ON CONFLICT(base_key) DO UPDATE SET active_session_id = excluded.active_session_id, updated_at = excluded.updated_at
+            """,
+            (scope_key, target_session_id, utc_now()),
+        )
+        self.connection.commit()
 
     def remember_message(self, message_id: str) -> bool:
         now = int(time.time())
@@ -289,13 +314,20 @@ class StateStore:
         return duplicate
 
     def load_session(self, base_key: str, template: SessionRecord | None = None) -> SessionRecord:
-        existing = self.find_session(base_key)
+        requested_key = base_key.strip()
+        existing = self.find_session(requested_key)
         if existing is not None:
             return existing
+        owner_key = self.owner_session_key(requested_key)
+        if owner_key != requested_key:
+            owner_session = self.find_session(owner_key)
+            if owner_session is not None:
+                self.bind_scope(requested_key, owner_session.session_id)
+                return owner_session
         release_channel = template.release_channel if template and template.release_channel else "main"
         session = SessionRecord(
             session_id=self._new_session_id(),
-            base_key=base_key,
+            base_key=owner_key,
             backend=template.backend if template else self._default_backend(),
             cwd=template.cwd if template else self._default_cwd(release_channel),
             label=template.label if template else "",
@@ -305,8 +337,10 @@ class StateStore:
             release_channel=release_channel,
             last_usage={},
         )
-        self.save_session(session)
-        return session
+        saved = self.save_session(session)
+        if requested_key != owner_key:
+            self.bind_scope(requested_key, saved.session_id)
+        return saved
 
     def get_session(self, session_id: str) -> SessionRecord:
         row = self.connection.execute(
@@ -328,6 +362,7 @@ class StateStore:
     def save_session(self, session: SessionRecord) -> SessionRecord:
         now = utc_now()
         payload = asdict(session)
+        payload["base_key"] = self.owner_session_key(str(payload.get("base_key") or ""))
         payload["updated_at"] = now
         if not payload["created_at"]:
             payload["created_at"] = now
@@ -357,7 +392,7 @@ class StateStore:
             VALUES(?, ?, ?)
             ON CONFLICT(base_key) DO UPDATE SET active_session_id = excluded.active_session_id, updated_at = excluded.updated_at
             """,
-            (session.base_key, session.session_id, now),
+            (payload["base_key"], session.session_id, now),
         )
         self.connection.commit()
         return self.get_session(session.session_id)
@@ -378,10 +413,12 @@ class StateStore:
         return [{"role": row["role"], "content": row["content"]} for row in rows]
 
     def create_next_session(self, base_key: str, current: SessionRecord | None, label: str = "", **overrides: str) -> SessionRecord:
+        requested_key = base_key.strip()
+        owner_key = self.owner_session_key(requested_key)
         release_channel = overrides.get("release_channel") or (current.release_channel if current else "main")
         session = SessionRecord(
             session_id=self._new_session_id(),
-            base_key=base_key,
+            base_key=owner_key,
             backend=overrides.get("backend") or (current.backend if current else self._default_backend()),
             cwd=overrides.get("cwd") or (current.cwd if current else self._default_cwd(release_channel)),
             label=label.strip() or "",
@@ -390,33 +427,32 @@ class StateStore:
             release_channel=release_channel,
             last_usage=current.last_usage if current else {},
         )
-        return self.save_session(session)
+        saved = self.save_session(session)
+        if requested_key != owner_key:
+            self.bind_scope(requested_key, saved.session_id)
+        return saved
 
     def _session_scope_patterns(self, base_key: str) -> list[str]:
-        key = base_key.strip()
+        key = self.owner_session_key(base_key)
         if not key:
             return []
-        if ":thread:" in key:
-            return [key]
         if ":sender:" in key:
             prefix, suffix = key.split(":sender:", 1)
             return [key, f"{prefix}:thread:%:sender:{suffix}"]
         return [key, f"{key}:thread:%"]
 
     def list_sessions(self, base_key: str, limit: int = 20) -> list[SessionSummary]:
+        owner_key = self.owner_session_key(base_key)
         pointer = self.connection.execute(
             "SELECT active_session_id FROM session_pointers WHERE base_key = ?",
-            (base_key,),
+            (owner_key,),
         ).fetchone()
         active_id = pointer["active_session_id"] if pointer else ""
-        patterns = self._session_scope_patterns(base_key)
-        if not patterns:
+        if not owner_key:
             return []
-        query_limit = max(limit * 10, 50)
-        where_clause = " OR ".join("base_key LIKE ?" if "%" in pattern else "base_key = ?" for pattern in patterns)
         rows = self.connection.execute(
-            f"SELECT * FROM sessions WHERE {where_clause} ORDER BY updated_at DESC LIMIT ?",
-            (*patterns, query_limit),
+            "SELECT * FROM sessions WHERE base_key = ? ORDER BY updated_at DESC LIMIT ?",
+            (owner_key, max(limit * 10, 50)),
         ).fetchall()
         summaries: list[SessionSummary] = []
         for row in rows:
@@ -442,13 +478,15 @@ class StateStore:
         return summaries[:limit]
 
     def resume_session(self, base_key: str, target: str) -> SessionRecord | None:
+        requested_key = base_key.strip()
+        owner_key = self.owner_session_key(requested_key)
         target = target.strip()
         pointer = self.connection.execute(
             "SELECT active_session_id FROM session_pointers WHERE base_key = ?",
-            (base_key,),
+            (owner_key,),
         ).fetchone()
         active_id = pointer["active_session_id"] if pointer else ""
-        sessions = self.list_sessions(base_key, limit=50)
+        sessions = self.list_sessions(owner_key, limit=50)
         chosen: SessionSummary | None = None
         if not target or target in {"latest", "prev", "previous"}:
             chosen = next((entry for entry in sessions if entry.session_id != active_id), None)
@@ -458,16 +496,22 @@ class StateStore:
             return None
         self.connection.execute(
             "UPDATE session_pointers SET active_session_id = ?, updated_at = ? WHERE base_key = ?",
-            (chosen.session_id, utc_now(), base_key),
+            (chosen.session_id, utc_now(), owner_key),
         )
         self.connection.commit()
+        if requested_key and requested_key != owner_key:
+            self.bind_scope(requested_key, chosen.session_id)
         return self.get_session(chosen.session_id)
 
     def clear_sessions(self, base_key: str) -> None:
-        rows = self.connection.execute("SELECT session_id FROM sessions WHERE base_key = ?", (base_key,)).fetchall()
+        owner_key = self.owner_session_key(base_key)
+        rows = self.connection.execute("SELECT session_id FROM sessions WHERE base_key = ?", (owner_key,)).fetchall()
         ids = [row["session_id"] for row in rows]
-        self.connection.execute("DELETE FROM sessions WHERE base_key = ?", (base_key,))
-        self.connection.execute("DELETE FROM session_pointers WHERE base_key = ?", (base_key,))
+        self.connection.execute("DELETE FROM sessions WHERE base_key = ?", (owner_key,))
+        patterns = self._session_scope_patterns(owner_key)
+        if patterns:
+            where_clause = " OR ".join("base_key LIKE ?" if "%" in pattern else "base_key = ?" for pattern in patterns)
+            self.connection.execute(f"DELETE FROM session_pointers WHERE {where_clause}", patterns)
         if ids:
             self.connection.executemany("DELETE FROM messages WHERE session_id = ?", [(session_id,) for session_id in ids])
         self.connection.commit()

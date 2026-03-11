@@ -24,12 +24,12 @@
 - `/panel`、`/resume list`、`/help` 这类导航型卡片在按钮切换时会优先原地更新，避免翻页和层级切换不断刷新消息
 - `/panel` 的会话结果继续复用 `/resume` 主路径，目录结果继续复用 `/cwd` 主路径，避免再长出第二套执行语义
 - `/panel` 仍会按 `main / develop` 作用域显示常用目录快捷按钮，点击后直接复用 `/cwd` 切换
-- `/resume` 现在会合并本地会话与可导入的原生 `~/.codex/sessions` 历史
+- `/resume` 现在只恢复本地 backend session；thread 只作为会话绑定，不再直接暴露成恢复目标
 - `FEISHU_STREAM_MODE=card` 时会显示 `openrelay` 的运行中状态卡片与 typing
 - 主回复卡片、运行中卡片和常驻操作卡片已收敛到一套更接近 Codex CLI 的低噪音主题语义
 - 当前回复还没结束时，继续发消息会自动排到下一轮；连续补充会合并成一轮 follow-up
 - `/ping`、`/status`、`/usage`、`/help`、`/panel` 这类诊断命令在当前回复尚未结束时也会立即返回，不再被同 session 串行锁静默卡住
-- 串行粒度现在按原生 `codex session` 收敛：同一个 native session 继续排队，不同 native session 可以并发
+- 串行粒度现在按本地 backend `session_id` 收敛：同一个 session 的多 thread 串行，不同 session 可以并发
 - 飞书图片消息会先通过消息资源接口下载到本地临时文件，再作为图像 input 传给 `codex app-server`
 
 ## 环境变量
@@ -131,7 +131,7 @@ http://your-host:3000/feishu/webhook
 - `/main [reason]`、`/stable [reason]` - 切到 main 稳定工作区
 - `/develop [reason]` - 切到 develop 修复工作区
 - `/new [label]` - 新建隔离会话
-- `/resume [list|latest|session_id]` - 恢复历史会话；若本地不存在，会自动尝试导入原生 Codex 历史
+- `/resume [list|latest|session_id]` - 恢复本地 backend session；不再直接导入或暴露原生 Codex thread 历史
 - `/clear` - 清空上下文但保留当前目录和配置
 - `/status` - 查看当前会话状态
 - `/cwd [path]`、`/cd [path]` - 查看或切换当前目录

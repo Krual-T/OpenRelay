@@ -6,7 +6,6 @@ from typing import Literal
 
 from openrelay.config import AppConfig
 from openrelay.models import SessionRecord, SessionSummary
-from openrelay.native_sessions import NativeSessionSummary, find_native_session, import_native_session, list_native_sessions
 from openrelay.state import StateStore
 
 
@@ -61,7 +60,6 @@ class SessionListPage:
 @dataclass(slots=True)
 class SessionResumeResult:
     session: SessionRecord
-    imported: bool
     entry: SessionListEntry | None
 
 
@@ -78,34 +76,9 @@ class SessionBrowser:
         sort_mode: SessionSortMode = DEFAULT_SESSION_LIST_SORT,
         browse_limit: int = DEFAULT_BROWSE_LIMIT,
     ) -> list[SessionListEntry]:
-        fetch_limit = max(limit, browse_limit)
-        local_sessions = self.store.list_sessions(session_key, limit=fetch_limit)
-        has_thread_scopes = any(":thread:" in entry.base_key for entry in local_sessions)
-        merged: list[SessionListEntry] = []
-        seen: set[str] = set()
-
-        for entry in local_sessions:
-            if (
-                has_thread_scopes
-                and ":thread:" not in session_key
-                and entry.base_key == session_key
-                and not entry.native_session_id
-                and entry.message_count == 0
-            ):
-                continue
-            item = self._local_entry(entry)
-            seen.add(item.dedup_key)
-            merged.append(item)
-
-        for native in self.list_importable_native_sessions(local_sessions, session, fetch_limit):
-            item = self._native_entry(native)
-            if item.dedup_key in seen:
-                continue
-            seen.add(item.dedup_key)
-            merged.append(item)
-
-        self._sort_entries(merged, sort_mode)
-        return merged[:fetch_limit]
+        sessions = [self._local_entry(entry) for entry in self.store.list_sessions(session_key, limit=max(limit, browse_limit))]
+        self._sort_entries(sessions, sort_mode)
+        return sessions[: max(limit, browse_limit)]
 
     def list_page(
         self,
@@ -147,6 +120,14 @@ class SessionBrowser:
         entries: list[SessionListEntry],
     ) -> SessionResumeResult | None:
         resolved_target = self.resolve_target(target, entries)
+        if not resolved_target or resolved_target.lower() in {"latest", "prev", "previous"}:
+            resumed = self.store.resume_session(session_key, resolved_target)
+            if resumed is None:
+                return None
+            return SessionResumeResult(
+                session=resumed,
+                entry=self.find_entry(entries, resumed.session_id),
+            )
         local_match = self.find_local_session(session_key, resolved_target)
         if local_match is not None:
             resumed = self.store.resume_session(session_key, local_match.session_id)
@@ -154,37 +135,9 @@ class SessionBrowser:
                 return None
             return SessionResumeResult(
                 session=resumed,
-                imported=False,
                 entry=self.find_entry(entries, resumed.session_id, local_match.native_session_id),
             )
-
-        if not resolved_target or resolved_target.lower() in {"latest", "prev", "previous"}:
-            latest_native = self.list_importable_native_sessions(self.store.list_sessions(session_key, limit=50), session, 1)
-            if not latest_native:
-                return None
-            native = latest_native[0]
-            imported = import_native_session(self.store, session_key, native, session)
-            return SessionResumeResult(
-                session=imported,
-                imported=True,
-                entry=self.find_entry(entries, native.session_id, native.session_id),
-            )
-
-        native = find_native_session(self.config, resolved_target)
-        if native is None:
-            entry = self.find_entry(entries, resolved_target, resolved_target)
-            if entry is None:
-                return None
-            native = find_native_session(self.config, entry.native_session_id or entry.session_id)
-            if native is None:
-                return None
-
-        imported = import_native_session(self.store, session_key, native, session)
-        return SessionResumeResult(
-            session=imported,
-            imported=True,
-            entry=self.find_entry(entries, native.session_id, native.session_id),
-        )
+        return None
 
     def resolve_target(self, target: str, entries: list[SessionListEntry]) -> str:
         normalized = target.strip()
@@ -196,11 +149,8 @@ class SessionBrowser:
         return normalized
 
     def find_entry(self, entries: list[SessionListEntry], token: str, native_token: str = "") -> SessionListEntry | None:
-        native_match = native_token.strip()
         for entry in entries:
-            if token and token in {entry.resume_token, entry.session_id, entry.native_session_id}:
-                return entry
-            if native_match and native_match in {entry.native_session_id, entry.resume_token, entry.session_id}:
+            if token and token in {entry.resume_token, entry.session_id}:
                 return entry
         return None
 
@@ -209,15 +159,9 @@ class SessionBrowser:
         if not normalized:
             return None
         for entry in self.store.list_sessions(session_key, limit=50):
-            if normalized in {entry.session_id, entry.native_session_id}:
+            if normalized == entry.session_id:
                 return entry
         return None
-
-    def list_importable_native_sessions(self, local_sessions: list[SessionSummary], session: SessionRecord, limit: int = 10) -> list[NativeSessionSummary]:
-        if session.backend != "codex":
-            return []
-        known_ids = {entry.native_session_id or entry.session_id for entry in local_sessions}
-        return [entry for entry in list_native_sessions(self.config, limit=limit) if entry.session_id not in known_ids]
 
     def _local_entry(self, entry: SessionSummary) -> SessionListEntry:
         return SessionListEntry(
@@ -234,23 +178,6 @@ class SessionBrowser:
             last_assistant_message=entry.last_assistant_message,
             message_count=entry.message_count,
             matches_workspace=True,
-        )
-
-    def _native_entry(self, entry: NativeSessionSummary) -> SessionListEntry:
-        return SessionListEntry(
-            session_id=entry.session_id,
-            resume_token=entry.session_id,
-            native_session_id=entry.session_id,
-            label=entry.label,
-            updated_at=entry.updated_at,
-            active=False,
-            origin="native",
-            release_channel=entry.release_channel,
-            cwd=entry.cwd,
-            first_user_message=entry.first_user_message,
-            last_assistant_message="",
-            message_count=0,
-            matches_workspace=entry.matches_workspace,
         )
 
     def _sort_entries(self, entries: list[SessionListEntry], sort_mode: SessionSortMode) -> None:

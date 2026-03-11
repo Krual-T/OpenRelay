@@ -194,12 +194,7 @@ class AgentRuntime:
         return bool(self.config.feishu.admin_open_ids) and sender_open_id in self.config.feishu.admin_open_ids
 
     def _build_execution_key(self, session_key: str, session: SessionRecord, *, force_session_scope: bool = False) -> str:
-        if force_session_scope:
-            return f"session:{session_key}"
-        native_session_id = str(session.native_session_id or "").strip()
-        if native_session_id:
-            return f"native:{native_session_id}"
-        return f"session:{session_key}"
+        return f"session:{session.session_id}"
 
     def _is_placeholder_control_session(self, session: SessionRecord, session_key: str) -> bool:
         if session.base_key != session_key or session.native_session_id:
@@ -241,17 +236,7 @@ class AgentRuntime:
         return self.store.load_session(session_key, template=template)
 
     def _resolve_stop_execution_key(self, message: IncomingMessage, session_key: str, session: SessionRecord) -> str:
-        control_execution_key = self._build_execution_key(
-            session_key,
-            session,
-            force_session_scope=self._is_top_level_control_command(message),
-        )
-        if control_execution_key in self.active_runs:
-            return control_execution_key
-        selected_execution_key = self._build_execution_key(session.base_key, session)
-        if selected_execution_key in self.active_runs:
-            return selected_execution_key
-        return control_execution_key
+        return self._build_execution_key(session_key, session)
 
     def _message_summary_text(self, message: IncomingMessage) -> str:
         text = str(message.text or "").strip()
@@ -783,7 +768,7 @@ class AgentRuntime:
             {
                 "title": "当前会话状态",
                 "meta": f"{channel} · 目录 {cwd} · sandbox {session.safety_mode}",
-                "preview": f"模型 {self.session_ux.effective_model(session)} · 原生会话 {session.native_session_id or 'pending'}",
+                "preview": f"模型 {self.session_ux.effective_model(session)} · 后端线程 {session.native_session_id or 'pending'}",
                 "command": "/status",
                 "action_label": "完整状态",
                 "action_type": "primary",
@@ -933,7 +918,13 @@ class AgentRuntime:
         stripped = text.strip()
         if not stripped.startswith("/"):
             return False
-        return stripped.split(maxsplit=1)[0].lower() in NON_BLOCKING_ACTIVE_RUN_COMMANDS
+        command = stripped.split(maxsplit=1)[0].lower()
+        if command in NON_BLOCKING_ACTIVE_RUN_COMMANDS:
+            return True
+        if command != "/resume":
+            return False
+        tokens = stripped.split(maxsplit=2)
+        return len(tokens) == 1 or tokens[1].lower() == "list"
 
     def _schedule_restart(self) -> None:
         if self._restart_started:
