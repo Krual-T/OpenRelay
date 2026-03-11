@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any, Callable
 
-from openrelay.card_theme import build_card_shell, build_collapsible_panel, build_note_bar, infer_final_tone, status_badge
+from openrelay.card_theme import build_collapsible_panel, build_status_heading, infer_final_tone
 from openrelay.models import SessionRecord, utc_now
 
 
@@ -73,6 +73,19 @@ def format_reasoning_duration(reasoning_elapsed_ms: object) -> str:
         return f"{minutes}m {seconds:02d}s"
     hours, minutes = divmod(minutes, 60)
     return f"{hours}h {minutes:02d}m"
+
+
+def truncate_summary(text: object, max_length: int = 120) -> str:
+    normalized = str(text or "").strip()
+    if not normalized:
+        return ""
+    summary = normalized
+    for marker in ["*", "_", "`", "#", ">", "[", "]", "(", ")", "~"]:
+        summary = summary.replace(marker, "")
+    summary = " ".join(summary.split())
+    if len(summary) <= max_length:
+        return summary
+    return f"{summary[:max_length - 3]}..."
 
 
 def apply_live_progress(state: LiveReplyState, event: dict[str, Any] | None) -> None:
@@ -163,10 +176,7 @@ def build_reply_card(
 ) -> dict[str, object]:
     content = text.strip() or "回复为空。"
     tone = infer_final_tone(content)
-    elements: list[dict[str, Any]] = []
-    status_note = build_note_bar([status_badge(tone), "继续追问时直接回复当前线程即可"])
-    if status_note is not None:
-        elements.append(status_note)
+    elements: list[dict[str, Any]] = [{"tag": "markdown", "content": build_status_heading(tone, title)}]
     reasoning_panel = build_collapsible_panel(
         f"💭 {format_reasoning_duration(reasoning_elapsed_ms)}",
         reasoning_text,
@@ -175,7 +185,19 @@ def build_reply_card(
     if reasoning_panel is not None:
         elements.append(reasoning_panel)
     elements.append({"tag": "markdown", "content": content})
-    follow_up_note = build_note_bar(["如果目标没变，不用先发命令，直接补充任务 / 报错 / 文件路径。"])
-    if follow_up_note is not None:
-        elements.append(follow_up_note)
-    return build_card_shell(title, elements, tone=tone)
+    elements.append(
+        {
+            "tag": "markdown",
+            "content": "继续追问时直接回复当前线程即可。如果目标没变，不用先发命令，直接补充任务 / 报错 / 文件路径。",
+            "text_size": "notation",
+        }
+    )
+    config: dict[str, Any] = {"streaming_mode": False}
+    summary = truncate_summary(content)
+    if summary:
+        config["summary"] = {"content": summary}
+    return {
+        "schema": "2.0",
+        "config": config,
+        "body": {"elements": elements},
+    }

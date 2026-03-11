@@ -137,7 +137,7 @@ class FakeStreamingSession:
         self.started = False
         self.closed = False
         self.updates = []
-        self.final_text = None
+        self.final_card = None
         self._message_id = "om_stream_card"
 
     async def start(self, receive_id: str, *, reply_to_message_id: str = "", root_id: str = "") -> None:
@@ -146,9 +146,9 @@ class FakeStreamingSession:
     async def update(self, live_state: dict) -> None:
         self.updates.append(dict(live_state))
 
-    async def close(self, final_text: str | None) -> None:
+    async def close(self, final_card: dict | None = None) -> None:
         self.closed = True
-        self.final_text = final_text
+        self.final_card = final_card
 
     def message_id(self) -> str:
         return self._message_id if self.started else ""
@@ -808,10 +808,14 @@ async def test_runtime_card_stream_mode_uses_streaming_session(tmp_path: Path) -
     assert sessions
     assert sessions[0].started is True
     assert sessions[0].closed is True
-    assert sessions[0].final_text is None
-    assert messenger.cards
-    assert messenger.card_calls[-1]["update_message_id"] == "om_stream_card"
-    assert messenger.cards[-1]["header"]["title"]["content"] == "openrelay 回复"
+    assert sessions[0].final_card is not None
+    assert sessions[0].final_card["schema"] == "2.0"
+    assert sessions[0].final_card["config"]["streaming_mode"] is False
+    assert any(
+        element.get("tag") == "markdown" and "openrelay 回复" in element.get("content", "")
+        for element in sessions[0].final_card["body"]["elements"]
+        if isinstance(element, dict)
+    )
     assert typing.added == ["om_stream"]
     assert typing.removed
     await runtime.shutdown()
@@ -846,11 +850,9 @@ async def test_runtime_card_stream_mode_puts_reasoning_into_collapsible_panel(tm
     await runtime.dispatch_message(make_message("hello reasoning", event_suffix="reasoning"))
 
     assert sessions
-    assert messenger.cards
-    assert messenger.card_calls[-1]["update_message_id"] == "om_stream_card"
     reasoning_panel = next(
         element
-        for element in messenger.cards[-1]["elements"]
+        for element in sessions[0].final_card["body"]["elements"]
         if isinstance(element, dict) and element.get("tag") == "collapsible_panel"
     )
     assert reasoning_panel["expanded"] is False
@@ -889,9 +891,8 @@ async def test_runtime_streaming_update_does_not_block_backend_turn(tmp_path: Pa
     assert sessions
     assert sessions[0].started is True
     assert sessions[0].closed is True
-    assert sessions[0].final_text is None
-    assert messenger.cards
-    assert messenger.card_calls[-1]["update_message_id"] == "om_stream_card"
+    assert sessions[0].final_card is not None
+    assert sessions[0].final_card["config"]["streaming_mode"] is False
     session = store.load_session(runtime.build_session_key(make_message("hello blocked stream", event_suffix="blocked_stream")))
     assert session.native_session_id == "native_2"
     await runtime.shutdown()
