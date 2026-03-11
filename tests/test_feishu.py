@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 
 from openrelay.config import AppConfig, BackendConfig, FeishuConfig
@@ -107,6 +108,41 @@ def test_parse_message_event_image() -> None:
     assert parsed.message.actionable is True
     assert parsed.message.text == "[图片]"
     assert parsed.message.remote_image_keys == ("img_v2_123",)
+
+
+def test_parse_message_event_post_with_text_and_image() -> None:
+    config = make_config()
+    parsed = parse_message_event(
+        config,
+        {
+            "sender": {"sender_id": {"open_id": "ou_user"}},
+            "message": {
+                "message_id": "om_post_1",
+                "chat_id": "oc_2",
+                "chat_type": "p2p",
+                "message_type": "post",
+                "content": json.dumps(
+                    {
+                        "zh_cn": {
+                            "title": "说明",
+                            "content": [
+                                [
+                                    {"tag": "text", "text": "看看这张图"},
+                                    {"tag": "img", "image_key": "img_v2_post_1"},
+                                ]
+                            ],
+                        }
+                    },
+                    ensure_ascii=False,
+                ),
+            },
+        },
+    )
+    assert parsed.type == "message"
+    assert parsed.message is not None
+    assert parsed.message.actionable is True
+    assert parsed.message.text == "说明 看看这张图"
+    assert parsed.message.remote_image_keys == ("img_v2_post_1",)
 
 
 def test_parse_card_action_event() -> None:
