@@ -1,13 +1,13 @@
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Any, Callable
 
-from openrelay.card_theme import build_card_shell, build_note_bar, build_section_block, build_status_hero, divider_block, infer_final_tone, status_badge
+from openrelay.card_theme import build_card_shell, build_collapsible_panel, build_note_bar, infer_final_tone, status_badge
 from openrelay.models import SessionRecord, utc_now
 
 
 LiveReplyState = dict[str, Any]
-
 
 
 def create_live_reply_state(
@@ -24,11 +24,13 @@ def create_live_reply_state(
         "current_command": "",
         "last_command": None,
         "last_reasoning": "",
+        "reasoning_text": "",
+        "reasoning_started_at": "",
+        "reasoning_elapsed_ms": 0,
         "partial_text": "",
         "spinner_frame": 0,
         "started_at": utc_now(),
     }
-
 
 
 def push_live_history(state: LiveReplyState, text: object) -> None:
@@ -41,6 +43,36 @@ def push_live_history(state: LiveReplyState, text: object) -> None:
     history.append(value)
     state["history"] = history[-12:]
 
+
+def finalize_reasoning_timing(state: LiveReplyState) -> None:
+    if int(state.get("reasoning_elapsed_ms") or 0) > 0:
+        return
+    raw_started_at = str(state.get("reasoning_started_at") or "").strip()
+    if not raw_started_at:
+        return
+    try:
+        started_at = datetime.fromisoformat(raw_started_at)
+        elapsed_ms = max(0, int((datetime.fromisoformat(utc_now()) - started_at).total_seconds() * 1000))
+    except Exception:
+        return
+    if elapsed_ms > 0:
+        state["reasoning_elapsed_ms"] = elapsed_ms
+
+
+def format_reasoning_duration(reasoning_elapsed_ms: object) -> str:
+    try:
+        total_seconds = max(0, int(int(reasoning_elapsed_ms or 0) / 1000))
+    except Exception:
+        return "Thought"
+    if total_seconds <= 0:
+        return "Thought"
+    if total_seconds < 60:
+        return f"{total_seconds}s"
+    minutes, seconds = divmod(total_seconds, 60)
+    if minutes < 60:
+        return f"{minutes}m {seconds:02d}s"
+    hours, minutes = divmod(minutes, 60)
+    return f"{hours}h {minutes:02d}m"
 
 
 def apply_live_progress(state: LiveReplyState, event: dict[str, Any] | None) -> None:
@@ -60,10 +92,28 @@ def apply_live_progress(state: LiveReplyState, event: dict[str, Any] | None) -> 
         push_live_history(state, state["status"])
         return
     if event_type == "assistant.partial":
+        finalize_reasoning_timing(state)
         state["heading"] = "正在生成回复"
         state["status"] = "正在输出内容"
         if isinstance(event.get("text"), str):
             state["partial_text"] = event["text"]
+        push_live_history(state, state["status"])
+        return
+    if event_type == "reasoning.started":
+        state["heading"] = "正在分析"
+        state["status"] = "整理上下文与计划"
+        if not str(state.get("reasoning_started_at") or "").strip():
+            state["reasoning_started_at"] = utc_now()
+        push_live_history(state, state["status"])
+        return
+    if event_type == "reasoning.delta":
+        state["heading"] = "正在分析"
+        state["status"] = "整理上下文与计划"
+        if not str(state.get("reasoning_started_at") or "").strip():
+            state["reasoning_started_at"] = utc_now()
+        if isinstance(event.get("text"), str):
+            state["reasoning_text"] = event["text"]
+            state["last_reasoning"] = event["text"]
         push_live_history(state, state["status"])
         return
     if event_type == "command.started":
@@ -86,46 +136,46 @@ def apply_live_progress(state: LiveReplyState, event: dict[str, Any] | None) -> 
         state["status"] = "整理上下文与计划"
         if isinstance(event.get("text"), str):
             state["last_reasoning"] = event["text"]
+            state["reasoning_text"] = event["text"]
+        finalize_reasoning_timing(state)
         push_live_history(state, state["status"])
         return
     if event_type == "agent.message":
+        finalize_reasoning_timing(state)
         state["heading"] = "正在整理回复"
         if isinstance(event.get("text"), str) and event["text"].strip():
             state["status"] = event["text"]
         push_live_history(state, state["status"])
         return
     if event_type == "turn.completed":
+        finalize_reasoning_timing(state)
         state["heading"] = "即将完成"
         state["status"] = "正在收尾输出"
         push_live_history(state, state["status"])
 
 
-
-def build_reply_card(text: str, title: str = "openrelay") -> dict[str, object]:
+def build_reply_card(
+    text: str,
+    title: str = "openrelay",
+    *,
+    reasoning_text: str = "",
+    reasoning_elapsed_ms: int | None = None,
+) -> dict[str, object]:
     content = text.strip() or "回复为空。"
     tone = infer_final_tone(content)
-    if tone == "error":
-        summary = "本次处理没有成功完成；错误细节放在正文里。"
-    elif tone == "cancelled":
-        summary = "当前回复已停止；你可以直接在线程里继续补充下一步。"
-    else:
-        summary = "正文与结论放在下方；如果要继续推进，直接在线程里追问即可。"
-    elements: list[dict[str, Any]] = [
-        *build_status_hero(
-            title,
-            tone=tone,
-            summary=summary,
-            facts=[("状态", status_badge(tone)), ("类型", "`最终回复`")],
-            notes=["`openrelay`", "继续追问时直接回复当前线程即可"],
-        ),
-        divider_block(),
-        build_section_block("回复内容", [content], emoji="📝"),
-    ]
+    elements: list[dict[str, Any]] = []
+    status_note = build_note_bar([status_badge(tone), "继续追问时直接回复当前线程即可"])
+    if status_note is not None:
+        elements.append(status_note)
+    reasoning_panel = build_collapsible_panel(
+        f"💭 {format_reasoning_duration(reasoning_elapsed_ms)}",
+        reasoning_text,
+        expanded=False,
+    )
+    if reasoning_panel is not None:
+        elements.append(reasoning_panel)
+    elements.append({"tag": "markdown", "content": content})
     follow_up_note = build_note_bar(["如果目标没变，不用先发命令，直接补充任务 / 报错 / 文件路径。"])
     if follow_up_note is not None:
         elements.append(follow_up_note)
-    return build_card_shell(
-        title,
-        elements,
-        tone=tone,
-    )
+    return build_card_shell(title, elements, tone=tone)

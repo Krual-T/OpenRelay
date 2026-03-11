@@ -126,6 +126,13 @@ def render_markdown_panel(lines: list[object]) -> str:
     return "```text\n" + "\n".join(normalized_lines) + "\n```"
 
 
+def build_reasoning_body_text(text: object) -> str:
+    normalized = str(text or "").strip()
+    if not normalized:
+        return ""
+    return f"💭 **Thinking...**\n\n{normalized}"
+
+
 def build_activity_summary(activity: dict[str, Any] | None = None) -> str:
     activity = activity or {}
     lines: list[str] = []
@@ -202,7 +209,10 @@ def build_live_status_view(state: dict[str, Any] | None = None) -> dict[str, obj
     if elapsed:
         detail_lines.append(f"> ⏱️ 已处理：{elapsed}")
 
-    return {"header_lines": header_lines, "detail_lines": detail_lines, "body_text": str(state.get("partial_text") or "").strip()}
+    body_text = str(state.get("partial_text") or "").strip()
+    if not body_text:
+        body_text = build_reasoning_body_text(state.get("reasoning_text"))
+    return {"header_lines": header_lines, "detail_lines": detail_lines, "body_text": body_text}
 
 
 

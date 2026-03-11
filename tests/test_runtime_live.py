@@ -11,9 +11,12 @@ def test_build_reply_card_uses_semantic_header_template() -> None:
     assert cancelled_card["header"]["template"] == "grey"
 
 
-def test_build_reply_card_adds_visual_sections() -> None:
-    card = build_reply_card("done", "openrelay 回复")
+def test_build_reply_card_adds_collapsible_reasoning_panel() -> None:
+    card = build_reply_card("done", "openrelay 回复", reasoning_text="先读代码", reasoning_elapsed_ms=12000)
 
-    assert any("```text" in element.get("text", {}).get("content", "") for element in card["elements"] if isinstance(element, dict))
-    assert any(element.get("tag") == "hr" for element in card["elements"])
-    assert any("回复内容" in element.get("text", {}).get("content", "") for element in card["elements"] if isinstance(element, dict))
+    assert any(element.get("tag") == "collapsible_panel" for element in card["elements"] if isinstance(element, dict))
+    assert any(
+        element.get("tag") == "markdown" and element.get("content") == "done"
+        for element in card["elements"]
+        if isinstance(element, dict)
+    )

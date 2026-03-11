@@ -47,3 +47,16 @@ def test_render_live_status_sections_splits_fields() -> None:
     assert sections["body"] == "hello"
     assert "`进行中`" in sections["header"]
     assert "```text" in sections["details"]
+
+
+def test_render_live_status_sections_show_reasoning_when_answer_not_started() -> None:
+    sections = render_live_status_sections(
+        {
+            "heading": "正在分析",
+            "status": "整理上下文与计划",
+            "reasoning_text": "先检查 runtime 和 card 渲染。",
+        }
+    )
+
+    assert "💭 **Thinking...**" in sections["body"]
+    assert "先检查 runtime 和 card 渲染。" in sections["body"]

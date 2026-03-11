@@ -42,12 +42,25 @@ class CodexTurn:
     command_by_id: dict[str, dict[str, Any]] = field(default_factory=dict)
     command_output_by_id: dict[str, str] = field(default_factory=dict)
     reasoning_by_id: dict[str, str] = field(default_factory=dict)
+    reasoning_order: list[str] = field(default_factory=list)
     agent_text_by_id: dict[str, str] = field(default_factory=dict)
     usage: dict[str, Any] | None = None
     future: asyncio.Future[BackendReply] | None = None
 
     def __post_init__(self) -> None:
         self.future = asyncio.get_running_loop().create_future()
+
+    def _remember_reasoning_item(self, item_id: str) -> None:
+        if item_id and item_id not in self.reasoning_order:
+            self.reasoning_order.append(item_id)
+
+    def _combined_reasoning_text(self) -> str:
+        parts: list[str] = []
+        for item_id in self.reasoning_order:
+            text = str(self.reasoning_by_id.get(item_id) or "").strip()
+            if text:
+                parts.append(text)
+        return "\n\n".join(parts).strip()
 
     def matches(self, thread_id: str, turn_id: str = "") -> bool:
         if thread_id != self.thread_id:
@@ -100,7 +113,10 @@ class CodexTurn:
 
         if method in {"item/reasoning/textDelta", "item/reasoning/summaryTextDelta"}:
             item_id = str(params.get("itemId") or "")
+            self._remember_reasoning_item(item_id)
             self.reasoning_by_id[item_id] = f"{self.reasoning_by_id.get(item_id, '')}{params.get('delta') or ''}"
+            if self.on_progress is not None:
+                await self.on_progress({"type": "reasoning.delta", "text": self._combined_reasoning_text()})
             return
 
         if method == "item/commandExecution/outputDelta":
@@ -110,6 +126,11 @@ class CodexTurn:
 
         if method == "item/started":
             item = params.get("item") if isinstance(params.get("item"), dict) else {}
+            if item.get("type") == "reasoning":
+                self._remember_reasoning_item(str(item.get("id") or ""))
+                if self.on_progress is not None:
+                    await self.on_progress({"type": "reasoning.started"})
+                return
             if item.get("type") == "commandExecution":
                 command = {
                     "id": str(item.get("id") or ""),
@@ -136,6 +157,7 @@ class CodexTurn:
                 return
             if item_type == "reasoning":
                 item_id = str(item.get("id") or "")
+                self._remember_reasoning_item(item_id)
                 text = self.reasoning_by_id.get(item_id, "")
                 if not text:
                     summary = item.get("summary")
@@ -144,8 +166,10 @@ class CodexTurn:
                         text = "\n".join(str(part) for part in summary)
                     elif isinstance(content, list):
                         text = "\n".join(str(part) for part in content)
-                if text and self.on_progress is not None:
-                    await self.on_progress({"type": "reasoning.completed", "text": text})
+                if text:
+                    self.reasoning_by_id[item_id] = text
+                if self.on_progress is not None:
+                    await self.on_progress({"type": "reasoning.completed", "text": self._combined_reasoning_text() or text})
                 return
             if item_type == "commandExecution":
                 item_id = str(item.get("id") or "")
