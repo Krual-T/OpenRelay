@@ -177,6 +177,15 @@ class AgentRuntime:
             alias_key = self._compose_session_key(message, thread_id=alias)
             self.store.save_session_key_alias(alias_key, session_key)
 
+    def _remember_outbound_aliases(
+        self,
+        message: IncomingMessage,
+        session_key: str,
+        alias_groups: tuple[tuple[str, ...], ...] | list[tuple[str, ...]],
+    ) -> None:
+        for alias_ids in alias_groups:
+            self._remember_reply_aliases(message, session_key, alias_ids)
+
     def is_allowed_user(self, sender_open_id: str) -> bool:
         if sender_open_id in self.config.feishu.admin_open_ids:
             return True
@@ -398,7 +407,7 @@ class AgentRuntime:
                         reply_to_message_id=message.reply_to_message_id or ("" if self._is_card_action_message(message) else message.message_id),
                         root_id=self._root_id_for_message(message),
                     )
-                    self._remember_reply_aliases(message, self.build_session_key(message), (streaming.message_id(),))
+                    self._remember_reply_aliases(message, self.build_session_key(message), streaming.message_alias_ids())
                 if not streaming.is_active():
                     return
                 await streaming.update(snapshot)
@@ -881,18 +890,18 @@ class AgentRuntime:
                 return
             except Exception:
                 LOGGER.exception("streaming final card update failed for event_id=%s", message.event_id)
-        reply_message_ids = await self.messenger.send_text(
+        sent_messages = await self.messenger.send_text(
             message.chat_id,
             text,
             reply_to_message_id=message.reply_to_message_id or ("" if self._is_card_action_message(message) else message.message_id),
             root_id=self._root_id_for_message(message),
         )
         session_key = self.build_session_key(message)
-        self._remember_reply_aliases(message, session_key, reply_message_ids)
+        self._remember_outbound_aliases(message, session_key, [sent_message.alias_ids() for sent_message in sent_messages])
 
     async def _reply(self, message: IncomingMessage, text: str, command_reply: bool = False, command_name: str = "") -> None:
         reply_to = self._command_reply_target(message) if command_reply else (message.reply_to_message_id or ("" if self._is_card_action_message(message) else message.message_id))
-        reply_message_ids = await self.messenger.send_text(
+        sent_messages = await self.messenger.send_text(
             message.chat_id,
             text,
             reply_to_message_id=reply_to,
@@ -900,7 +909,7 @@ class AgentRuntime:
             force_new_message=command_reply and self._should_force_new_message_for_command(message, command_name),
         )
         session_key = self.build_session_key(message)
-        self._remember_reply_aliases(message, session_key, reply_message_ids)
+        self._remember_outbound_aliases(message, session_key, [sent_message.alias_ids() for sent_message in sent_messages])
 
     def available_backend_names(self) -> list[str]:
         return sorted(self.backends)
