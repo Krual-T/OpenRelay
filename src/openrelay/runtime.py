@@ -32,6 +32,7 @@ from openrelay.state import StateStore
 from openrelay.runtime_live import apply_live_progress, build_process_panel_text, build_reply_card, create_live_reply_state
 from openrelay.runtime_interactions import RunInteractionController
 from openrelay.runtime_commands import PanelCommandArgs, RuntimeCommandHooks, RuntimeCommandRouter
+from openrelay.session_scope import SessionScopeResolver
 from openrelay.session_browser import SessionBrowser, SessionSortMode
 from openrelay.session_list_card import build_session_list_card
 from openrelay.session_ux import SessionUX
@@ -86,6 +87,7 @@ class AgentRuntime:
         self.typing_manager = typing_manager or FeishuTypingManager(messenger)
         self.session_browser = SessionBrowser(config, store)
         self.session_ux = SessionUX(config, store)
+        self.session_scope = SessionScopeResolver(config, store, LOGGER)
         self.help_renderer = HelpRenderer(config, store, self.session_ux)
         self.command_router = RuntimeCommandRouter(
             config,
@@ -114,68 +116,25 @@ class AgentRuntime:
         self.store.close()
 
     def _compose_session_key(self, message: IncomingMessage, *, thread_id: str = "") -> str:
-        parts = [message.chat_type or "unknown", message.chat_id]
-        if thread_id:
-            parts.extend(["thread", thread_id])
-        if message.chat_type == "group" and self.config.feishu.group_session_scope != "shared":
-            parts.extend(["sender", message.session_owner_open_id or message.sender_open_id or "unknown"])
-        return ":".join(parts)
+        return self.session_scope.compose_key(message, thread_id=thread_id)
 
     def _thread_session_key_candidates(self, message: IncomingMessage) -> list[str]:
-        thread_ids: list[str] = []
-        for value in (message.root_id, message.thread_id, message.parent_id, message.reply_to_message_id):
-            thread_id = str(value or "").strip()
-            if thread_id and thread_id not in thread_ids:
-                thread_ids.append(thread_id)
-        return [self._compose_session_key(message, thread_id=thread_id) for thread_id in thread_ids]
+        return self.session_scope.thread_candidates(message)
 
     def _is_command_message(self, message: IncomingMessage) -> bool:
-        return str(message.text or "").strip().startswith("/")
+        return self.session_scope.is_command_message(message)
 
     def _is_top_level_message(self, message: IncomingMessage) -> bool:
-        return not message.root_id and not message.thread_id
+        return self.session_scope.is_top_level_message(message)
 
     def _is_top_level_control_command(self, message: IncomingMessage) -> bool:
-        return self._is_top_level_message(message) and self._is_command_message(message)
+        return self.session_scope.is_top_level_control_command(message)
 
     def build_session_key(self, message: IncomingMessage) -> str:
-        if message.session_key:
-            return self.store.find_session_key_alias(message.session_key) or message.session_key
-        thread_candidates = self._thread_session_key_candidates(message)
-        if thread_candidates:
-            for candidate in thread_candidates:
-                resolved = self.store.find_session_key_alias(candidate)
-                if resolved:
-                    return resolved
-            for candidate in thread_candidates:
-                if self.store.has_session_scope(candidate):
-                    return candidate
-            return thread_candidates[0]
-        if self._is_command_message(message):
-            return self._compose_session_key(message)
-        return self._compose_session_key(message, thread_id=message.message_id)
+        return self.session_scope.build_session_key(message)
 
     def _remember_thread_session_alias(self, message: IncomingMessage, session_key: str) -> None:
-        if self._is_card_action_message(message):
-            return
-        alias_source_ids: list[str] = []
-        for value in (message.root_id, message.thread_id, message.parent_id, message.reply_to_message_id):
-            candidate = str(value or "").strip()
-            if candidate and candidate not in alias_source_ids:
-                alias_source_ids.append(candidate)
-        if message.message_id and message.message_id not in alias_source_ids:
-            alias_source_ids.append(message.message_id)
-        for alias_source_id in alias_source_ids:
-            alias_key = self._compose_session_key(message, thread_id=alias_source_id)
-            self.store.save_session_key_alias(alias_key, session_key)
-
-    def _remember_reply_aliases(self, message: IncomingMessage, session_key: str, message_ids: tuple[str, ...] | list[str]) -> None:
-        for message_id in message_ids:
-            alias = str(message_id or "").strip()
-            if not alias:
-                continue
-            alias_key = self._compose_session_key(message, thread_id=alias)
-            self.store.save_session_key_alias(alias_key, session_key)
+        self.session_scope.remember_inbound_aliases(message, session_key)
 
     def _remember_outbound_aliases(
         self,
@@ -183,8 +142,7 @@ class AgentRuntime:
         session_key: str,
         alias_groups: tuple[tuple[str, ...], ...] | list[tuple[str, ...]],
     ) -> None:
-        for alias_ids in alias_groups:
-            self._remember_reply_aliases(message, session_key, alias_ids)
+        self.session_scope.remember_outbound_aliases(message, session_key, alias_groups)
 
     def is_allowed_user(self, sender_open_id: str) -> bool:
         if sender_open_id in self.config.feishu.admin_open_ids:
@@ -407,7 +365,7 @@ class AgentRuntime:
                         reply_to_message_id=message.reply_to_message_id or ("" if self._is_card_action_message(message) else message.message_id),
                         root_id=self._root_id_for_message(message),
                     )
-                    self._remember_reply_aliases(message, self.build_session_key(message), streaming.message_alias_ids())
+                    self._remember_outbound_aliases(message, self.build_session_key(message), [streaming.message_alias_ids()])
                 if not streaming.is_active():
                     return
                 await streaming.update(snapshot)
@@ -923,10 +881,10 @@ class AgentRuntime:
         return message.reply_to_message_id
 
     def _root_id_for_message(self, message: IncomingMessage) -> str:
-        return message.root_id or message.thread_id
+        return self.session_scope.root_id_for_message(message)
 
     def _is_card_action_message(self, message: IncomingMessage) -> bool:
-        return message.event_id.startswith("card-action-")
+        return self.session_scope.is_card_action_message(message)
 
     def _is_top_level_p2p_command(self, message: IncomingMessage) -> bool:
         return message.chat_type == "p2p" and not message.root_id and not message.thread_id
