@@ -1,5 +1,6 @@
 from .agent import AgentRuntime, DEFAULT_IMAGE_PROMPT
 from .commands import PanelCommandArgs, RuntimeCommandHooks, RuntimeCommandRouter
+from .execution import RuntimeExecutionCoordinator
 from .follow_up import MERGED_FOLLOW_UP_INTRO, QueuedFollowUp
 from .help import HelpRenderer
 from .live import apply_live_progress, build_process_panel_text, build_reply_card, create_live_reply_state
@@ -15,11 +16,13 @@ from .panel import (
 )
 from .restart import DEFAULT_SYSTEMD_SERVICE_UNIT, RuntimeRestartController, get_systemd_service_unit, is_systemd_service_process
 from .rendering import build_activity_summary, render_live_status_markdown, render_live_status_sections
+from .turn import BackendTurnSession, TurnRuntimeContext
 
 __all__ = [
     "AgentRuntime",
     "DEFAULT_IMAGE_PROMPT",
     "DEFAULT_SYSTEMD_SERVICE_UNIT",
+    "BackendTurnSession",
     "HelpRenderer",
     "MERGED_FOLLOW_UP_INTRO",
     "PanelCommandArgs",
@@ -30,6 +33,7 @@ __all__ = [
     "PANEL_STATUS",
     "PANEL_VIEW_LABELS",
     "QueuedFollowUp",
+    "RuntimeExecutionCoordinator",
     "RuntimeRestartController",
     "RuntimeCommandHooks",
     "RuntimeCommandRouter",
@@ -44,4 +48,5 @@ __all__ = [
     "create_live_reply_state",
     "get_systemd_service_unit",
     "is_systemd_service_process",
+    "TurnRuntimeContext",
 ]
