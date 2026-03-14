@@ -6,11 +6,12 @@ import shlex
 from typing import Awaitable, Callable, Literal
 
 from openrelay.config import AppConfig, DirectoryShortcut, SAFETY_MODES
-from openrelay.help_renderer import HelpRenderer
 from openrelay.models import IncomingMessage, SessionRecord
 from openrelay.release import format_release_channel, get_session_workspace_root, infer_release_channel, read_release_events, summarize_release_event
 from openrelay.session import DEFAULT_SESSION_LIST_PAGE_SIZE, DEFAULT_SESSION_LIST_SORT, SessionBrowser, SessionSortMode, SessionUX
 from openrelay.state import StateStore
+
+from .help import HelpRenderer
 
 
 ADMIN_ONLY_COMMANDS = {"/restart"}

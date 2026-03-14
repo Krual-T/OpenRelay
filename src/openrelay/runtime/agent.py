@@ -12,10 +12,7 @@ from typing import Any, Awaitable, Callable
 from openrelay.backends import Backend, BackendDescriptor, BackendContext, CodexBackend, build_builtin_backend_descriptors, instantiate_builtin_backends
 from openrelay.config import AppConfig
 from openrelay.feishu import FeishuMessenger, FeishuStreamingSession, FeishuTypingManager, build_streaming_content
-from openrelay.follow_up import QueuedFollowUp
-from openrelay.help_renderer import HelpRenderer
 from openrelay.models import ActiveRun, IncomingMessage, SessionRecord, utc_now
-from openrelay.panel_card import build_panel_card
 from openrelay.release import (
     append_release_event,
     build_release_session_label,
@@ -29,8 +26,11 @@ from openrelay.session import SessionBrowser, SessionScopeResolver, SessionSortM
 from openrelay.state import StateStore
 
 from .commands import PanelCommandArgs, RuntimeCommandHooks, RuntimeCommandRouter
+from .follow_up import QueuedFollowUp
+from .help import HelpRenderer
 from .interactions import RunInteractionController
 from .live import apply_live_progress, build_process_panel_text, build_reply_card, create_live_reply_state
+from .panel import build_panel_card
 
 
 DEFAULT_SYSTEMD_SERVICE_UNIT = "openrelay.service"
