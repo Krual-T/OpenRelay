@@ -123,7 +123,7 @@ class AgentRuntime:
 
     def _thread_session_key_candidates(self, message: IncomingMessage) -> list[str]:
         thread_ids: list[str] = []
-        for value in (message.root_id, message.thread_id):
+        for value in (message.root_id, message.thread_id, message.parent_id, message.reply_to_message_id):
             thread_id = str(value or "").strip()
             if thread_id and thread_id not in thread_ids:
                 thread_ids.append(thread_id)
@@ -159,14 +159,22 @@ class AgentRuntime:
         if self._is_card_action_message(message):
             return
         alias_source_ids: list[str] = []
-        for value in (message.root_id, message.thread_id):
+        for value in (message.root_id, message.thread_id, message.parent_id, message.reply_to_message_id):
             candidate = str(value or "").strip()
             if candidate and candidate not in alias_source_ids:
                 alias_source_ids.append(candidate)
-        if not alias_source_ids and self._is_top_level_message(message):
+        if not alias_source_ids and message.message_id:
             alias_source_ids.append(message.message_id)
         for alias_source_id in alias_source_ids:
             alias_key = self._compose_session_key(message, thread_id=alias_source_id)
+            self.store.save_session_key_alias(alias_key, session_key)
+
+    def _remember_reply_aliases(self, message: IncomingMessage, session_key: str, message_ids: tuple[str, ...] | list[str]) -> None:
+        for message_id in message_ids:
+            alias = str(message_id or "").strip()
+            if not alias:
+                continue
+            alias_key = self._compose_session_key(message, thread_id=alias)
             self.store.save_session_key_alias(alias_key, session_key)
 
     def is_allowed_user(self, sender_open_id: str) -> bool:
@@ -390,6 +398,7 @@ class AgentRuntime:
                         reply_to_message_id=message.reply_to_message_id or ("" if self._is_card_action_message(message) else message.message_id),
                         root_id=self._root_id_for_message(message),
                     )
+                    self._remember_reply_aliases(message, self.build_session_key(message), (streaming.message_id(),))
                 if not streaming.is_active():
                     return
                 await streaming.update(snapshot)
@@ -872,22 +881,26 @@ class AgentRuntime:
                 return
             except Exception:
                 LOGGER.exception("streaming final card update failed for event_id=%s", message.event_id)
-        await self.messenger.send_text(
+        reply_message_ids = await self.messenger.send_text(
             message.chat_id,
             text,
             reply_to_message_id=message.reply_to_message_id or ("" if self._is_card_action_message(message) else message.message_id),
             root_id=self._root_id_for_message(message),
         )
+        session_key = self.build_session_key(message)
+        self._remember_reply_aliases(message, session_key, reply_message_ids)
 
     async def _reply(self, message: IncomingMessage, text: str, command_reply: bool = False, command_name: str = "") -> None:
         reply_to = self._command_reply_target(message) if command_reply else (message.reply_to_message_id or ("" if self._is_card_action_message(message) else message.message_id))
-        await self.messenger.send_text(
+        reply_message_ids = await self.messenger.send_text(
             message.chat_id,
             text,
             reply_to_message_id=reply_to,
             root_id=self._root_id_for_message(message),
             force_new_message=command_reply and self._should_force_new_message_for_command(message, command_name),
         )
+        session_key = self.build_session_key(message)
+        self._remember_reply_aliases(message, session_key, reply_message_ids)
 
     def available_backend_names(self) -> list[str]:
         return sorted(self.backends)
