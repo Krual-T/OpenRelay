@@ -83,6 +83,9 @@
 - 新增 `src/openrelay/runtime_commands.py`
 - 把 `_handle_command` 的主分支树从 `AgentRuntime` 收敛到独立命令路由层
 - `runtime.py` 只保留命令相关协作入口与少量状态密切相关的 helper
+- 2026-03-15 新增 `src/openrelay/session/lifecycle.py`，把会话装载 / 占位会话复用策略移回 `openrelay.session`
+- 2026-03-15 新增 `src/openrelay/runtime/restart.py`，把 systemd / 进程重启控制从 `AgentRuntime` 分离为 runtime 内部协作者
+- `AgentRuntime` 进一步收敛为消息编排器，避免继续混入会话域策略和进程控制细节
 
 ## 预期结果
 

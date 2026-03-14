@@ -1,4 +1,4 @@
-from .agent import AgentRuntime, DEFAULT_IMAGE_PROMPT, get_systemd_service_unit, is_systemd_service_process
+from .agent import AgentRuntime, DEFAULT_IMAGE_PROMPT
 from .commands import PanelCommandArgs, RuntimeCommandHooks, RuntimeCommandRouter
 from .follow_up import MERGED_FOLLOW_UP_INTRO, QueuedFollowUp
 from .help import HelpRenderer
@@ -13,11 +13,13 @@ from .panel import (
     SESSION_SORT_LABELS,
     build_panel_card,
 )
+from .restart import DEFAULT_SYSTEMD_SERVICE_UNIT, RuntimeRestartController, get_systemd_service_unit, is_systemd_service_process
 from .rendering import build_activity_summary, render_live_status_markdown, render_live_status_sections
 
 __all__ = [
     "AgentRuntime",
     "DEFAULT_IMAGE_PROMPT",
+    "DEFAULT_SYSTEMD_SERVICE_UNIT",
     "HelpRenderer",
     "MERGED_FOLLOW_UP_INTRO",
     "PanelCommandArgs",
@@ -28,6 +30,7 @@ __all__ = [
     "PANEL_STATUS",
     "PANEL_VIEW_LABELS",
     "QueuedFollowUp",
+    "RuntimeRestartController",
     "RuntimeCommandHooks",
     "RuntimeCommandRouter",
     "SESSION_SORT_LABELS",
