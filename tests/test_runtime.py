@@ -1521,6 +1521,60 @@ async def test_runtime_reply_chain_without_thread_ids_reuses_previous_bot_reply_
 
 
 @pytest.mark.asyncio
+async def test_runtime_reply_chain_reuses_alias_when_user_replies_to_previous_user_message(tmp_path: Path) -> None:
+    config = make_config(tmp_path)
+    config.workspace_root.mkdir(parents=True, exist_ok=True)
+    config.main_workspace_dir.mkdir(parents=True, exist_ok=True)
+    config.develop_workspace_dir.mkdir(parents=True, exist_ok=True)
+    store = StateStore(config)
+    messenger = FakeMessenger()
+    backend = FakeBackend()
+    runtime = AgentRuntime(config, store, messenger, backends={"codex": backend})
+
+    await runtime.dispatch_message(make_message("first task", event_suffix="first"))
+
+    first_follow_up = IncomingMessage(
+        event_id="evt_parent_follow_up_1",
+        message_id="om_parent_follow_up_1",
+        chat_id="oc_1",
+        chat_type="p2p",
+        sender_open_id="ou_user",
+        parent_id="om_bot_1",
+        text="continue from reply",
+        actionable=True,
+    )
+    await runtime.dispatch_message(first_follow_up)
+
+    second_follow_up = IncomingMessage(
+        event_id="evt_parent_follow_up_2",
+        message_id="om_parent_follow_up_2",
+        chat_id="oc_1",
+        chat_type="p2p",
+        sender_open_id="ou_user",
+        parent_id="om_parent_follow_up_1",
+        text="continue again",
+        actionable=True,
+    )
+
+    assert runtime.build_session_key(second_follow_up) == "p2p:oc_1:thread:om_first"
+
+    await runtime.dispatch_message(second_follow_up)
+
+    assert len(backend.calls) == 3
+    assert backend.calls[-1][0].native_session_id == "native_1"
+    session = store.load_session("p2p:oc_1:thread:om_first")
+    assert [entry["content"] for entry in store.list_messages(session.session_id)] == [
+        "first task",
+        "echo: first task",
+        "continue from reply",
+        "echo: continue from reply",
+        "continue again",
+        "echo: continue again",
+    ]
+    await runtime.shutdown()
+
+
+@pytest.mark.asyncio
 async def test_runtime_group_thread_reply_reuses_top_level_thread_scope(tmp_path: Path) -> None:
     config = make_config(tmp_path)
     config.workspace_root.mkdir(parents=True, exist_ok=True)
