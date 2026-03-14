@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from openrelay.card_theme import status_emoji
+from openrelay.feishu.cards import status_emoji
 
 
 def normalize_inline(text: object) -> str:

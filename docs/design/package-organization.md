@@ -21,4 +21,5 @@
 - `runtime.py`、`runtime_commands.py`、`runtime_live.py` 与 runtime 交互模块收敛到 `openrelay.runtime`
 - `session_browser.py`、`session_ux.py`、`session_list_card.py`、`session_scope` 收敛到 `openrelay.session`
 - `feishu_reply_card.py`、`streaming_card.py`、`feishu_ws.py` 继续收敛到 `openrelay.feishu`
+- `card_actions.py`、`card_theme.py`、`typing.py` 收敛到 `openrelay.feishu`，其中卡片协议与主题进一步归类到 `openrelay.feishu.cards`
 - `openrelay.feishu` 现在统一承载消息解析、发送、事件分发、卡片构建、流式卡片会话与 websocket 客户端
