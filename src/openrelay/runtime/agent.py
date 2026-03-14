@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import copy
 from collections import defaultdict, deque
+from dataclasses import dataclass
 import logging
 import os
 from pathlib import Path
@@ -10,10 +11,11 @@ import sys
 from typing import Any, Awaitable, Callable
 
 from openrelay.backends import Backend, BackendDescriptor, BackendContext, CodexBackend, build_builtin_backend_descriptors, instantiate_builtin_backends
-from openrelay.config import AppConfig
-from openrelay.feishu import FeishuMessenger, FeishuStreamingSession, FeishuTypingManager, build_streaming_content
-from openrelay.models import ActiveRun, IncomingMessage, SessionRecord, utc_now
-from openrelay.release import (
+from openrelay.core import (
+    ActiveRun,
+    AppConfig,
+    IncomingMessage,
+    SessionRecord,
     append_release_event,
     build_release_session_label,
     build_release_switch_note,
@@ -21,9 +23,11 @@ from openrelay.release import (
     get_release_workspace,
     get_session_workspace_root,
     infer_release_channel,
+    utc_now,
 )
+from openrelay.feishu import FeishuMessenger, FeishuStreamingSession, FeishuTypingManager, build_streaming_content
 from openrelay.session import SessionBrowser, SessionScopeResolver, SessionSortMode, SessionUX, build_session_list_card
-from openrelay.state import StateStore
+from openrelay.storage import StateStore
 
 from .commands import PanelCommandArgs, RuntimeCommandHooks, RuntimeCommandRouter
 from .follow_up import QueuedFollowUp
@@ -55,6 +59,226 @@ def is_systemd_service_process(env: dict[str, str] | None = None, pid: int | Non
         return int(raw_exec_pid) == current_pid
     except ValueError:
         return False
+
+
+@dataclass(slots=True)
+class _ReplyRoute:
+    reply_to_message_id: str
+    root_id: str
+    force_new_message: bool = False
+
+
+class _BackendTurnSession:
+    def __init__(self, runtime: AgentRuntime, message: IncomingMessage, execution_key: str, session: SessionRecord):
+        self.runtime = runtime
+        self.message = message
+        self.execution_key = execution_key
+        self.session = session
+        self.cancel_event = asyncio.Event()
+        self.interaction_controller: RunInteractionController | None = None
+        self.typing_state: dict[str, Any] | None = None
+        self.streaming: FeishuStreamingSession | None = None
+        self.streaming_broken = False
+        self.last_live_text = ""
+        self.spinner_task: asyncio.Task[None] | None = None
+        self.streaming_update_event = asyncio.Event()
+        self.pending_streaming_states: deque[dict[str, Any]] = deque()
+        self.live_state = create_live_reply_state(session, runtime.session_ux.format_cwd)
+        if session.backend != "codex":
+            self.live_state["heading"] = "Generating reply"
+            self.live_state["status"] = "Waiting for streamed output"
+
+    async def prepare(self, message_summary: str) -> None:
+        self.session = self.runtime.session_ux.label_session_if_needed(self.session, message_summary)
+        self.runtime.store.save_session(self.session)
+        self.runtime.store.append_message(self.session.session_id, "user", message_summary)
+        await self._start_typing()
+        await self._start_streaming_if_needed()
+
+    async def persist_native_thread_id(self, thread_id: str) -> None:
+        normalized = str(thread_id or "").strip()
+        if not normalized or self.session.native_session_id == normalized:
+            return
+        self.session.native_session_id = normalized
+        self.runtime.store.save_session(self.session)
+        LOGGER.info(
+            "persisted native thread early event_id=%s message_id=%s session_id=%s native_session_id=%s",
+            self.message.event_id,
+            self.message.message_id,
+            self.session.session_id,
+            normalized,
+        )
+
+    async def cancel(self, _reason: str) -> None:
+        self.cancel_event.set()
+        if self.interaction_controller is not None:
+            await self.interaction_controller.shutdown()
+
+    def build_interaction_controller(self) -> RunInteractionController:
+        self.interaction_controller = RunInteractionController(
+            self.runtime.messenger,
+            chat_id=self.message.chat_id,
+            root_id=self.runtime._root_id_for_message(self.message),
+            action_context=self.runtime._build_card_action_context(self.message, self.session.base_key),
+            reply_target_getter=self.reply_target_message_id,
+            emit_progress=self.on_progress,
+            send_text=lambda text: self.runtime.messenger.send_text(
+                self.message.chat_id,
+                text,
+                reply_to_message_id=self.reply_target_message_id(),
+                root_id=self.runtime._root_id_for_message(self.message),
+            ),
+            cancel_event=self.cancel_event,
+        )
+        return self.interaction_controller
+
+    def activate_run(self, message_summary: str) -> ActiveRun:
+        return ActiveRun(
+            started_at=utc_now(),
+            description=self.runtime.session_ux.shorten(message_summary, 72),
+            cancel=self.cancel,
+            try_handle_input=self.interaction_controller.try_handle_message if self.interaction_controller is not None else None,
+        )
+
+    def build_backend_context(self) -> BackendContext:
+        return BackendContext(
+            workspace_root=get_session_workspace_root(self.runtime.config, self.session),
+            local_image_paths=self.message.local_image_paths,
+            cancel_event=self.cancel_event,
+            on_partial_text=self.on_partial_text,
+            on_progress=self.on_progress,
+            on_thread_started=self.persist_native_thread_id,
+            on_server_request=self.interaction_controller.request if self.interaction_controller is not None else None,
+        )
+
+    async def on_partial_text(self, partial_text: str) -> None:
+        if not partial_text.strip():
+            return
+        self.live_state["heading"] = "Generating reply"
+        self.live_state["status"] = "Streaming output"
+        self.live_state["partial_text"] = partial_text
+        self._request_streaming_update()
+
+    async def on_progress(self, event: dict[str, Any]) -> None:
+        apply_live_progress(self.live_state, event)
+        self._request_streaming_update()
+
+    def reply_target_message_id(self) -> str:
+        if self.streaming is not None and self.streaming.has_started() and self.streaming.message_id():
+            return self.streaming.message_id()
+        return self.message.reply_to_message_id or ("" if self.runtime._is_card_action_message(self.message) else self.message.message_id)
+
+    async def save_reply(self, reply: Any) -> SessionRecord:
+        updated = SessionRecord(
+            session_id=self.session.session_id,
+            base_key=self.session.base_key,
+            backend=self.session.backend,
+            cwd=self.session.cwd,
+            label=self.session.label,
+            model_override=self.session.model_override,
+            safety_mode=self.session.safety_mode,
+            native_session_id=reply.native_session_id or self.session.native_session_id,
+            release_channel=self.session.release_channel,
+            last_usage=reply.metadata.get("usage", {}) if isinstance(reply.metadata, dict) else {},
+            created_at=self.session.created_at,
+        )
+        updated = self.runtime.store.save_session(updated)
+        LOGGER.info(
+            "backend turn saved session event_id=%s message_id=%s session_id=%s native_session_id=%s backend=%s",
+            self.message.event_id,
+            self.message.message_id,
+            updated.session_id,
+            updated.native_session_id,
+            updated.backend,
+        )
+        self.runtime.store.append_message(updated.session_id, "assistant", reply.text)
+        self.session = updated
+        return updated
+
+    async def reply_final(self, text: str) -> None:
+        self._stop_spinner_task()
+        await self.runtime._reply_final(self.message, text, self.streaming, self.live_state)
+
+    async def finalize(self) -> None:
+        self._stop_spinner_task()
+        if self.interaction_controller is not None:
+            await self.interaction_controller.shutdown()
+        if self.typing_state is not None:
+            try:
+                await self.runtime.typing_manager.remove(self.typing_state)
+            except Exception:
+                LOGGER.exception("typing stop failed for message_id=%s", self.message.message_id)
+
+    async def _start_typing(self) -> None:
+        if not self.message.message_id or self.runtime.config.feishu.stream_mode == "off":
+            return
+        try:
+            self.typing_state = await self.runtime.typing_manager.add(self.message.message_id)
+        except Exception:
+            LOGGER.exception("typing start failed for message_id=%s", self.message.message_id)
+
+    async def _start_streaming_if_needed(self) -> None:
+        if self.runtime.config.feishu.stream_mode != "card":
+            return
+        self.pending_streaming_states.append(copy.deepcopy(self.live_state))
+        await self._update_streaming(self.pending_streaming_states.popleft())
+        self.spinner_task = asyncio.create_task(self._spinner_loop())
+
+    def _stop_spinner_task(self) -> None:
+        if self.spinner_task is None:
+            return
+        self.spinner_task.cancel()
+        self.spinner_task = None
+
+    def _request_streaming_update(self) -> None:
+        if self.runtime.config.feishu.stream_mode != "card" or self.streaming_broken:
+            return
+        self.pending_streaming_states.append(copy.deepcopy(self.live_state))
+        self.streaming_update_event.set()
+
+    async def _update_streaming(self, snapshot: dict[str, Any]) -> None:
+        if self.runtime.config.feishu.stream_mode != "card" or self.streaming_broken:
+            return
+        live_text = build_streaming_content(snapshot)
+        if not live_text or live_text == self.last_live_text:
+            return
+        try:
+            if self.streaming is None:
+                self.streaming = self.runtime.streaming_session_factory(self.runtime.messenger)
+                await self.streaming.start(
+                    self.message.chat_id,
+                    reply_to_message_id=self.message.reply_to_message_id or ("" if self.runtime._is_card_action_message(self.message) else self.message.message_id),
+                    root_id=self.runtime._root_id_for_message(self.message),
+                )
+                self.runtime._remember_outbound_aliases(self.message, self.runtime.build_session_key(self.message), [self.streaming.message_alias_ids()])
+            if not self.streaming.is_active():
+                return
+            await self.streaming.update(snapshot)
+            self.last_live_text = live_text
+        except Exception:
+            has_started = self.streaming.has_started() if self.streaming is not None else False
+            self.streaming_broken = True
+            if not has_started:
+                self.streaming = None
+            self._stop_spinner_task()
+            LOGGER.exception("streaming update failed for execution_key=%s", self.execution_key)
+
+    async def _spinner_loop(self) -> None:
+        while True:
+            try:
+                await asyncio.wait_for(self.streaming_update_event.wait(), timeout=1.0)
+                self.streaming_update_event.clear()
+            except asyncio.TimeoutError:
+                self.live_state["spinner_frame"] = (int(self.live_state.get("spinner_frame", 0) or 0) + 1) % 3
+                self.pending_streaming_states.append(copy.deepcopy(self.live_state))
+            try:
+                while self.pending_streaming_states:
+                    snapshot = self.pending_streaming_states.popleft()
+                    await self._update_streaming(snapshot)
+            except Exception:
+                self._stop_spinner_task()
+                LOGGER.exception("streaming tick failed for execution_key=%s", self.execution_key)
+                return
 
 
 class AgentRuntime:
@@ -329,212 +553,30 @@ class AgentRuntime:
             await self._reply(message, f"Unsupported backend: {session.backend}")
             return
 
-        cancel_event = asyncio.Event()
-        interaction_controller: RunInteractionController | None = None
-
-        async def persist_native_thread_id(thread_id: str) -> None:
-            normalized = str(thread_id or "").strip()
-            if not normalized or session.native_session_id == normalized:
-                return
-            session.native_session_id = normalized
-            self.store.save_session(session)
-            LOGGER.info(
-                "persisted native thread early event_id=%s message_id=%s session_id=%s native_session_id=%s",
-                message.event_id,
-                message.message_id,
-                session.session_id,
-                normalized,
-            )
-
-        async def cancel(_reason: str) -> None:
-            cancel_event.set()
-            if interaction_controller is not None:
-                await interaction_controller.shutdown()
-
         message_summary = self._message_summary_text(message)
         backend_prompt = self._build_backend_prompt(message)
-        typing_state: dict[str, Any] | None = None
-        streaming: FeishuStreamingSession | None = None
-        streaming_broken = False
-        last_live_text = ""
-        spinner_task: asyncio.Task[None] | None = None
-        streaming_update_event = asyncio.Event()
-        pending_streaming_states: deque[dict[str, Any]] = deque()
-        live_state = create_live_reply_state(session, self.session_ux.format_cwd)
-        if session.backend != "codex":
-            live_state["heading"] = "Generating reply"
-            live_state["status"] = "Waiting for streamed output"
-
-        def stop_spinner_task() -> None:
-            nonlocal spinner_task
-            if spinner_task is None:
-                return
-            spinner_task.cancel()
-            spinner_task = None
-
-        def request_streaming_update() -> None:
-            if self.config.feishu.stream_mode != "card" or streaming_broken:
-                return
-            pending_streaming_states.append(copy.deepcopy(live_state))
-            streaming_update_event.set()
-
-        async def update_streaming(snapshot: dict[str, Any]) -> None:
-            nonlocal streaming, streaming_broken, last_live_text
-            if self.config.feishu.stream_mode != "card" or streaming_broken:
-                return
-            live_text = build_streaming_content(snapshot)
-            if not live_text or live_text == last_live_text:
-                return
-            try:
-                if streaming is None:
-                    streaming = self.streaming_session_factory(self.messenger)
-                    await streaming.start(
-                        message.chat_id,
-                        reply_to_message_id=message.reply_to_message_id or ("" if self._is_card_action_message(message) else message.message_id),
-                        root_id=self._root_id_for_message(message),
-                    )
-                    self._remember_outbound_aliases(message, self.build_session_key(message), [streaming.message_alias_ids()])
-                if not streaming.is_active():
-                    return
-                await streaming.update(snapshot)
-                last_live_text = live_text
-            except Exception:
-                has_started = streaming.has_started() if streaming is not None else False
-                streaming_broken = True
-                if not has_started:
-                    streaming = None
-                stop_spinner_task()
-                LOGGER.exception("streaming update failed for execution_key=%s", execution_key)
-
-        async def spinner_loop() -> None:
-            while True:
-                try:
-                    await asyncio.wait_for(streaming_update_event.wait(), timeout=1.0)
-                    streaming_update_event.clear()
-                except asyncio.TimeoutError:
-                    live_state["spinner_frame"] = (int(live_state.get("spinner_frame", 0) or 0) + 1) % 3
-                    pending_streaming_states.append(copy.deepcopy(live_state))
-                try:
-                    while pending_streaming_states:
-                        snapshot = pending_streaming_states.popleft()
-                        await update_streaming(snapshot)
-                except Exception:
-                    stop_spinner_task()
-                    LOGGER.exception("streaming tick failed for execution_key=%s", execution_key)
-                    return
+        turn = _BackendTurnSession(self, message, execution_key, session)
 
         try:
-            session = self.session_ux.label_session_if_needed(session, message_summary)
-            self.store.save_session(session)
-            self.store.append_message(session.session_id, "user", message_summary)
-
-            if message.message_id and self.config.feishu.stream_mode != "off":
-                try:
-                    typing_state = await self.typing_manager.add(message.message_id)
-                except Exception:
-                    LOGGER.exception("typing start failed for message_id=%s", message.message_id)
-
-            if self.config.feishu.stream_mode == "card":
-                pending_streaming_states.append(copy.deepcopy(live_state))
-                await update_streaming(pending_streaming_states.popleft())
-                spinner_task = asyncio.create_task(spinner_loop())
-
-            async def on_partial_text(partial_text: str) -> None:
-                if not partial_text.strip():
-                    return
-                live_state["heading"] = "Generating reply"
-                live_state["status"] = "Streaming output"
-                live_state["partial_text"] = partial_text
-                request_streaming_update()
-
-            async def on_progress(event: dict[str, Any]) -> None:
-                apply_live_progress(live_state, event)
-                request_streaming_update()
-
-            interaction_controller = RunInteractionController(
-                self.messenger,
-                chat_id=message.chat_id,
-                root_id=self._root_id_for_message(message),
-                action_context=self._build_card_action_context(message, session.base_key),
-                reply_target_getter=lambda: (
-                    streaming.message_id()
-                    if streaming is not None and streaming.has_started() and streaming.message_id()
-                    else (message.reply_to_message_id or ("" if self._is_card_action_message(message) else message.message_id))
-                ),
-                emit_progress=on_progress,
-                send_text=lambda text: self.messenger.send_text(
-                    message.chat_id,
-                    text,
-                    reply_to_message_id=(
-                        streaming.message_id()
-                        if streaming is not None and streaming.has_started() and streaming.message_id()
-                        else (message.reply_to_message_id or ("" if self._is_card_action_message(message) else message.message_id))
-                    ),
-                    root_id=self._root_id_for_message(message),
-                ),
-                cancel_event=cancel_event,
-            )
-            self.active_runs[execution_key] = ActiveRun(
-                started_at=utc_now(),
-                description=self.session_ux.shorten(message_summary, 72),
-                cancel=cancel,
-                try_handle_input=interaction_controller.try_handle_message,
-            )
+            await turn.prepare(message_summary)
+            turn.build_interaction_controller()
+            self.active_runs[execution_key] = turn.activate_run(message_summary)
 
             reply = await backend.run(
-                session,
+                turn.session,
                 backend_prompt,
-                BackendContext(
-                    workspace_root=get_session_workspace_root(self.config, session),
-                    local_image_paths=message.local_image_paths,
-                    cancel_event=cancel_event,
-                    on_partial_text=on_partial_text,
-                    on_progress=on_progress,
-                    on_thread_started=persist_native_thread_id,
-                    on_server_request=interaction_controller.request if interaction_controller is not None else None,
-                ),
+                turn.build_backend_context(),
             )
-            updated = SessionRecord(
-                session_id=session.session_id,
-                base_key=session.base_key,
-                backend=session.backend,
-                cwd=session.cwd,
-                label=session.label,
-                model_override=session.model_override,
-                safety_mode=session.safety_mode,
-                native_session_id=reply.native_session_id or session.native_session_id,
-                release_channel=session.release_channel,
-                last_usage=reply.metadata.get("usage", {}) if isinstance(reply.metadata, dict) else {},
-                created_at=session.created_at,
-            )
-            updated = self.store.save_session(updated)
-            LOGGER.info(
-                "backend turn saved session event_id=%s message_id=%s session_id=%s native_session_id=%s backend=%s",
-                message.event_id,
-                message.message_id,
-                updated.session_id,
-                updated.native_session_id,
-                updated.backend,
-            )
-            self.store.append_message(updated.session_id, "assistant", reply.text)
-            stop_spinner_task()
-            await self._reply_final(message, reply.text or "(empty reply)", streaming, live_state)
+            await turn.save_reply(reply)
+            await turn.reply_final(reply.text or "(empty reply)")
         except Exception as exc:
-            stop_spinner_task()
             if "interrupted by /stop" in str(exc).lower() or "interrupted" in str(exc).lower():
-                await self._reply_final(message, "已停止当前回复。", streaming, live_state)
+                await turn.reply_final("已停止当前回复。")
             else:
-                await self._reply_final(message, f"处理失败：{exc}", streaming, live_state)
+                await turn.reply_final(f"处理失败：{exc}")
         finally:
-            stop_spinner_task()
-            if interaction_controller is not None:
-                await interaction_controller.shutdown()
             self.active_runs.pop(execution_key, None)
-            if typing_state is not None:
-                try:
-                    await self.typing_manager.remove(typing_state)
-                except Exception:
-                    LOGGER.exception("typing stop failed for message_id=%s", message.message_id)
+            await turn.finalize()
 
     async def _handle_command(self, message: IncomingMessage, session_key: str, session: SessionRecord) -> bool:
         return await self.command_router.handle(message, session_key, session)
@@ -885,29 +927,38 @@ class AgentRuntime:
                 return
             except Exception:
                 LOGGER.exception("streaming final card update failed for event_id=%s", message.event_id)
-        sent_messages = await self.messenger.send_text(
-            message.chat_id,
-            text,
-            reply_to_message_id=message.reply_to_message_id or ("" if self._is_card_action_message(message) else message.message_id),
-            root_id=self._root_id_for_message(message),
-        )
-        session_key = self.build_session_key(message)
-        self._remember_outbound_aliases(message, session_key, [sent_message.alias_ids() for sent_message in sent_messages])
+        await self._send_text_reply(message, text, self._build_default_reply_route(message))
 
     async def _reply(self, message: IncomingMessage, text: str, command_reply: bool = False, command_name: str = "") -> None:
-        reply_to = self._command_reply_target(message) if command_reply else (message.reply_to_message_id or ("" if self._is_card_action_message(message) else message.message_id))
-        sent_messages = await self.messenger.send_text(
-            message.chat_id,
-            text,
-            reply_to_message_id=reply_to,
-            root_id=self._root_id_for_message(message),
-            force_new_message=command_reply and self._should_force_new_message_for_command(message, command_name),
-        )
-        session_key = self.build_session_key(message)
-        self._remember_outbound_aliases(message, session_key, [sent_message.alias_ids() for sent_message in sent_messages])
+        route = self._build_command_reply_route(message, command_name) if command_reply else self._build_default_reply_route(message)
+        await self._send_text_reply(message, text, route)
 
     def available_backend_names(self) -> list[str]:
         return sorted(self.backends)
+
+    async def _send_text_reply(self, message: IncomingMessage, text: str, route: _ReplyRoute) -> None:
+        sent_messages = await self.messenger.send_text(
+            message.chat_id,
+            text,
+            reply_to_message_id=route.reply_to_message_id,
+            root_id=route.root_id,
+            force_new_message=route.force_new_message,
+        )
+        session_key = self.build_session_key(message)
+        self._remember_outbound_aliases(message, session_key, [sent_message.alias_ids() for sent_message in sent_messages])
+
+    def _build_default_reply_route(self, message: IncomingMessage) -> _ReplyRoute:
+        return _ReplyRoute(
+            reply_to_message_id=message.reply_to_message_id or ("" if self._is_card_action_message(message) else message.message_id),
+            root_id=self._root_id_for_message(message),
+        )
+
+    def _build_command_reply_route(self, message: IncomingMessage, command_name: str) -> _ReplyRoute:
+        return _ReplyRoute(
+            reply_to_message_id=self._command_reply_target(message),
+            root_id=self._root_id_for_message(message),
+            force_new_message=self._should_force_new_message_for_command(message, command_name),
+        )
 
     def _command_reply_target(self, message: IncomingMessage) -> str:
         return message.reply_to_message_id or ("" if self._is_card_action_message(message) else message.message_id)
