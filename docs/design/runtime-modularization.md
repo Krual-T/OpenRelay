@@ -86,6 +86,9 @@
 - 2026-03-15 新增 `src/openrelay/session/lifecycle.py`，把会话装载 / 占位会话复用策略移回 `openrelay.session`
 - 2026-03-15 新增 `src/openrelay/runtime/restart.py`，把 systemd / 进程重启控制从 `AgentRuntime` 分离为 runtime 内部协作者
 - `AgentRuntime` 进一步收敛为消息编排器，避免继续混入会话域策略和进程控制细节
+- 2026-03-15 新增 `src/openrelay/runtime/turn.py`，把 backend turn 生命周期、交互控制、流式回复状态从 `AgentRuntime` 移出
+- 2026-03-15 新增 `src/openrelay/runtime/execution.py`，把 active run、串行锁和 follow-up 队列从 `AgentRuntime` 移到执行协调器
+- `AgentRuntime` 现在主要保留 dispatch、命令分流、session 解析委托与顶层异常边界
 
 ## 预期结果
 

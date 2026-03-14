@@ -1,17 +1,14 @@
 from __future__ import annotations
 
 import asyncio
-import copy
-from collections import defaultdict, deque
 from dataclasses import dataclass
 import logging
 import os
 import sys
-from typing import Any, Awaitable, Callable
+from typing import Callable
 
-from openrelay.backends import Backend, BackendDescriptor, BackendContext, CodexBackend, build_builtin_backend_descriptors, instantiate_builtin_backends
+from openrelay.backends import Backend, BackendDescriptor, CodexBackend, build_builtin_backend_descriptors, instantiate_builtin_backends
 from openrelay.core import (
-    ActiveRun,
     AppConfig,
     IncomingMessage,
     SessionRecord,
@@ -20,21 +17,20 @@ from openrelay.core import (
     build_release_switch_note,
     format_release_channel,
     get_release_workspace,
-    get_session_workspace_root,
     infer_release_channel,
-    utc_now,
 )
-from openrelay.feishu import FeishuMessenger, FeishuStreamingSession, FeishuTypingManager, build_streaming_content
+from openrelay.feishu import FeishuMessenger, FeishuStreamingSession, FeishuTypingManager
 from openrelay.session import SessionBrowser, SessionLifecycleResolver, SessionScopeResolver, SessionSortMode, SessionUX, build_session_list_card
 from openrelay.storage import StateStore
 
 from .commands import PanelCommandArgs, RuntimeCommandHooks, RuntimeCommandRouter
+from .execution import ExecutionInput, RuntimeExecutionCoordinator
 from .follow_up import QueuedFollowUp
 from .help import HelpRenderer
-from .interactions import RunInteractionController
-from .live import apply_live_progress, build_process_panel_text, build_reply_card, create_live_reply_state
+from .live import build_process_panel_text, build_reply_card
 from .panel import build_panel_card
 from .restart import RuntimeRestartController, get_systemd_service_unit, is_systemd_service_process
+from .turn import BackendTurnSession, TurnRuntimeContext
 NON_BLOCKING_ACTIVE_RUN_COMMANDS = {"/ping", "/status", "/usage", "/help", "/tools", "/panel", "/restart"}
 DEFAULT_IMAGE_PROMPT = "用户发送了图片。请先查看图片内容，再根据图片直接回答用户。"
 LOGGER = logging.getLogger("openrelay.runtime")
@@ -45,219 +41,6 @@ class _ReplyRoute:
     reply_to_message_id: str
     root_id: str
     force_new_message: bool = False
-
-
-class _BackendTurnSession:
-    def __init__(self, runtime: AgentRuntime, message: IncomingMessage, execution_key: str, session: SessionRecord):
-        self.runtime = runtime
-        self.message = message
-        self.execution_key = execution_key
-        self.session = session
-        self.cancel_event = asyncio.Event()
-        self.interaction_controller: RunInteractionController | None = None
-        self.typing_state: dict[str, Any] | None = None
-        self.streaming: FeishuStreamingSession | None = None
-        self.streaming_broken = False
-        self.last_live_text = ""
-        self.spinner_task: asyncio.Task[None] | None = None
-        self.streaming_update_event = asyncio.Event()
-        self.pending_streaming_states: deque[dict[str, Any]] = deque()
-        self.live_state = create_live_reply_state(session, runtime.session_ux.format_cwd)
-        if session.backend != "codex":
-            self.live_state["heading"] = "Generating reply"
-            self.live_state["status"] = "Waiting for streamed output"
-
-    async def prepare(self, message_summary: str) -> None:
-        self.session = self.runtime.session_ux.label_session_if_needed(self.session, message_summary)
-        self.runtime.store.save_session(self.session)
-        self.runtime.store.append_message(self.session.session_id, "user", message_summary)
-        await self._start_typing()
-        await self._start_streaming_if_needed()
-
-    async def persist_native_thread_id(self, thread_id: str) -> None:
-        normalized = str(thread_id or "").strip()
-        if not normalized or self.session.native_session_id == normalized:
-            return
-        self.session.native_session_id = normalized
-        self.runtime.store.save_session(self.session)
-        LOGGER.info(
-            "persisted native thread early event_id=%s message_id=%s session_id=%s native_session_id=%s",
-            self.message.event_id,
-            self.message.message_id,
-            self.session.session_id,
-            normalized,
-        )
-
-    async def cancel(self, _reason: str) -> None:
-        self.cancel_event.set()
-        if self.interaction_controller is not None:
-            await self.interaction_controller.shutdown()
-
-    def build_interaction_controller(self) -> RunInteractionController:
-        self.interaction_controller = RunInteractionController(
-            self.runtime.messenger,
-            chat_id=self.message.chat_id,
-            root_id=self.runtime._root_id_for_message(self.message),
-            action_context=self.runtime._build_card_action_context(self.message, self.session.base_key),
-            reply_target_getter=self.reply_target_message_id,
-            emit_progress=self.on_progress,
-            send_text=lambda text: self.runtime.messenger.send_text(
-                self.message.chat_id,
-                text,
-                reply_to_message_id=self.reply_target_message_id(),
-                root_id=self.runtime._root_id_for_message(self.message),
-            ),
-            cancel_event=self.cancel_event,
-        )
-        return self.interaction_controller
-
-    def activate_run(self, message_summary: str) -> ActiveRun:
-        return ActiveRun(
-            started_at=utc_now(),
-            description=self.runtime.session_ux.shorten(message_summary, 72),
-            cancel=self.cancel,
-            try_handle_input=self.interaction_controller.try_handle_message if self.interaction_controller is not None else None,
-        )
-
-    def build_backend_context(self) -> BackendContext:
-        return BackendContext(
-            workspace_root=get_session_workspace_root(self.runtime.config, self.session),
-            local_image_paths=self.message.local_image_paths,
-            cancel_event=self.cancel_event,
-            on_partial_text=self.on_partial_text,
-            on_progress=self.on_progress,
-            on_thread_started=self.persist_native_thread_id,
-            on_server_request=self.interaction_controller.request if self.interaction_controller is not None else None,
-        )
-
-    async def on_partial_text(self, partial_text: str) -> None:
-        if not partial_text.strip():
-            return
-        self.live_state["heading"] = "Generating reply"
-        self.live_state["status"] = "Streaming output"
-        self.live_state["partial_text"] = partial_text
-        self._request_streaming_update()
-
-    async def on_progress(self, event: dict[str, Any]) -> None:
-        apply_live_progress(self.live_state, event)
-        self._request_streaming_update()
-
-    def reply_target_message_id(self) -> str:
-        if self.streaming is not None and self.streaming.has_started() and self.streaming.message_id():
-            return self.streaming.message_id()
-        return self.message.reply_to_message_id or ("" if self.runtime._is_card_action_message(self.message) else self.message.message_id)
-
-    async def save_reply(self, reply: Any) -> SessionRecord:
-        updated = SessionRecord(
-            session_id=self.session.session_id,
-            base_key=self.session.base_key,
-            backend=self.session.backend,
-            cwd=self.session.cwd,
-            label=self.session.label,
-            model_override=self.session.model_override,
-            safety_mode=self.session.safety_mode,
-            native_session_id=reply.native_session_id or self.session.native_session_id,
-            release_channel=self.session.release_channel,
-            last_usage=reply.metadata.get("usage", {}) if isinstance(reply.metadata, dict) else {},
-            created_at=self.session.created_at,
-        )
-        updated = self.runtime.store.save_session(updated)
-        LOGGER.info(
-            "backend turn saved session event_id=%s message_id=%s session_id=%s native_session_id=%s backend=%s",
-            self.message.event_id,
-            self.message.message_id,
-            updated.session_id,
-            updated.native_session_id,
-            updated.backend,
-        )
-        self.runtime.store.append_message(updated.session_id, "assistant", reply.text)
-        self.session = updated
-        return updated
-
-    async def reply_final(self, text: str) -> None:
-        self._stop_spinner_task()
-        await self.runtime._reply_final(self.message, text, self.streaming, self.live_state)
-
-    async def finalize(self) -> None:
-        self._stop_spinner_task()
-        if self.interaction_controller is not None:
-            await self.interaction_controller.shutdown()
-        if self.typing_state is not None:
-            try:
-                await self.runtime.typing_manager.remove(self.typing_state)
-            except Exception:
-                LOGGER.exception("typing stop failed for message_id=%s", self.message.message_id)
-
-    async def _start_typing(self) -> None:
-        if not self.message.message_id or self.runtime.config.feishu.stream_mode == "off":
-            return
-        try:
-            self.typing_state = await self.runtime.typing_manager.add(self.message.message_id)
-        except Exception:
-            LOGGER.exception("typing start failed for message_id=%s", self.message.message_id)
-
-    async def _start_streaming_if_needed(self) -> None:
-        if self.runtime.config.feishu.stream_mode != "card":
-            return
-        self.pending_streaming_states.append(copy.deepcopy(self.live_state))
-        await self._update_streaming(self.pending_streaming_states.popleft())
-        self.spinner_task = asyncio.create_task(self._spinner_loop())
-
-    def _stop_spinner_task(self) -> None:
-        if self.spinner_task is None:
-            return
-        self.spinner_task.cancel()
-        self.spinner_task = None
-
-    def _request_streaming_update(self) -> None:
-        if self.runtime.config.feishu.stream_mode != "card" or self.streaming_broken:
-            return
-        self.pending_streaming_states.append(copy.deepcopy(self.live_state))
-        self.streaming_update_event.set()
-
-    async def _update_streaming(self, snapshot: dict[str, Any]) -> None:
-        if self.runtime.config.feishu.stream_mode != "card" or self.streaming_broken:
-            return
-        live_text = build_streaming_content(snapshot)
-        if not live_text or live_text == self.last_live_text:
-            return
-        try:
-            if self.streaming is None:
-                self.streaming = self.runtime.streaming_session_factory(self.runtime.messenger)
-                await self.streaming.start(
-                    self.message.chat_id,
-                    reply_to_message_id=self.message.reply_to_message_id or ("" if self.runtime._is_card_action_message(self.message) else self.message.message_id),
-                    root_id=self.runtime._root_id_for_message(self.message),
-                )
-                self.runtime._remember_outbound_aliases(self.message, self.runtime.build_session_key(self.message), [self.streaming.message_alias_ids()])
-            if not self.streaming.is_active():
-                return
-            await self.streaming.update(snapshot)
-            self.last_live_text = live_text
-        except Exception:
-            has_started = self.streaming.has_started() if self.streaming is not None else False
-            self.streaming_broken = True
-            if not has_started:
-                self.streaming = None
-            self._stop_spinner_task()
-            LOGGER.exception("streaming update failed for execution_key=%s", self.execution_key)
-
-    async def _spinner_loop(self) -> None:
-        while True:
-            try:
-                await asyncio.wait_for(self.streaming_update_event.wait(), timeout=1.0)
-                self.streaming_update_event.clear()
-            except asyncio.TimeoutError:
-                self.live_state["spinner_frame"] = (int(self.live_state.get("spinner_frame", 0) or 0) + 1) % 3
-                self.pending_streaming_states.append(copy.deepcopy(self.live_state))
-            try:
-                while self.pending_streaming_states:
-                    snapshot = self.pending_streaming_states.popleft()
-                    await self._update_streaming(snapshot)
-            except Exception:
-                self._stop_spinner_task()
-                LOGGER.exception("streaming tick failed for execution_key=%s", self.execution_key)
-                return
 
 
 class AgentRuntime:
@@ -278,9 +61,8 @@ class AgentRuntime:
         self.backends = backends or instantiate_builtin_backends(config, self.backend_descriptors)
         if config.backend.default_backend not in self.backends:
             raise ValueError(f"Configured default backend is unavailable: {config.backend.default_backend}")
-        self._locks: dict[str, asyncio.Lock] = defaultdict(asyncio.Lock)
-        self._pending_session_inputs: dict[str, deque[IncomingMessage | QueuedFollowUp]] = defaultdict(deque)
-        self.active_runs: dict[str, ActiveRun] = {}
+        self.execution_coordinator = RuntimeExecutionCoordinator()
+        self.active_runs = self.execution_coordinator.active_runs
         self.streaming_session_factory = streaming_session_factory or (lambda current_messenger: FeishuStreamingSession(current_messenger))
         self.typing_manager = typing_manager or FeishuTypingManager(messenger)
         self.session_browser = SessionBrowser(config, store)
@@ -419,33 +201,30 @@ class AgentRuntime:
                 await self._handle_stop(message, self._resolve_stop_execution_key(message, session_key, session))
                 return
 
-            session_lock = self._locks[execution_key]
-            if session_lock.locked() and self._should_bypass_active_run(message.text):
+            if self.execution_coordinator.is_locked(execution_key) and self._should_bypass_active_run(message.text):
                 handled = await self._handle_command(message, session_key, session)
                 if handled:
                     return
-            active = self.active_runs.get(execution_key)
-            if session_lock.locked() and active is not None and active.try_handle_input is not None:
-                if await active.try_handle_input(message):
-                    return
-            if session_lock.locked():
-                queued_follow_up = self._enqueue_pending_input(execution_key, message)
+            if self.execution_coordinator.is_locked(execution_key) and await self.execution_coordinator.try_handle_live_input(execution_key, message):
+                return
+            if self.execution_coordinator.is_locked(execution_key):
+                queued_follow_up = self.execution_coordinator.enqueue_pending_input(execution_key, message)
                 if queued_follow_up is not None:
                     await self._reply(message, queued_follow_up.acknowledgement_text())
                 return
 
-            async with session_lock:
+            async with self.execution_coordinator.lock_for(execution_key):
                 await self._handle_message_serialized(message, execution_key)
         except Exception:
             LOGGER.exception("dispatch_message failed for event_id=%s chat_id=%s", message.event_id, message.chat_id)
 
     async def _handle_message_serialized(self, message: IncomingMessage, execution_key: str) -> None:
-        pending_input: IncomingMessage | QueuedFollowUp | None = message
+        pending_input: ExecutionInput | None = message
         while pending_input is not None:
             await self._handle_single_serialized_input(pending_input, execution_key)
-            pending_input = self._dequeue_pending_input(execution_key)
+            pending_input = self.execution_coordinator.dequeue_pending_input(execution_key)
 
-    async def _handle_single_serialized_input(self, pending_input: IncomingMessage | QueuedFollowUp, execution_key: str) -> None:
+    async def _handle_single_serialized_input(self, pending_input: ExecutionInput, execution_key: str) -> None:
         message = pending_input.to_message() if isinstance(pending_input, QueuedFollowUp) else pending_input
         session_key = self.build_session_key(message)
         self._remember_thread_session_alias(message, session_key)
@@ -464,34 +243,6 @@ class AgentRuntime:
                 return
         await self._run_backend_turn(message, execution_key, session)
 
-    def _enqueue_pending_input(self, execution_key: str, message: IncomingMessage) -> QueuedFollowUp | None:
-        pending_inputs = self._pending_session_inputs[execution_key]
-        if self.active_runs.get(execution_key) is not None and not message.text.startswith("/"):
-            last_input = pending_inputs[-1] if pending_inputs else None
-            if isinstance(last_input, QueuedFollowUp):
-                last_input.merge(message)
-                return last_input
-            queued_follow_up = QueuedFollowUp.from_message(message)
-            pending_inputs.append(queued_follow_up)
-            return queued_follow_up
-        pending_inputs.append(message)
-        return None
-
-    def _dequeue_pending_input(self, execution_key: str) -> IncomingMessage | QueuedFollowUp | None:
-        pending_inputs = self._pending_session_inputs.get(execution_key)
-        if not pending_inputs:
-            return None
-        next_input = pending_inputs.popleft()
-        if not pending_inputs:
-            self._pending_session_inputs.pop(execution_key, None)
-        return next_input
-
-    def _queued_follow_up_count(self, execution_key: str) -> int:
-        pending_inputs = self._pending_session_inputs.get(execution_key)
-        if not pending_inputs:
-            return 0
-        return sum(item.message_count for item in pending_inputs if isinstance(item, QueuedFollowUp))
-
     async def _run_backend_turn(self, message: IncomingMessage, execution_key: str, session: SessionRecord) -> None:
         backend = self.backends.get(session.backend)
         if backend is None:
@@ -500,39 +251,19 @@ class AgentRuntime:
 
         message_summary = self._message_summary_text(message)
         backend_prompt = self._build_backend_prompt(message)
-        turn = _BackendTurnSession(self, message, execution_key, session)
-
-        try:
-            await turn.prepare(message_summary)
-            turn.build_interaction_controller()
-            self.active_runs[execution_key] = turn.activate_run(message_summary)
-
-            reply = await backend.run(
-                turn.session,
-                backend_prompt,
-                turn.build_backend_context(),
-            )
-            await turn.save_reply(reply)
-            await turn.reply_final(reply.text or "(empty reply)")
-        except Exception as exc:
-            if "interrupted by /stop" in str(exc).lower() or "interrupted" in str(exc).lower():
-                await turn.reply_final("已停止当前回复。")
-            else:
-                await turn.reply_final(f"处理失败：{exc}")
-        finally:
-            self.active_runs.pop(execution_key, None)
-            await turn.finalize()
+        turn = BackendTurnSession(self._build_turn_runtime_context(), message, execution_key, session)
+        await turn.run(backend, message_summary, backend_prompt)
 
     async def _handle_command(self, message: IncomingMessage, session_key: str, session: SessionRecord) -> bool:
         return await self.command_router.handle(message, session_key, session)
 
     async def _handle_stop(self, message: IncomingMessage, execution_key: str) -> None:
-        active = self.active_runs.get(execution_key)
+        active = self.execution_coordinator.active_run(execution_key)
         if active is None:
             await self._reply(message, "当前没有进行中的回复。", command_reply=True)
             return
         await active.cancel("interrupted by /stop")
-        queued_follow_up_count = self._queued_follow_up_count(execution_key)
+        queued_follow_up_count = self.execution_coordinator.queued_follow_up_count(execution_key)
         stop_message = "已发送停止请求，正在中断当前回复。"
         if queued_follow_up_count > 0:
             stop_message = f"{stop_message[:-1]} 停止后会继续处理已收到的 {queued_follow_up_count} 条补充消息。"
@@ -612,6 +343,23 @@ class AgentRuntime:
             "sessionKey": session_key,
             "sessionOwnerOpenId": message.session_owner_open_id or (message.sender_open_id if message.chat_type == "group" and self.config.feishu.group_session_scope != "shared" else ""),
         }
+
+    def _build_turn_runtime_context(self) -> TurnRuntimeContext:
+        return TurnRuntimeContext(
+            config=self.config,
+            store=self.store,
+            messenger=self.messenger,
+            typing_manager=self.typing_manager,
+            session_ux=self.session_ux,
+            streaming_session_factory=self.streaming_session_factory,
+            execution_coordinator=self.execution_coordinator,
+            build_card_action_context=self._build_card_action_context,
+            root_id_for_message=self._root_id_for_message,
+            is_card_action_message=self._is_card_action_message,
+            build_session_key=self.build_session_key,
+            remember_outbound_aliases=self._remember_outbound_aliases,
+            reply_final=self._reply_final,
+        )
 
     async def _send_help(self, message: IncomingMessage, session_key: str, session: SessionRecord) -> None:
         card = self.help_renderer.build_card(session, self.available_backend_names(), self._build_card_action_context(message, session_key))

@@ -26,7 +26,7 @@
 - `openrelay.core` 现在承载配置、核心类型、发布通道与工作区语义
 - `openrelay.storage` 现在承载 SQLite 持久化、schema 初始化与本地状态读写
 - `runtime.py`、`runtime_commands.py`、`runtime_live.py` 与 runtime 交互模块收敛到 `openrelay.runtime`
-- `follow_up.py`、`help_renderer.py`、`panel_card.py`、`render.py` 继续收敛到 `openrelay.runtime`
+- `follow_up.py`、`help_renderer.py`、`panel_card.py`、`render.py`、`runtime/execution.py`、`runtime/turn.py` 继续收敛到 `openrelay.runtime`
 - `session_browser.py`、`session_ux.py`、`session_list_card.py`、`session_scope`、`session/lifecycle.py` 收敛到 `openrelay.session`
 - `feishu_reply_card.py`、`streaming_card.py`、`feishu_ws.py` 继续收敛到 `openrelay.feishu`
 - `card_actions.py`、`card_theme.py`、`typing.py` 收敛到 `openrelay.feishu`，其中卡片协议与主题进一步归类到 `openrelay.feishu.cards`
@@ -43,3 +43,4 @@
 因此：
 - 会话装载、占位控制会话复用、top-level 到 thread 的会话继承，应该放在 `openrelay.session`。
 - `/restart` 对应的 systemd / 进程控制属于 runtime 基础设施，应保留在 `openrelay.runtime`，但不应继续塞在 `AgentRuntime` 这个消息编排类里。
+- backend turn 生命周期、流式回复状态、active run / follow-up 队列属于 runtime 执行层，应拆到独立协作者，而不是继续堆在入口类里。
