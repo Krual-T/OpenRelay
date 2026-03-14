@@ -2,120 +2,23 @@ from __future__ import annotations
 
 import asyncio
 import json
-import re
 import uuid
-from dataclasses import dataclass
 from typing import Any, Awaitable, Callable
 
 from openrelay.card_actions import build_button
 from openrelay.card_theme import build_card_shell, build_section_block, build_status_hero, divider_block
 from openrelay.models import IncomingMessage
 
-
-INTERACTION_COMMAND_PREFIX = "/__openrelay_interaction__"
-MAX_ACTIONS_PER_ROW = 3
-
-
-def build_interaction_command(interaction_id: str, action: str) -> str:
-    return f"{INTERACTION_COMMAND_PREFIX} {interaction_id} {action}"
-
-
-def _chunk_actions(actions: list[dict[str, Any]], size: int = MAX_ACTIONS_PER_ROW) -> list[list[dict[str, Any]]]:
-    return [actions[index : index + size] for index in range(0, len(actions), size)]
-
-
-def _normalize_text(value: object) -> str:
-    return " ".join(str(value or "").split()).strip()
-
-
-def _shorten(value: object, max_length: int = 160) -> str:
-    text = _normalize_text(value)
-    if len(text) <= max_length:
-        return text
-    return f"{text[: max_length - 3]}..."
-
-
-def _string_list(value: object) -> list[str]:
-    if not isinstance(value, list):
-        return []
-    return [str(item) for item in value if str(item).strip()]
-
-
-def _format_permissions(permissions: dict[str, Any]) -> list[str]:
-    lines: list[str] = []
-    file_system = permissions.get("fileSystem") if isinstance(permissions.get("fileSystem"), dict) else {}
-    network = permissions.get("network") if isinstance(permissions.get("network"), dict) else {}
-    macos = permissions.get("macos") if isinstance(permissions.get("macos"), dict) else {}
-    read_paths = _string_list(file_system.get("read"))
-    write_paths = _string_list(file_system.get("write"))
-    if read_paths:
-        lines.append("Read:")
-        lines.extend(f"- `{path}`" for path in read_paths[:6])
-        if len(read_paths) > 6:
-            lines.append(f"- ... +{len(read_paths) - 6} more")
-    if write_paths:
-        lines.append("Write:")
-        lines.extend(f"- `{path}`" for path in write_paths[:6])
-        if len(write_paths) > 6:
-            lines.append(f"- ... +{len(write_paths) - 6} more")
-    if network.get("enabled") is True:
-        lines.append("Network: enabled")
-    if macos:
-        lines.append("macOS permissions requested")
-    return lines
-
-
-def _format_command_actions(command_actions: object) -> list[str]:
-    if not isinstance(command_actions, list):
-        return []
-    lines: list[str] = []
-    for action in command_actions[:6]:
-        if not isinstance(action, dict):
-            continue
-        action_type = str(action.get("type") or "unknown")
-        if action_type == "read":
-            lines.append(f"Read `{action.get('path') or ''}`")
-            continue
-        if action_type == "listFiles":
-            lines.append(f"List files in `{action.get('path') or ''}`")
-            continue
-        if action_type == "search":
-            query = _normalize_text(action.get("query"))
-            path = _normalize_text(action.get("path"))
-            detail = query or path or _normalize_text(action.get("command"))
-            lines.append(f"Search {detail}".strip())
-            continue
-        lines.append(_shorten(action.get("command") or action_type))
-    return lines
-
-
-def _strip_code_fences(text: str) -> str:
-    fenced = text.strip()
-    if fenced.startswith("```") and fenced.endswith("```"):
-        fenced = re.sub(r"^```[a-zA-Z0-9_-]*\n?", "", fenced)
-        fenced = re.sub(r"\n?```$", "", fenced)
-    return fenced.strip()
-
-
-@dataclass(slots=True)
-class InteractionResolution:
-    response: dict[str, Any]
-    label: str
-    state: str = "completed"
-    detail: str = ""
-
-
-@dataclass(slots=True)
-class PendingInteraction:
-    interaction_id: str
-    kind: str
-    title: str
-    detail: str
-    prompt_text: str
-    future: asyncio.Future[InteractionResolution]
-    abort_resolution: InteractionResolution
-    text_handler: Callable[[str], InteractionResolution | None] | None = None
-    command_resolutions: dict[str, InteractionResolution] | None = None
+from .formatting import (
+    chunk_actions,
+    format_command_actions,
+    format_permissions,
+    normalize_decision_text,
+    normalize_text,
+    shorten,
+    strip_code_fences,
+)
+from .models import INTERACTION_COMMAND_PREFIX, InteractionResolution, PendingInteraction, build_interaction_command
 
 
 class RunInteractionController:
@@ -176,23 +79,7 @@ class RunInteractionController:
         if text.lower().startswith("/stop"):
             return False
         if text.startswith(INTERACTION_COMMAND_PREFIX):
-            tokens = text.split(maxsplit=2)
-            if len(tokens) < 3:
-                await self.send_text(pending.prompt_text)
-                return True
-            interaction_id = tokens[1].strip()
-            action = tokens[2].strip()
-            if interaction_id != pending.interaction_id:
-                await self.send_text(pending.prompt_text)
-                return True
-            resolution = (pending.command_resolutions or {}).get(action)
-            if resolution is None:
-                await self.send_text(pending.prompt_text)
-                return True
-            if not pending.future.done():
-                pending.future.set_result(resolution)
-            await self._update_interaction_card(message, pending, resolution)
-            return True
+            return await self._handle_command_reply(message, pending, text)
         if text.startswith("/"):
             await self.send_text(pending.prompt_text)
             return True
@@ -205,6 +92,25 @@ class RunInteractionController:
             return True
         if not pending.future.done():
             pending.future.set_result(resolution)
+        return True
+
+    async def _handle_command_reply(self, message: IncomingMessage, pending: PendingInteraction, text: str) -> bool:
+        tokens = text.split(maxsplit=2)
+        if len(tokens) < 3:
+            await self.send_text(pending.prompt_text)
+            return True
+        interaction_id = tokens[1].strip()
+        action = tokens[2].strip()
+        if interaction_id != pending.interaction_id:
+            await self.send_text(pending.prompt_text)
+            return True
+        resolution = (pending.command_resolutions or {}).get(action)
+        if resolution is None:
+            await self.send_text(pending.prompt_text)
+            return True
+        if not pending.future.done():
+            pending.future.set_result(resolution)
+        await self._update_interaction_card(message, pending, resolution)
         return True
 
     async def _await_pending(self, pending: PendingInteraction) -> InteractionResolution:
@@ -324,16 +230,16 @@ class RunInteractionController:
                     self.action_context,
                 )
             )
-        return _chunk_actions(actions)
+        return chunk_actions(actions)
 
     async def _request_command_approval(self, params: dict[str, object]) -> dict[str, object]:
-        command = _shorten(params.get("command") or "unknown command", 240)
-        cwd = _normalize_text(params.get("cwd"))
-        reason = _normalize_text(params.get("reason"))
+        command = shorten(params.get("command") or "unknown command", 240)
+        cwd = normalize_text(params.get("cwd"))
+        reason = normalize_text(params.get("reason"))
         detail_lines = [f"Command: `{command}`"]
         if cwd:
             detail_lines.append(f"CWD: `{cwd}`")
-        detail_lines.extend(_format_command_actions(params.get("commandActions")))
+        detail_lines.extend(format_command_actions(params.get("commandActions")))
         if reason:
             detail_lines.append(f"Reason: {reason}")
         pending = PendingInteraction(
@@ -362,8 +268,8 @@ class RunInteractionController:
         return (await self._await_pending(pending)).response
 
     async def _request_file_change_approval(self, params: dict[str, object]) -> dict[str, object]:
-        reason = _normalize_text(params.get("reason"))
-        grant_root = _normalize_text(params.get("grantRoot"))
+        reason = normalize_text(params.get("reason"))
+        grant_root = normalize_text(params.get("grantRoot"))
         detail_lines = ["Codex wants permission to apply file changes."]
         if grant_root:
             detail_lines.append(f"Grant root: `{grant_root}`")
@@ -396,8 +302,8 @@ class RunInteractionController:
 
     async def _request_permissions_approval(self, params: dict[str, object]) -> dict[str, object]:
         permissions = params.get("permissions") if isinstance(params.get("permissions"), dict) else {}
-        reason = _normalize_text(params.get("reason"))
-        detail_lines = _format_permissions(permissions)
+        reason = normalize_text(params.get("reason"))
+        detail_lines = format_permissions(permissions)
         if reason:
             detail_lines.append(f"Reason: {reason}")
         if not detail_lines:
@@ -438,7 +344,7 @@ class RunInteractionController:
 
     async def _ask_tool_question(self, question: dict[str, Any], *, index: int, total: int) -> InteractionResolution:
         question_id = str(question.get("id") or f"q_{index}")
-        header = _shorten(question.get("header") or f"Question {index}", 80)
+        header = shorten(question.get("header") or f"Question {index}", 80)
         prompt = str(question.get("question") or "").strip() or header
         options = question.get("options") if isinstance(question.get("options"), list) else []
         allows_other = bool(question.get("isOther"))
@@ -465,8 +371,6 @@ class RunInteractionController:
                 label = str(option.get("label") or "").strip()
                 if label and normalized.casefold() == label.casefold():
                     return InteractionResolution({"answers": [label]}, label)
-            if options and not allows_other and not is_secret:
-                return InteractionResolution({"answers": [normalized]}, normalized)
             return InteractionResolution({"answers": [normalized]}, normalized)
 
         pending = PendingInteraction(
@@ -487,7 +391,7 @@ class RunInteractionController:
         return await self._await_pending(pending)
 
     async def _request_mcp_elicitation(self, params: dict[str, object]) -> dict[str, object]:
-        mode = _normalize_text(params.get("mode")).lower()
+        mode = normalize_text(params.get("mode")).lower()
         if mode == "url":
             return await self._request_mcp_url_elicitation(params)
         if mode == "form":
@@ -495,8 +399,8 @@ class RunInteractionController:
         return {"action": "decline"}
 
     async def _request_mcp_url_elicitation(self, params: dict[str, object]) -> dict[str, object]:
-        message = _normalize_text(params.get("message"))
-        url = _normalize_text(params.get("url"))
+        message = normalize_text(params.get("message"))
+        url = normalize_text(params.get("url"))
         detail_lines = [message or "External action required."]
         if url:
             detail_lines.append(f"URL: {url}")
@@ -524,17 +428,17 @@ class RunInteractionController:
         return (await self._await_pending(pending)).response
 
     async def _request_mcp_form_elicitation(self, params: dict[str, object]) -> dict[str, object]:
-        message = _normalize_text(params.get("message"))
+        message = normalize_text(params.get("message"))
         requested_schema = params.get("requestedSchema")
         schema_preview = json.dumps(requested_schema, ensure_ascii=False, indent=2) if requested_schema is not None else "{}"
 
         def text_handler(text: str) -> InteractionResolution | None:
-            raw = _strip_code_fences(text)
+            raw = strip_code_fences(text)
             try:
                 parsed = json.loads(raw)
             except json.JSONDecodeError:
                 return None
-            return InteractionResolution({"action": "accept", "content": parsed}, "Submitted form payload", detail=_shorten(raw, 240))
+            return InteractionResolution({"action": "accept", "content": parsed}, "Submitted form payload", detail=shorten(raw, 240))
 
         pending = PendingInteraction(
             interaction_id=uuid.uuid4().hex[:12],
@@ -567,7 +471,7 @@ class RunInteractionController:
         }
 
         def handler(text: str) -> InteractionResolution | None:
-            normalized = re.sub(r"[^a-zA-Z\u4e00-\u9fff]+", "", text).casefold()
+            normalized = normalize_decision_text(text)
             for key, resolution in mapping.items():
                 if normalized in {alias.casefold() for alias in aliases.get(key, set())}:
                     return resolution
