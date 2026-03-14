@@ -265,6 +265,41 @@ async def test_codex_resume_timeout_falls_back_to_fresh_thread(tmp_path: Path, m
     assert reset_reasons == ["Codex app-server thread/resume timed out after 0.01s"]
 
 
+@pytest.mark.asyncio
+async def test_codex_ensure_thread_reports_started_thread_immediately(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    client = CodexAppServerClient(
+        codex_path="codex",
+        workspace_root=tmp_path,
+        sqlite_home=tmp_path / "codex-state",
+        model="gpt-test",
+        safety_mode="danger-full-access",
+    )
+    session = make_session(tmp_path)
+    started: list[str] = []
+
+    async def fake_ensure_ready() -> None:
+        return None
+
+    async def fake_request(method: str, params: dict[str, object], **_kwargs: object) -> dict[str, object]:
+        if method == "thread/start":
+            return {"thread": {"id": "thread_fresh"}}
+        raise AssertionError(f"unexpected request: {method}")
+
+    async def on_thread_started(thread_id: str) -> None:
+        started.append(thread_id)
+
+    monkeypatch.setattr(client, "ensure_ready", fake_ensure_ready)
+    monkeypatch.setattr(client, "request", fake_request)
+
+    thread_id = await client.ensure_thread(
+        session,
+        BackendContext(workspace_root=tmp_path, on_thread_started=on_thread_started),
+    )
+
+    assert thread_id == "thread_fresh"
+    assert started == ["thread_fresh"]
+
+
 def test_codex_process_env_overrides_sqlite_home(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("CODEX_THREAD_ID", "thread-from-parent")
     client = CodexAppServerClient(
