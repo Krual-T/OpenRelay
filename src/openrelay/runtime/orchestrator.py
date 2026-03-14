@@ -12,15 +12,12 @@ from openrelay.core import (
     AppConfig,
     IncomingMessage,
     SessionRecord,
-    append_release_event,
-    build_release_session_label,
-    build_release_switch_note,
     format_release_channel,
-    get_release_workspace,
     infer_release_channel,
 )
 from openrelay.feishu import FeishuMessenger, FeishuStreamingSession, FeishuTypingManager
-from openrelay.session import SessionBrowser, SessionLifecycleResolver, SessionScopeResolver, SessionSortMode, SessionUX, build_session_list_card
+from openrelay.release import ReleaseCommandService
+from openrelay.session import SessionBrowser, SessionLifecycleResolver, SessionMutationService, SessionScopeResolver, SessionSortMode, SessionUX, build_session_list_card
 from openrelay.storage import StateStore
 
 from .commands import PanelCommandArgs, RuntimeCommandHooks, RuntimeCommandRouter
@@ -67,26 +64,30 @@ class RuntimeOrchestrator:
         self.typing_manager = typing_manager or FeishuTypingManager(messenger)
         self.session_browser = SessionBrowser(config, store)
         self.session_ux = SessionUX(config, store)
+        self.session_mutations = SessionMutationService(config, store, self.session_ux)
         self.session_scope = SessionScopeResolver(config, store, LOGGER)
         self.session_lifecycle = SessionLifecycleResolver(config, store)
+        self.release_command_service = ReleaseCommandService(config, store, self.session_ux, self.session_mutations)
         self.help_renderer = HelpRenderer(config, store, self.session_ux)
         self.command_router = RuntimeCommandRouter(
             config,
             store,
             self.session_browser,
+            self.session_mutations,
             self.session_ux,
             self.help_renderer,
+            self.release_command_service,
             self.backends,
             RuntimeCommandHooks(
                 reply=self._reply,
                 send_help=self._send_help,
                 send_panel=self._send_panel,
                 send_session_list=self._send_session_list,
-                switch_release_channel=self._switch_release_channel,
                 stop=self._handle_stop,
                 schedule_restart=self._schedule_restart,
                 is_admin=self.is_admin,
                 available_backend_names=self.available_backend_names,
+                cancel_active_run_for_session=self._cancel_active_run_for_session,
             ),
         )
         self.restart_controller = RuntimeRestartController(LOGGER)
@@ -269,72 +270,12 @@ class RuntimeOrchestrator:
             stop_message = f"{stop_message[:-1]} 停止后会继续处理已收到的 {queued_follow_up_count} 条补充消息。"
         await self._reply(message, stop_message, command_reply=True)
 
-    async def _switch_release_channel(
-        self,
-        message: IncomingMessage,
-        session_key: str,
-        session: SessionRecord,
-        target_channel: str,
-        command_name: str,
-        reason: str = "",
-    ) -> None:
-        workspace_dir = get_release_workspace(self.config, target_channel)
-        if not workspace_dir.exists():
-            await self._reply(message, f"{target_channel} 工作目录不存在：{workspace_dir}", command_reply=True)
-            return
+    async def _cancel_active_run_for_session(self, session: SessionRecord, command_name: str) -> bool:
         active = self.active_runs.get(self._build_execution_key(session.base_key, session))
-        cancelled_active_run = active is not None
-        if active is not None:
-            await active.cancel(f"interrupted by {command_name}")
-        next_session = self.store.create_next_session(session_key, session, build_release_session_label(target_channel))
-        next_session.release_channel = target_channel
-        next_session.cwd = str(workspace_dir)
-        next_session.native_session_id = ""
-        if target_channel == "main":
-            next_session.safety_mode = "read-only"
-        self.store.save_session(next_session)
-        event = append_release_event(
-            self.config,
-            {
-                "type": "release.force-stable" if target_channel == "main" else "release.switch",
-                "command": command_name,
-                "reason": reason,
-                "session_key": session_key,
-                "chat_id": message.chat_id,
-                "operator_open_id": message.sender_open_id,
-                "from_channel": infer_release_channel(self.config, session),
-                "to_channel": target_channel,
-                "previous_session_id": session.session_id,
-                "next_session_id": next_session.session_id,
-                "previous_cwd": session.cwd,
-                "next_cwd": next_session.cwd,
-                "previous_model": self.session_ux.effective_model(session),
-                "next_model": self.session_ux.effective_model(next_session),
-                "previous_sandbox": session.safety_mode,
-                "next_sandbox": next_session.safety_mode,
-                "cancelled_active_run": cancelled_active_run,
-            },
-        )
-        self.store.append_message(next_session.session_id, "assistant", build_release_switch_note(event))
-        await self._reply(
-            message,
-            "\n".join(
-                filter(
-                    None,
-                    [
-                        "已强制切到 main 稳定版本。" if target_channel == "main" else "已切到 develop 修复版本。",
-                        f"session_id={next_session.session_id}",
-                        f"channel={format_release_channel(target_channel)}",
-                        f"cwd={self.session_ux.format_cwd(next_session.cwd, next_session)}",
-                        f"sandbox={next_session.safety_mode}",
-                        f"reason={reason}" if reason else "",
-                        "已中断上一条进行中的回复。" if cancelled_active_run else "",
-                        "已写入切换记录，后续智能体可据此继续修复。",
-                    ],
-                )
-            ),
-            command_reply=True,
-        )
+        if active is None:
+            return False
+        await active.cancel(f"interrupted by {command_name}")
+        return True
 
     def _build_card_action_context(self, message: IncomingMessage, session_key: str) -> dict[str, str]:
         return {

@@ -17,7 +17,8 @@ from openrelay.core import (
     read_release_events,
     summarize_release_event,
 )
-from openrelay.session import DEFAULT_SESSION_LIST_PAGE_SIZE, DEFAULT_SESSION_LIST_SORT, SessionBrowser, SessionSortMode, SessionUX
+from openrelay.release import ReleaseCommandService
+from openrelay.session import DEFAULT_SESSION_LIST_PAGE_SIZE, DEFAULT_SESSION_LIST_SORT, SessionBrowser, SessionMutationService, SessionSortMode, SessionUX
 from openrelay.storage import StateStore
 
 from .help import HelpRenderer
@@ -35,11 +36,11 @@ ReplyHook = Callable[..., Awaitable[None]]
 SendHelpHook = Callable[[IncomingMessage, str, SessionRecord], Awaitable[None]]
 SendPanelHook = Callable[[IncomingMessage, str, SessionRecord, "PanelCommandArgs"], Awaitable[None]]
 SendSessionListHook = Callable[[IncomingMessage, str, SessionRecord, int, SessionSortMode], Awaitable[None]]
-SwitchReleaseHook = Callable[[IncomingMessage, str, SessionRecord, str, str, str], Awaitable[None]]
 StopHook = Callable[[IncomingMessage, str], Awaitable[None]]
 ScheduleRestartHook = Callable[[], None]
 IsAdminHook = Callable[[str], bool]
 AvailableBackendsHook = Callable[[], list[str]]
+CancelActiveRunHook = Callable[[SessionRecord, str], Awaitable[bool]]
 
 PanelView = Literal["home", "sessions", "directories", "commands", "status"]
 
@@ -50,11 +51,11 @@ class RuntimeCommandHooks:
     send_help: SendHelpHook
     send_panel: SendPanelHook
     send_session_list: SendSessionListHook
-    switch_release_channel: SwitchReleaseHook
     stop: StopHook
     schedule_restart: ScheduleRestartHook
     is_admin: IsAdminHook
     available_backend_names: AvailableBackendsHook
+    cancel_active_run_for_session: CancelActiveRunHook
 
 
 @dataclass(slots=True)
@@ -84,16 +85,20 @@ class RuntimeCommandRouter:
         config: AppConfig,
         store: StateStore,
         session_browser: SessionBrowser,
+        session_mutations: SessionMutationService,
         session_ux: SessionUX,
         help_renderer: HelpRenderer,
+        release_commands: ReleaseCommandService,
         backends: dict[str, object],
         hooks: RuntimeCommandHooks,
     ):
         self.config = config
         self.store = store
         self.session_browser = session_browser
+        self.session_mutations = session_mutations
         self.session_ux = session_ux
         self.help_renderer = help_renderer
+        self.release_commands = release_commands
         self.backends = backends
         self.hooks = hooks
 
@@ -133,24 +138,20 @@ class RuntimeCommandRouter:
 
         if name in {"/main", "/stable", "/develop"}:
             target_channel = "develop" if name == "/develop" else "main"
-            await self.hooks.switch_release_channel(message, session_key, session, target_channel, name, arg_text)
+            await self._handle_release_switch(message, session_key, session, target_channel, name, arg_text)
             return True
 
         if name == "/new":
             if not self._can_use_top_level_session_command(message):
                 await self.hooks.reply(message, "`/new` 只允许在私聊顶层使用；子 thread 会固定绑定当前 Codex 会话。", command_reply=True)
                 return True
-            next_session = self.store.create_next_session(self._top_level_thread_scope_key(message), session, arg_text)
+            next_session = self.session_mutations.create_named_session(self._top_level_thread_scope_key(message), session, arg_text)
             label = f" ({next_session.label})" if next_session.label else ""
             await self.hooks.reply(message, f"已新建会话 {next_session.session_id}{label}，原生 Codex 会话会在首条真实消息时创建。", command_reply=True)
             return True
 
         if name == "/clear":
-            next_session = self.store.create_next_session(session_key, session, session.label)
-            next_session.model_override = session.model_override
-            next_session.safety_mode = session.safety_mode
-            next_session.release_channel = session.release_channel
-            self.store.save_session(next_session)
+            next_session = self.session_mutations.clear_context(session_key, session)
             await self.hooks.reply(message, f"已清空当前上下文，新的会话是 {next_session.session_id}。", command_reply=True)
             return True
 
@@ -158,9 +159,11 @@ class RuntimeCommandRouter:
             if not arg_text:
                 await self.hooks.reply(message, f"model={self.session_ux.effective_model(session)}", command_reply=True)
                 return True
-            next_session = self.store.create_next_session(session_key, session, session.label)
-            next_session.model_override = "" if arg_text.lower() in {"default", "reset", "clear"} else arg_text
-            self.store.save_session(next_session)
+            next_session = self.session_mutations.switch_model(
+                session_key,
+                session,
+                "" if arg_text.lower() in {"default", "reset", "clear"} else arg_text,
+            )
             await self.hooks.reply(message, f"model 已切换到 {self.session_ux.effective_model(next_session)}，新的原生会话会在首条真实消息时创建。", command_reply=True)
             return True
 
@@ -175,9 +178,7 @@ class RuntimeCommandRouter:
             if mode == "danger-full-access" and not self.hooks.is_admin(message.sender_open_id):
                 await self.hooks.reply(message, "danger-full-access 只允许管理员切换。", command_reply=True)
                 return True
-            next_session = self.store.create_next_session(session_key, session, session.label)
-            next_session.safety_mode = mode
-            self.store.save_session(next_session)
+            next_session = self.session_mutations.switch_sandbox(session_key, session, mode)
             await self.hooks.reply(message, f"sandbox 已切换到 {next_session.safety_mode}，新的原生会话会在首条真实消息时创建。", command_reply=True)
             return True
 
@@ -185,8 +186,7 @@ class RuntimeCommandRouter:
             return await self._handle_resume(message, session_key, session, arg_text)
 
         if name == "/reset":
-            self.store.clear_sessions(session_key)
-            self.store.load_session(session_key)
+            self.session_mutations.reset_scope(session_key)
             await self.hooks.reply(message, "会话已重置。", command_reply=True)
             return True
 
@@ -323,6 +323,50 @@ class RuntimeCommandRouter:
             raise ValueError(f"{name} 必须是正整数")
         return parsed
 
+    async def _handle_release_switch(
+        self,
+        message: IncomingMessage,
+        session_key: str,
+        session: SessionRecord,
+        target_channel: str,
+        command_name: str,
+        reason: str,
+    ) -> None:
+        cancelled_active_run = await self.hooks.cancel_active_run_for_session(session, command_name)
+        try:
+            result = self.release_commands.switch_channel(
+                session_key=session_key,
+                session=session,
+                target_channel=target_channel,
+                command_name=command_name,
+                reason=reason,
+                chat_id=message.chat_id,
+                operator_open_id=message.sender_open_id,
+                cancelled_active_run=cancelled_active_run,
+            )
+        except FileNotFoundError as exc:
+            await self.hooks.reply(message, str(exc), command_reply=True)
+            return
+        await self.hooks.reply(
+            message,
+            "\n".join(
+                filter(
+                    None,
+                    [
+                        "已强制切到 main 稳定版本。" if target_channel == "main" else "已切到 develop 修复版本。",
+                        f"session_id={result.session.session_id}",
+                        f"channel={format_release_channel(target_channel)}",
+                        f"cwd={self.session_ux.format_cwd(result.session.cwd, result.session)}",
+                        f"sandbox={result.session.safety_mode}",
+                        f"reason={reason}" if reason else "",
+                        "已中断上一条进行中的回复。" if result.cancelled_active_run else "",
+                        "已写入切换记录，后续智能体可据此继续修复。",
+                    ],
+                )
+            ),
+            command_reply=True,
+        )
+
     async def _handle_cwd(self, command_name: str, arg_text: str, message: IncomingMessage, session_key: str, session: SessionRecord) -> bool:
         if not arg_text:
             await self.hooks.reply(
@@ -341,10 +385,7 @@ class RuntimeCommandRouter:
         except ValueError as exc:
             await self.hooks.reply(message, f"cwd 切换失败：{exc}", command_reply=True, command_name=command_name)
             return True
-        next_session = self.store.create_next_session(session_key, session, session.label)
-        next_session.cwd = str(next_cwd)
-        next_session.native_session_id = ""
-        self.store.save_session(next_session)
+        next_session = self.session_mutations.switch_cwd(session_key, session, next_cwd)
         await self.hooks.reply(
             message,
             "\n".join([
@@ -366,10 +407,7 @@ class RuntimeCommandRouter:
         if backend not in self.backends:
             await self.hooks.reply(message, f"backend 仅支持：{', '.join(available)}", command_reply=True)
             return True
-        next_session = self.store.create_next_session(session_key, session, session.label)
-        next_session.backend = backend
-        next_session.native_session_id = ""
-        self.store.save_session(next_session)
+        next_session = self.session_mutations.switch_backend(session_key, session, backend)
         await self.hooks.reply(message, f"backend 已切换到 {backend}，新的原生会话将在下一条真实消息时创建。", command_reply=True)
         return True
 
@@ -378,7 +416,7 @@ class RuntimeCommandRouter:
         action = tokens[0].lower() if tokens else "list"
 
         if action in {"list", "ls"}:
-            shortcuts = self.session_ux.build_directory_shortcut_entries(session, limit=100)
+            shortcuts = self.session_mutations.list_directory_shortcuts(session, limit=100)
             if not shortcuts:
                 await self.hooks.reply(
                     message,
@@ -400,7 +438,7 @@ class RuntimeCommandRouter:
             except ValueError as exc:
                 await self.hooks.reply(message, f"shortcut 参数无效：{exc}\n{SHORTCUT_USAGE}", command_reply=True, command_name="/shortcut")
                 return True
-            self.store.save_directory_shortcut(shortcut)
+            self.session_mutations.save_directory_shortcut(shortcut)
             await self.hooks.reply(
                 message,
                 "\n".join(
@@ -421,7 +459,7 @@ class RuntimeCommandRouter:
             if not name:
                 await self.hooks.reply(message, f"shortcut 参数无效：缺少名称\n{SHORTCUT_USAGE}", command_reply=True, command_name="/shortcut")
                 return True
-            removed = self.store.remove_directory_shortcut(name)
+            removed = self.session_mutations.remove_directory_shortcut(name)
             if removed:
                 await self.hooks.reply(message, f"已删除快捷目录 `{name}`。", command_reply=True, command_name="/shortcut")
                 return True
@@ -433,7 +471,7 @@ class RuntimeCommandRouter:
             if not name:
                 await self.hooks.reply(message, f"shortcut 参数无效：缺少名称\n{SHORTCUT_USAGE}", command_reply=True, command_name="/shortcut")
                 return True
-            target = self.session_ux.resolve_directory_shortcut(name, session)
+            target = self.session_mutations.resolve_directory_shortcut(name, session)
             if target is None:
                 await self.hooks.reply(
                     message,
