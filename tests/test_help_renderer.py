@@ -2,7 +2,7 @@ from pathlib import Path
 
 from openrelay.config import AppConfig, BackendConfig, FeishuConfig
 from openrelay.help_renderer import HelpRenderer
-from openrelay.session_ux import SessionUX
+from openrelay.session import SessionUX
 from openrelay.state import StateStore
 
 

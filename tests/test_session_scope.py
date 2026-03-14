@@ -2,7 +2,7 @@ from pathlib import Path
 
 from openrelay.config import AppConfig, BackendConfig, FeishuConfig
 from openrelay.models import IncomingMessage
-from openrelay.session_scope import SessionScopeResolver
+from openrelay.session import SessionScopeResolver
 from openrelay.state import StateStore
 
 

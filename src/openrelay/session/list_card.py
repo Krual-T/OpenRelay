@@ -4,7 +4,7 @@ from typing import Any
 
 from openrelay.card_actions import build_button
 from openrelay.card_theme import build_card_shell, build_note_bar, build_section_block, build_status_hero, divider_block
-from openrelay.session_browser import SESSION_SORT_ACTIVE, SESSION_SORT_UPDATED
+from .browser import SESSION_SORT_ACTIVE, SESSION_SORT_UPDATED
 
 
 def build_resume_list_command(target: str = "list", *, page: int = 1, sort_mode: str = SESSION_SORT_UPDATED) -> str:

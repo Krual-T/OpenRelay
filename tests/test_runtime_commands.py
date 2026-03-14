@@ -5,9 +5,8 @@ import pytest
 from openrelay.config import AppConfig, BackendConfig, FeishuConfig
 from openrelay.help_renderer import HelpRenderer
 from openrelay.models import IncomingMessage
-from openrelay.runtime_commands import RuntimeCommandHooks, RuntimeCommandRouter
-from openrelay.session_browser import SESSION_SORT_ACTIVE, SessionBrowser
-from openrelay.session_ux import SessionUX
+from openrelay.runtime import RuntimeCommandHooks, RuntimeCommandRouter
+from openrelay.session import SESSION_SORT_ACTIVE, SessionBrowser, SessionUX
 from openrelay.state import StateStore
 
 

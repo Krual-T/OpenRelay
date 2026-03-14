@@ -1,4 +1,4 @@
-from openrelay.runtime_live import apply_live_progress, build_process_panel_text, build_reply_card
+from openrelay.runtime import apply_live_progress, build_process_panel_text, build_reply_card
 
 
 def test_build_reply_card_uses_official_complete_card_shape() -> None:

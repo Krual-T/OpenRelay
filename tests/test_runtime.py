@@ -11,7 +11,7 @@ from openrelay.feishu import SentMessageRef, parse_card_action_event
 from openrelay.follow_up import MERGED_FOLLOW_UP_INTRO
 from openrelay.models import BackendReply, IncomingMessage, SessionRecord
 from openrelay.runtime import AgentRuntime, DEFAULT_IMAGE_PROMPT, get_systemd_service_unit, is_systemd_service_process
-from openrelay.session_ux import SessionUX
+from openrelay.session import SessionUX
 from openrelay.state import StateStore
 
 
@@ -348,6 +348,22 @@ class StopThenContinueBackend(Backend):
             await context.cancel_event.wait()
             raise RuntimeError("interrupted by /stop")
         return BackendReply(text=f"done: {prompt}", native_session_id="native_follow_up")
+
+
+class ThreadAwareNativeBackend(Backend):
+    name = "codex"
+
+    def __init__(self) -> None:
+        self.calls: list[tuple[SessionRecord, str]] = []
+        self.thread_ids_seen_in_callback: list[str] = []
+
+    async def run(self, session: SessionRecord, prompt: str, context: BackendContext) -> BackendReply:
+        self.calls.append((session, prompt))
+        if context.on_thread_started is None:
+            raise AssertionError("on_thread_started is required")
+        await context.on_thread_started("native_started_1")
+        self.thread_ids_seen_in_callback.append(session.native_session_id)
+        return BackendReply(text=f"done: {prompt}", native_session_id=session.native_session_id)
 
 
 class BlockingStreamingSession(FakeStreamingSession):
@@ -1623,6 +1639,62 @@ async def test_runtime_reply_chain_reuses_alias_when_user_replies_to_previous_us
         "continue again",
         "echo: continue again",
     ]
+    await runtime.shutdown()
+
+
+@pytest.mark.asyncio
+async def test_runtime_thread_follow_up_uses_root_id_scope_directly(tmp_path: Path) -> None:
+    config = make_config(tmp_path)
+    config.workspace_root.mkdir(parents=True, exist_ok=True)
+    config.main_workspace_dir.mkdir(parents=True, exist_ok=True)
+    config.develop_workspace_dir.mkdir(parents=True, exist_ok=True)
+    store = StateStore(config)
+    messenger = FakeMessenger()
+    backend = FakeBackend()
+    runtime = AgentRuntime(config, store, messenger, backends={"codex": backend})
+
+    top_level = make_message("first task", event_suffix="root_direct")
+    await runtime.dispatch_message(top_level)
+
+    thread_follow_up = IncomingMessage(
+        event_id="evt_thread_root_direct_follow_up",
+        message_id="om_thread_root_direct_follow_up",
+        chat_id="oc_1",
+        chat_type="p2p",
+        sender_open_id="ou_user",
+        root_id="om_root_direct",
+        thread_id="omt_root_direct",
+        parent_id="om_some_other_parent",
+        text="follow up in thread",
+        actionable=True,
+    )
+
+    assert runtime.build_session_key(thread_follow_up) == "p2p:oc_1:thread:om_root_direct"
+    await runtime.dispatch_message(thread_follow_up)
+
+    assert len(backend.calls) == 2
+    assert backend.calls[-1][0].session_id == store.load_session("p2p:oc_1:thread:om_root_direct").session_id
+    assert backend.calls[-1][0].native_session_id == "native_1"
+    await runtime.shutdown()
+
+
+@pytest.mark.asyncio
+async def test_runtime_persists_native_thread_id_before_backend_returns(tmp_path: Path) -> None:
+    config = make_config(tmp_path)
+    config.workspace_root.mkdir(parents=True, exist_ok=True)
+    config.main_workspace_dir.mkdir(parents=True, exist_ok=True)
+    config.develop_workspace_dir.mkdir(parents=True, exist_ok=True)
+    store = StateStore(config)
+    messenger = FakeMessenger()
+    backend = ThreadAwareNativeBackend()
+    runtime = AgentRuntime(config, store, messenger, backends={"codex": backend})
+
+    message = make_message("start native thread", event_suffix="native_early")
+    await runtime.dispatch_message(message)
+
+    session = store.load_session(runtime.build_session_key(message))
+    assert backend.thread_ids_seen_in_callback == ["native_started_1"]
+    assert session.native_session_id == "native_started_1"
     await runtime.shutdown()
 
 

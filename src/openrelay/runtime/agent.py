@@ -28,14 +28,12 @@ from openrelay.release import (
     get_session_workspace_root,
     infer_release_channel,
 )
+from openrelay.session import SessionBrowser, SessionScopeResolver, SessionSortMode, SessionUX, build_session_list_card
 from openrelay.state import StateStore
-from openrelay.runtime_live import apply_live_progress, build_process_panel_text, build_reply_card, create_live_reply_state
-from openrelay.runtime_interactions import RunInteractionController
-from openrelay.runtime_commands import PanelCommandArgs, RuntimeCommandHooks, RuntimeCommandRouter
-from openrelay.session_scope import SessionScopeResolver
-from openrelay.session_browser import SessionBrowser, SessionSortMode
-from openrelay.session_list_card import build_session_list_card
-from openrelay.session_ux import SessionUX
+
+from .commands import PanelCommandArgs, RuntimeCommandHooks, RuntimeCommandRouter
+from .interactions import RunInteractionController
+from .live import apply_live_progress, build_process_panel_text, build_reply_card, create_live_reply_state
 
 
 DEFAULT_SYSTEMD_SERVICE_UNIT = "openrelay.service"
@@ -235,6 +233,17 @@ class AgentRuntime:
             session_key = self.build_session_key(message)
             self._remember_thread_session_alias(message, session_key)
             session = self._load_session_for_message(message, session_key)
+            LOGGER.info(
+                "dispatch resolved session event_id=%s message_id=%s session_key=%s session_id=%s native_session_id=%s root_id=%s thread_id=%s parent_id=%s",
+                message.event_id,
+                message.message_id,
+                session_key,
+                session.session_id,
+                session.native_session_id,
+                message.root_id,
+                message.thread_id,
+                message.parent_id,
+            )
             execution_key = self._build_execution_key(
                 session_key,
                 session,
@@ -275,6 +284,14 @@ class AgentRuntime:
         session_key = self.build_session_key(message)
         self._remember_thread_session_alias(message, session_key)
         session = self._load_session_for_message(message, session_key)
+        LOGGER.info(
+            "serialized input resolved session event_id=%s message_id=%s session_key=%s session_id=%s native_session_id=%s",
+            message.event_id,
+            message.message_id,
+            session_key,
+            session.session_id,
+            session.native_session_id,
+        )
         if message.text.startswith("/"):
             handled = await self._handle_command(message, session_key, session)
             if handled:
@@ -317,6 +334,20 @@ class AgentRuntime:
 
         cancel_event = asyncio.Event()
         interaction_controller: RunInteractionController | None = None
+
+        async def persist_native_thread_id(thread_id: str) -> None:
+            normalized = str(thread_id or "").strip()
+            if not normalized or session.native_session_id == normalized:
+                return
+            session.native_session_id = normalized
+            self.store.save_session(session)
+            LOGGER.info(
+                "persisted native thread early event_id=%s message_id=%s session_id=%s native_session_id=%s",
+                message.event_id,
+                message.message_id,
+                session.session_id,
+                normalized,
+            )
 
         async def cancel(_reason: str) -> None:
             cancel_event.set()
@@ -462,6 +493,7 @@ class AgentRuntime:
                     cancel_event=cancel_event,
                     on_partial_text=on_partial_text,
                     on_progress=on_progress,
+                    on_thread_started=persist_native_thread_id,
                     on_server_request=interaction_controller.request if interaction_controller is not None else None,
                 ),
             )
@@ -479,6 +511,14 @@ class AgentRuntime:
                 created_at=session.created_at,
             )
             updated = self.store.save_session(updated)
+            LOGGER.info(
+                "backend turn saved session event_id=%s message_id=%s session_id=%s native_session_id=%s backend=%s",
+                message.event_id,
+                message.message_id,
+                updated.session_id,
+                updated.native_session_id,
+                updated.backend,
+            )
             self.store.append_message(updated.session_id, "assistant", reply.text)
             stop_spinner_task()
             await self._reply_final(message, reply.text or "(empty reply)", streaming, live_state)
