@@ -7,7 +7,7 @@ import pytest
 
 from openrelay.backends.base import Backend, BackendContext
 from openrelay.config import AppConfig, BackendConfig, DirectoryShortcut, FeishuConfig
-from openrelay.feishu import parse_card_action_event
+from openrelay.feishu import SentMessageRef, parse_card_action_event
 from openrelay.follow_up import MERGED_FOLLOW_UP_INTRO
 from openrelay.models import BackendReply, IncomingMessage, SessionRecord
 from openrelay.runtime import AgentRuntime, DEFAULT_IMAGE_PROMPT, get_systemd_service_unit, is_systemd_service_process
@@ -28,11 +28,11 @@ class FakeMessenger:
         self._next_message_id += 1
         return message_id
 
-    async def send_text(self, chat_id: str, text: str, *, reply_to_message_id: str = "", root_id: str = "", force_new_message: bool = False) -> tuple[str, ...]:
+    async def send_text(self, chat_id: str, text: str, *, reply_to_message_id: str = "", root_id: str = "", force_new_message: bool = False) -> tuple[SentMessageRef, ...]:
         self.messages.append(text)
         message_id = self._allocate_message_id()
         self.text_calls.append({"chat_id": chat_id, "text": text, "reply_to_message_id": reply_to_message_id, "root_id": root_id, "force_new_message": force_new_message})
-        return (message_id,)
+        return (SentMessageRef(message_id=message_id),)
 
     async def send_interactive_card(
         self,
@@ -43,7 +43,7 @@ class FakeMessenger:
         root_id: str = "",
         force_new_message: bool = False,
         update_message_id: str = "",
-    ) -> str:
+    ) -> SentMessageRef:
         self.cards.append(card)
         message_id = update_message_id or self._allocate_message_id()
         self.card_calls.append({
@@ -54,10 +54,24 @@ class FakeMessenger:
             "force_new_message": force_new_message,
             "update_message_id": update_message_id,
         })
-        return message_id
+        return SentMessageRef(message_id=message_id)
 
     async def close(self) -> None:
         return None
+
+
+class ThreadAwareFakeMessenger(FakeMessenger):
+    async def send_text(self, chat_id: str, text: str, *, reply_to_message_id: str = "", root_id: str = "", force_new_message: bool = False) -> tuple[SentMessageRef, ...]:
+        sent_messages = await super().send_text(
+            chat_id,
+            text,
+            reply_to_message_id=reply_to_message_id,
+            root_id=root_id,
+            force_new_message=force_new_message,
+        )
+        if reply_to_message_id == "om_root":
+            return (SentMessageRef(message_id=sent_messages[0].message_id, root_id="om_root", thread_id="thread_fixed"),)
+        return sent_messages
 
 
 def extract_card_commands(card: dict) -> list[str]:
@@ -174,6 +188,9 @@ class FakeStreamingSession:
 
     def message_id(self) -> str:
         return self._message_id if self.started else ""
+
+    def message_alias_ids(self) -> tuple[str, ...]:
+        return (self._message_id,) if self.started else ()
 
     def has_started(self) -> bool:
         return self.started
@@ -1441,6 +1458,41 @@ async def test_runtime_thread_reply_reuses_top_level_thread_scope(tmp_path: Path
         "follow up in thread",
         "echo: follow up in thread",
     ]
+    await runtime.shutdown()
+
+
+@pytest.mark.asyncio
+async def test_runtime_thread_id_only_follow_up_reuses_original_thread_session_after_owner_switch(tmp_path: Path) -> None:
+    config = make_config(tmp_path)
+    config.workspace_root.mkdir(parents=True, exist_ok=True)
+    config.main_workspace_dir.mkdir(parents=True, exist_ok=True)
+    config.develop_workspace_dir.mkdir(parents=True, exist_ok=True)
+    store = StateStore(config)
+    messenger = ThreadAwareFakeMessenger()
+    backend = FakeBackend()
+    runtime = AgentRuntime(config, store, messenger, backends={"codex": backend})
+
+    await runtime.dispatch_message(make_message("first task", event_suffix="root"))
+    first_session = store.load_session("p2p:oc_1:thread:om_root")
+
+    await runtime.dispatch_message(make_message("second task", event_suffix="other"))
+    second_session = store.load_session("p2p:oc_1:thread:om_other")
+
+    thread_reply = IncomingMessage(
+        event_id="evt_thread_only_follow_up",
+        message_id="om_thread_only_follow_up",
+        chat_id="oc_1",
+        chat_type="p2p",
+        sender_open_id="ou_user",
+        thread_id="thread_fixed",
+        text="continue first thread",
+        actionable=True,
+    )
+
+    await runtime.dispatch_message(thread_reply)
+
+    assert first_session.session_id != second_session.session_id
+    assert backend.calls[-1][0].session_id == first_session.session_id
     await runtime.shutdown()
 
 

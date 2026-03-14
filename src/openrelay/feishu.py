@@ -36,6 +36,24 @@ class ParsedWebhook:
     message: IncomingMessage | None = None
 
 
+@dataclass(slots=True)
+class SentMessageRef:
+    message_id: str = ""
+    root_id: str = ""
+    thread_id: str = ""
+    parent_id: str = ""
+    upper_message_id: str = ""
+
+    def alias_ids(self) -> tuple[str, ...]:
+        return _dedupe_preserve_order([
+            self.message_id,
+            self.root_id,
+            self.thread_id,
+            self.parent_id,
+            self.upper_message_id,
+        ])
+
+
 
 def _safe_json_loads(text: str | None) -> dict[str, Any]:
     if not text:
@@ -336,6 +354,19 @@ def _response_headers(response: object) -> dict[str, str]:
         return {}
 
 
+def sent_message_ref_from_payload(payload: dict[str, Any]) -> SentMessageRef:
+    data = payload.get("data")
+    if not isinstance(data, dict):
+        data = {}
+    return SentMessageRef(
+        message_id=_read_text(data.get("message_id")),
+        root_id=_read_text(data.get("root_id")),
+        thread_id=_read_text(data.get("thread_id")),
+        parent_id=_read_text(data.get("parent_id")),
+        upper_message_id=_read_text(data.get("upper_message_id")),
+    )
+
+
 def _guess_file_suffix(content_type: str) -> str:
     guessed = mimetypes.guess_extension(content_type or "", strict=False) or ""
     return guessed if guessed else ".img"
@@ -432,8 +463,8 @@ class FeishuMessenger:
         reply_to_message_id: str = "",
         root_id: str = "",
         force_new_message: bool = False,
-    ) -> tuple[str, ...]:
-        message_ids: list[str] = []
+    ) -> tuple[SentMessageRef, ...]:
+        sent_messages: list[SentMessageRef] = []
         for chunk in split_text(text):
             if reply_to_message_id and not force_new_message:
                 try:
@@ -443,17 +474,13 @@ class FeishuMessenger:
                         build_markdown_post_content(chunk),
                         reply_in_thread=True,
                     )
-                    message_id = _read_text(payload.get("data", {}).get("message_id"))
-                    if message_id:
-                        message_ids.append(message_id)
+                    sent_messages.append(sent_message_ref_from_payload(payload))
                     continue
                 except Exception:
                     LOGGER.exception("reply text failed for message_id=%s", reply_to_message_id)
             payload = await self.create_message(chat_id, "post", build_markdown_post_content(chunk), root_id=root_id)
-            message_id = _read_text(payload.get("data", {}).get("message_id"))
-            if message_id:
-                message_ids.append(message_id)
-        return tuple(message_ids)
+            sent_messages.append(sent_message_ref_from_payload(payload))
+        return tuple(sent_messages)
 
     async def send_interactive_card(
         self,
@@ -464,22 +491,22 @@ class FeishuMessenger:
         root_id: str = "",
         force_new_message: bool = False,
         update_message_id: str = "",
-    ) -> str:
+    ) -> SentMessageRef:
         content = _json_dumps(card)
         if update_message_id:
             try:
                 await self.update_message(update_message_id, "interactive", content)
-                return update_message_id
+                return SentMessageRef(message_id=update_message_id)
             except Exception:
                 LOGGER.exception("update interactive card failed for message_id=%s", update_message_id)
         if reply_to_message_id and not force_new_message:
             try:
                 payload = await self.reply_message(reply_to_message_id, "interactive", content, reply_in_thread=True)
-                return _read_text(payload.get("data", {}).get("message_id"))
+                return sent_message_ref_from_payload(payload)
             except Exception:
                 LOGGER.exception("reply interactive card failed for message_id=%s", reply_to_message_id)
         payload = await self.create_message(chat_id, "interactive", content, root_id=root_id)
-        return _read_text(payload.get("data", {}).get("message_id"))
+        return sent_message_ref_from_payload(payload)
 
 
 

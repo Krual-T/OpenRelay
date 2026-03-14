@@ -18,7 +18,7 @@ from lark_oapi.api.cardkit.v1 import (
 )
 
 from openrelay.feishu_reply_card import DEFAULT_THINKING_TEXT, STREAMING_ELEMENT_ID, build_streaming_content, build_thinking_card_json
-from openrelay.feishu import FeishuMessenger, _read_text
+from openrelay.feishu import FeishuMessenger, _read_text, sent_message_ref_from_payload
 
 DEFAULT_STREAM_UPDATE_THROTTLE_MS = 100
 build_streaming_card_json = build_thinking_card_json
@@ -58,9 +58,11 @@ class FeishuStreamingSession:
         if reply_to_message_id:
             try:
                 payload = await self.messenger.reply_message(reply_to_message_id, "interactive", card_content, reply_in_thread=True)
+                sent_message = sent_message_ref_from_payload(payload)
                 self.state = {
                     "card_id": card_id,
-                    "message_id": _read_text(payload.get("data", {}).get("message_id")),
+                    "message_id": sent_message.message_id,
+                    "alias_ids": sent_message.alias_ids(),
                     "sequence": 1,
                     "current_content": "",
                 }
@@ -68,9 +70,11 @@ class FeishuStreamingSession:
             except Exception:
                 pass
         payload = await self.messenger.create_message(receive_id, "interactive", card_content, root_id=root_id)
+        sent_message = sent_message_ref_from_payload(payload)
         self.state = {
             "card_id": card_id,
-            "message_id": _read_text(payload.get("data", {}).get("message_id")),
+            "message_id": sent_message.message_id,
+            "alias_ids": sent_message.alias_ids(),
             "sequence": 1,
             "current_content": "",
         }
@@ -187,6 +191,16 @@ class FeishuStreamingSession:
         if self.state is None:
             return ""
         return str(self.state.get("message_id") or "")
+
+    def message_alias_ids(self) -> tuple[str, ...]:
+        if self.state is None:
+            return ()
+        alias_ids = self.state.get("alias_ids")
+        if isinstance(alias_ids, tuple):
+            return alias_ids
+        if isinstance(alias_ids, list):
+            return tuple(str(item) for item in alias_ids if str(item))
+        return ()
 
     def has_started(self) -> bool:
         return self.state is not None
