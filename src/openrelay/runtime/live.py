@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any, Callable
 
-from openrelay.feishu_reply_card import (
+from openrelay.feishu import (
     build_complete_card,
     build_process_panel_text as build_reply_process_panel_text,
     format_reasoning_duration,

@@ -17,8 +17,9 @@ from lark_oapi.api.cardkit.v1 import (
     UpdateCardRequestBody,
 )
 
-from openrelay.feishu_reply_card import DEFAULT_THINKING_TEXT, STREAMING_ELEMENT_ID, build_streaming_content, build_thinking_card_json
-from openrelay.feishu import FeishuMessenger, _read_text, sent_message_ref_from_payload
+from .messenger import FeishuMessenger, sent_message_ref_from_payload
+from .parsing import _read_text
+from .reply_card import DEFAULT_THINKING_TEXT, STREAMING_ELEMENT_ID, build_streaming_content, build_thinking_card_json
 
 DEFAULT_STREAM_UPDATE_THROTTLE_MS = 100
 build_streaming_card_json = build_thinking_card_json

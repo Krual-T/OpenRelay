@@ -1,7 +1,7 @@
 import pytest
 
-import openrelay.streaming_card as streaming_card_module
-from openrelay.streaming_card import (
+import openrelay.feishu.streaming as streaming_card_module
+from openrelay.feishu import (
     DEFAULT_THINKING_TEXT,
     FeishuStreamingSession,
     STREAMING_ELEMENT_ID,

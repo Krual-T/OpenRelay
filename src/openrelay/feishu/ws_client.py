@@ -11,7 +11,7 @@ import lark_oapi as lark
 from openrelay.config import AppConfig
 
 
-LOGGER = logging.getLogger("openrelay.feishu_ws")
+LOGGER = logging.getLogger("openrelay.feishu.ws")
 
 
 class FeishuWebSocketClient:
