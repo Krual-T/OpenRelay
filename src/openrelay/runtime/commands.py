@@ -62,6 +62,13 @@ class PanelCommandArgs:
     sort_mode: SessionSortMode
 
 
+@dataclass(slots=True)
+class PagingCommandArgs:
+    target: str
+    page: int
+    sort_mode: SessionSortMode
+
+
 class RuntimeCommandRouter:
     def __init__(
         self,
@@ -231,6 +238,18 @@ class RuntimeCommandRouter:
         return f"p2p:{message.chat_id}:thread:{message.message_id}"
 
     def _parse_resume_command_args(self, arg_text: str) -> ResumeCommandArgs:
+        args = self._parse_paging_command_args(arg_text)
+        return ResumeCommandArgs(target=args.target, page=args.page, sort_mode=args.sort_mode)
+
+    def _parse_panel_command_args(self, arg_text: str) -> PanelCommandArgs:
+        args = self._parse_paging_command_args(arg_text)
+        uses_session_paging = args.page != 1 or args.sort_mode != DEFAULT_SESSION_LIST_SORT
+        view = self._normalize_panel_view(args.target or ("sessions" if uses_session_paging else "home"))
+        if view != "sessions" and uses_session_paging:
+            raise ValueError("只有 /panel sessions 支持 --page 和 --sort")
+        return PanelCommandArgs(view=view, page=args.page, sort_mode=args.sort_mode)
+
+    def _parse_paging_command_args(self, arg_text: str) -> PagingCommandArgs:
         tokens = shlex.split(arg_text) if arg_text else []
         target = ""
         page = 1
@@ -259,43 +278,7 @@ class RuntimeCommandRouter:
             else:
                 raise ValueError(f"多余参数：{token}")
             index += 1
-        return ResumeCommandArgs(target=target, page=page, sort_mode=sort_mode)
-
-    def _parse_panel_command_args(self, arg_text: str) -> PanelCommandArgs:
-        tokens = shlex.split(arg_text) if arg_text else []
-        raw_view = ""
-        page = 1
-        sort_mode = DEFAULT_SESSION_LIST_SORT
-        index = 0
-        while index < len(tokens):
-            token = tokens[index]
-            if token == "--page":
-                index += 1
-                if index >= len(tokens):
-                    raise ValueError("--page 缺少页码")
-                page = self._parse_positive_int(tokens[index], "page")
-            elif token.startswith("--page="):
-                page = self._parse_positive_int(token.split("=", 1)[1], "page")
-            elif token == "--sort":
-                index += 1
-                if index >= len(tokens):
-                    raise ValueError("--sort 缺少排序模式")
-                sort_mode = self.session_browser.normalize_sort_mode(tokens[index])
-            elif token.startswith("--sort="):
-                sort_mode = self.session_browser.normalize_sort_mode(token.split("=", 1)[1])
-            elif token.startswith("--"):
-                raise ValueError(f"不支持的选项：{token}")
-            elif not raw_view:
-                raw_view = token
-            else:
-                raise ValueError(f"多余参数：{token}")
-            index += 1
-
-        uses_session_paging = page != 1 or sort_mode != DEFAULT_SESSION_LIST_SORT
-        view = self._normalize_panel_view(raw_view or ("sessions" if uses_session_paging else "home"))
-        if view != "sessions" and uses_session_paging:
-            raise ValueError("只有 /panel sessions 支持 --page 和 --sort")
-        return PanelCommandArgs(view=view, page=page, sort_mode=sort_mode)
+        return PagingCommandArgs(target=target, page=page, sort_mode=sort_mode)
 
     def _normalize_panel_view(self, value: str) -> PanelView:
         aliases: dict[str, PanelView] = {

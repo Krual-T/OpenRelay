@@ -180,6 +180,19 @@ async def test_runtime_command_router_parses_resume_list_page_and_sort(tmp_path:
 
 
 @pytest.mark.asyncio
+async def test_runtime_command_router_parses_equals_style_paging_args(tmp_path: Path) -> None:
+    router, store, hooks = build_router(tmp_path)
+    session = store.load_session("p2p:oc_1")
+
+    await router.handle(make_message("/resume list --page=3 --sort=updated-desc", suffix="resume_equals"), session.base_key, session)
+    await router.handle(make_message("/panel --page=2 --sort=active-first", suffix="panel_equals"), session.base_key, session)
+
+    assert hooks.session_list_calls == [(session.base_key, 3, "updated-desc")]
+    assert hooks.panel_calls == [("om_panel_equals", session.base_key, "sessions", 2, "active-first")]
+    store.close()
+
+
+@pytest.mark.asyncio
 async def test_runtime_command_router_rejects_resume_inside_thread(tmp_path: Path) -> None:
     router, store, hooks = build_router(tmp_path)
     session = store.load_session("p2p:oc_1")

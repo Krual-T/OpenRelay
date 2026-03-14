@@ -105,23 +105,7 @@ class StateStore:
         rows = self.connection.execute(
             "SELECT name, path, channels_json FROM directory_shortcuts ORDER BY name COLLATE NOCASE ASC"
         ).fetchall()
-        shortcuts: list[DirectoryShortcut] = []
-        for row in rows:
-            try:
-                channels_payload = json.loads(row["channels_json"] or "[]")
-            except json.JSONDecodeError:
-                channels_payload = []
-            channels = tuple(
-                token for token in [str(item).strip().lower() for item in channels_payload if str(item).strip()] if token in {"all", "main", "develop"}
-            ) or ("all",)
-            shortcuts.append(
-                DirectoryShortcut(
-                    name=str(row["name"] or "").strip(),
-                    path=str(row["path"] or "").strip(),
-                    channels=channels,
-                )
-            )
-        return tuple(shortcuts)
+        return tuple(self._directory_shortcut_from_row(row) for row in rows)
 
     def save_directory_shortcut(self, shortcut: DirectoryShortcut) -> DirectoryShortcut:
         now = utc_now()
@@ -153,18 +137,7 @@ class StateStore:
         ).fetchone()
         if row is None:
             return None
-        try:
-            channels_payload = json.loads(row["channels_json"] or "[]")
-        except json.JSONDecodeError:
-            channels_payload = []
-        channels = tuple(
-            token for token in [str(item).strip().lower() for item in channels_payload if str(item).strip()] if token in {"all", "main", "develop"}
-        ) or ("all",)
-        return DirectoryShortcut(
-            name=str(row["name"] or "").strip(),
-            path=str(row["path"] or "").strip(),
-            channels=channels,
-        )
+        return self._directory_shortcut_from_row(row)
 
     def remove_directory_shortcut(self, name: str) -> bool:
         cursor = self.connection.execute(
@@ -173,6 +146,25 @@ class StateStore:
         )
         self.connection.commit()
         return cursor.rowcount > 0
+
+    def _directory_shortcut_from_row(self, row: sqlite3.Row) -> DirectoryShortcut:
+        return DirectoryShortcut(
+            name=str(row["name"] or "").strip(),
+            path=str(row["path"] or "").strip(),
+            channels=self._normalize_directory_shortcut_channels(row["channels_json"]),
+        )
+
+    def _normalize_directory_shortcut_channels(self, raw_channels: str) -> tuple[str, ...]:
+        try:
+            channels_payload = json.loads(raw_channels or "[]")
+        except json.JSONDecodeError:
+            channels_payload = []
+        channels = tuple(
+            token
+            for token in (str(item).strip().lower() for item in channels_payload if str(item).strip())
+            if token in {"all", "main", "develop"}
+        )
+        return channels or ("all",)
 
     def _new_session_id(self) -> str:
         return f"s_{uuid.uuid4().hex[:12]}"

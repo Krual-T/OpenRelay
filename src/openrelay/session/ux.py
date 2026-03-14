@@ -172,22 +172,7 @@ class SessionUX:
         return payloads
 
     def format_session_list(self, entries: list[SessionListEntry]) -> str:
-        if not entries:
-            return "没有可恢复的历史会话。"
-        blocks: list[str] = []
-        for display in self.build_session_display_entries(entries):
-            lines = [f"{display['index']}. {'[当前] ' if display.get('active') else ''}{display['title']}"]
-            identifier = f"id={display['resume_token']}"
-            native_id = str(display.get("native_session_id") or "")
-            if native_id and native_id != display["session_id"]:
-                identifier += f" · thread={native_id}"
-            lines.append(f"   {identifier}")
-            if display.get("meta"):
-                lines.append(f"   {display['meta']}")
-            if display.get("preview"):
-                lines.append(f"   预览：{display['preview']}")
-            blocks.append("\n".join(lines))
-        return "\n\n".join(blocks)
+        return self._format_session_displays(self.build_session_display_entries(entries))
 
     def format_session_list_page(self, session_page: SessionListPage) -> str:
         sort_label = "最近更新优先" if session_page.sort_mode == SESSION_SORT_UPDATED else "当前会话优先"
