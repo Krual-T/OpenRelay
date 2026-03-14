@@ -42,5 +42,5 @@
 
 因此：
 - 会话装载、占位控制会话复用、top-level 到 thread 的会话继承，应该放在 `openrelay.session`。
-- `/restart` 对应的 systemd / 进程控制属于 runtime 基础设施，应保留在 `openrelay.runtime`，但不应继续塞在 `AgentRuntime` 这个消息编排类里。
+- `/restart` 对应的 systemd / 进程控制属于 runtime 基础设施，应保留在 `openrelay.runtime`，但不应继续塞在 `RuntimeOrchestrator` 这个消息编排类里，更不该再被误叫成 agent。
 - backend turn 生命周期、流式回复状态、active run / follow-up 队列属于 runtime 执行层，应拆到独立协作者，而不是继续堆在入口类里。

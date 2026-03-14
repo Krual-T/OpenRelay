@@ -6,10 +6,10 @@
 
 当前 `openrelay` 已经有基础分层：配置、状态存储、后端适配、飞书接入、卡片渲染、会话 UX 都有独立文件。
 
-但核心编排层仍然过重：`src/openrelay/runtime.py` 同时承担消息分发、命令路由、帮助文案构造、面板发送、发布通道切换、进程重启和部分会话交互逻辑。随着 `/help` 卡片化、`/resume` 卡片分页排序等需求继续进入，这个文件会继续膨胀。
+但核心编排层仍然过重：`src/openrelay/runtime/orchestrator.py` 仍然同时承担消息分发、命令路由、帮助文案构造、面板发送、发布通道切换、进程重启和部分会话交互逻辑。随着 `/help` 卡片化、`/resume` 卡片分页排序等需求继续进入，这个入口类仍然容易继续膨胀。
 
 问题不在于“文件数量不够多”，而在于模块边界还不稳定：
-- `AgentRuntime` 既做调度，又做展示。
+- `RuntimeOrchestrator` 既做调度，又做展示；旧名 `AgentRuntime` 也在持续误导职责边界。
 - `SessionUX` 同时承担查询、恢复、排序、格式化。
 - 新交互需求正在把更多展示和命令分支继续塞回 runtime 主文件。
 
@@ -35,7 +35,7 @@
 
 ### Phase 1：先抽纯展示逻辑
 
-优先把不直接驱动状态流转、主要负责拼装用户可见内容的逻辑从 `AgentRuntime` 拆出去。
+优先把不直接驱动状态流转、主要负责拼装用户可见内容的逻辑从 `RuntimeOrchestrator` 拆出去。
 
 首选切口：
 - `/help` 文本构造 -> 独立 `HelpRenderer`
@@ -70,30 +70,30 @@
 ## 当前进展
 
 已完成 Phase 1：
-- 新增 `src/openrelay/help_renderer.py`
-- 把 `/help` 文本构造从 `AgentRuntime` 移出
-- `AgentRuntime` 只负责调用帮助渲染器
+- 新增 `src/openrelay/runtime/help.py`
+- 把 `/help` 文本构造从 `RuntimeOrchestrator` 移出
+- `RuntimeOrchestrator` 只负责调用帮助渲染器
 - 增加针对帮助渲染器的独立测试
 
 本轮继续推进 Phase 2 与 Phase 3：
-- 新增 `src/openrelay/session_browser.py`
+- 新增 `src/openrelay/session/browser.py`
 - 把会话列表查询和恢复决策从 `SessionUX` 移出
 - `SessionUX` 收敛为会话列表文本 / 面板展示格式化
 - 为 `/resume` 卡片化和分页排序保留稳定的数据入口与测试落点
-- 新增 `src/openrelay/runtime_commands.py`
-- 把 `_handle_command` 的主分支树从 `AgentRuntime` 收敛到独立命令路由层
-- `runtime.py` 只保留命令相关协作入口与少量状态密切相关的 helper
+- 新增 `src/openrelay/runtime/commands.py`
+- 把 `_handle_command` 的主分支树从 `RuntimeOrchestrator` 收敛到独立命令路由层
+- `RuntimeOrchestrator` 只保留命令相关协作入口与少量状态密切相关的 helper
 - 2026-03-15 新增 `src/openrelay/session/lifecycle.py`，把会话装载 / 占位会话复用策略移回 `openrelay.session`
-- 2026-03-15 新增 `src/openrelay/runtime/restart.py`，把 systemd / 进程重启控制从 `AgentRuntime` 分离为 runtime 内部协作者
-- `AgentRuntime` 进一步收敛为消息编排器，避免继续混入会话域策略和进程控制细节
-- 2026-03-15 新增 `src/openrelay/runtime/turn.py`，把 backend turn 生命周期、交互控制、流式回复状态从 `AgentRuntime` 移出
-- 2026-03-15 新增 `src/openrelay/runtime/execution.py`，把 active run、串行锁和 follow-up 队列从 `AgentRuntime` 移到执行协调器
-- `AgentRuntime` 现在主要保留 dispatch、命令分流、session 解析委托与顶层异常边界
+- 2026-03-15 新增 `src/openrelay/runtime/restart.py`，把 systemd / 进程重启控制从 `RuntimeOrchestrator` 分离为 runtime 内部协作者
+- `RuntimeOrchestrator` 进一步收敛为消息编排器，避免继续混入会话域策略和进程控制细节
+- 2026-03-15 新增 `src/openrelay/runtime/turn.py`，把 backend turn 生命周期、交互控制、流式回复状态从 `RuntimeOrchestrator` 移出
+- 2026-03-15 新增 `src/openrelay/runtime/execution.py`，把 active run、串行锁和 follow-up 队列从 `RuntimeOrchestrator` 移到执行协调器
+- `RuntimeOrchestrator` 现在主要保留 dispatch、命令分流、session 解析委托与顶层异常边界
 
 ## 预期结果
 
 完成这一轮后，收益主要有四点：
-- `runtime.py` 直接减重，帮助逻辑和主命令分支不再继续堆在主编排类里。
+- `RuntimeOrchestrator` 直接减重，帮助逻辑和主命令分支不再继续堆在主编排类里。
 - `/help` 的文本版与后续卡片版有共同落点。
 - 会话浏览已经有稳定的数据入口，可继续承接 `/resume` 与 `/panel` 的分页、排序和卡片交互。
 - 后续继续拆 `/resume`、`/panel` 或命令细节时，可以沿同样模式推进，而不是再次回到“大文件里塞新分支”的路径。

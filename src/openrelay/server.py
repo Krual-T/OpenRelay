@@ -10,7 +10,7 @@ import uvicorn
 
 from openrelay.core import AppConfig, ConfigError, load_config
 from openrelay.feishu import FeishuEventDispatcher, FeishuMessenger, FeishuWebSocketClient, build_raw_request
-from openrelay.runtime import AgentRuntime
+from openrelay.runtime import RuntimeOrchestrator
 from openrelay.storage import StateStore
 
 
@@ -42,7 +42,7 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
         logging.basicConfig(level=logging.INFO, format="[%(asctime)s] %(levelname)s %(name)s: %(message)s")
         store = StateStore(app_config)
         messenger = FeishuMessenger(app_config)
-        runtime = AgentRuntime(app_config, store, messenger)
+        runtime = RuntimeOrchestrator(app_config, store, messenger)
         event_dispatcher = FeishuEventDispatcher(app_config, asyncio.get_running_loop(), runtime.dispatch_message, messenger=messenger)
         app.state.config = app_config
         app.state.store = store
@@ -69,12 +69,12 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
         ws_client = getattr(app.state, "ws_client", None)
         if ws_client is not None:
             await ws_client.close()
-        runtime: AgentRuntime = app.state.runtime
+        runtime: RuntimeOrchestrator = app.state.runtime
         await runtime.shutdown()
 
     @app.get("/health")
     async def health() -> dict[str, object]:
-        runtime: AgentRuntime = app.state.runtime
+        runtime: RuntimeOrchestrator = app.state.runtime
         return {
             "ok": True,
             "default_backend": app_config.backend.default_backend,

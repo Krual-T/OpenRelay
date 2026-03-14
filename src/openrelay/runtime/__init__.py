@@ -1,4 +1,4 @@
-from .agent import AgentRuntime, DEFAULT_IMAGE_PROMPT
+from .orchestrator import RuntimeOrchestrator, DEFAULT_IMAGE_PROMPT
 from .commands import PanelCommandArgs, RuntimeCommandHooks, RuntimeCommandRouter
 from .execution import RuntimeExecutionCoordinator
 from .follow_up import MERGED_FOLLOW_UP_INTRO, QueuedFollowUp
@@ -19,7 +19,7 @@ from .rendering import build_activity_summary, render_live_status_markdown, rend
 from .turn import BackendTurnSession, TurnRuntimeContext
 
 __all__ = [
-    "AgentRuntime",
+    "RuntimeOrchestrator",
     "DEFAULT_IMAGE_PROMPT",
     "DEFAULT_SYSTEMD_SERVICE_UNIT",
     "BackendTurnSession",
