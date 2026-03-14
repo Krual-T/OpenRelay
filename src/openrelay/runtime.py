@@ -30,6 +30,7 @@ from openrelay.release import (
 )
 from openrelay.state import StateStore
 from openrelay.runtime_live import apply_live_progress, build_process_panel_text, build_reply_card, create_live_reply_state
+from openrelay.runtime_interactions import RunInteractionController
 from openrelay.runtime_commands import PanelCommandArgs, RuntimeCommandHooks, RuntimeCommandRouter
 from openrelay.session_browser import SessionBrowser, SessionSortMode
 from openrelay.session_list_card import build_session_list_card
@@ -81,7 +82,6 @@ class AgentRuntime:
         self._locks: dict[str, asyncio.Lock] = defaultdict(asyncio.Lock)
         self._pending_session_inputs: dict[str, deque[IncomingMessage | QueuedFollowUp]] = defaultdict(deque)
         self.active_runs: dict[str, ActiveRun] = {}
-        self._top_level_thread_keys: dict[str, str] = {}
         self.streaming_session_factory = streaming_session_factory or (lambda current_messenger: FeishuStreamingSession(current_messenger))
         self.typing_manager = typing_manager or FeishuTypingManager(messenger)
         self.session_browser = SessionBrowser(config, store)
@@ -153,22 +153,7 @@ class AgentRuntime:
             return thread_candidates[0]
         if self._is_command_message(message):
             return self._compose_session_key(message)
-        control_key = self._compose_session_key(message)
-        active_thread_key = self._top_level_thread_keys.get(control_key)
-        if active_thread_key:
-            return active_thread_key
         return self._compose_session_key(message, thread_id=message.message_id)
-
-    def _remember_top_level_thread_key(self, message: IncomingMessage, session_key: str) -> None:
-        if self._is_top_level_message(message) and not self._is_command_message(message):
-            self._top_level_thread_keys[self._compose_session_key(message)] = session_key
-
-    def _release_top_level_thread_key(self, message: IncomingMessage, session_key: str) -> None:
-        if not self._is_top_level_message(message) or self._is_command_message(message):
-            return
-        control_key = self._compose_session_key(message)
-        if self._top_level_thread_keys.get(control_key) == session_key:
-            self._top_level_thread_keys.pop(control_key, None)
 
     def _remember_thread_session_alias(self, message: IncomingMessage, session_key: str) -> None:
         if self._is_card_action_message(message):
@@ -232,6 +217,10 @@ class AgentRuntime:
             return self.store.load_session(session_key)
         if self.store.has_session_scope(session_key):
             return self.store.load_session(session_key)
+        if self._is_top_level_message(message):
+            control_key = self._compose_session_key(message)
+            template = self.store.find_session(control_key)
+            return self.store.create_next_session(session_key, template)
         control_key = self._compose_session_key(message)
         template = self.store.find_session(control_key) if session_key != control_key else None
         return self.store.load_session(session_key, template=template)
@@ -269,7 +258,6 @@ class AgentRuntime:
                 return
 
             session_key = self.build_session_key(message)
-            self._remember_top_level_thread_key(message, session_key)
             self._remember_thread_session_alias(message, session_key)
             session = self._load_session_for_message(message, session_key)
             execution_key = self._build_execution_key(
@@ -286,6 +274,10 @@ class AgentRuntime:
                 handled = await self._handle_command(message, session_key, session)
                 if handled:
                     return
+            active = self.active_runs.get(execution_key)
+            if session_lock.locked() and active is not None and active.try_handle_input is not None:
+                if await active.try_handle_input(message):
+                    return
             if session_lock.locked():
                 queued_follow_up = self._enqueue_pending_input(execution_key, message)
                 if queued_follow_up is not None:
@@ -293,10 +285,7 @@ class AgentRuntime:
                 return
 
             async with session_lock:
-                try:
-                    await self._handle_message_serialized(message, execution_key)
-                finally:
-                    self._release_top_level_thread_key(message, session_key)
+                await self._handle_message_serialized(message, execution_key)
         except Exception:
             LOGGER.exception("dispatch_message failed for event_id=%s chat_id=%s", message.event_id, message.chat_id)
 
@@ -309,7 +298,6 @@ class AgentRuntime:
     async def _handle_single_serialized_input(self, pending_input: IncomingMessage | QueuedFollowUp, execution_key: str) -> None:
         message = pending_input.to_message() if isinstance(pending_input, QueuedFollowUp) else pending_input
         session_key = self.build_session_key(message)
-        self._remember_top_level_thread_key(message, session_key)
         self._remember_thread_session_alias(message, session_key)
         session = self._load_session_for_message(message, session_key)
         if message.text.startswith("/"):
@@ -353,13 +341,15 @@ class AgentRuntime:
             return
 
         cancel_event = asyncio.Event()
+        interaction_controller: RunInteractionController | None = None
 
         async def cancel(_reason: str) -> None:
             cancel_event.set()
+            if interaction_controller is not None:
+                await interaction_controller.shutdown()
 
         message_summary = self._message_summary_text(message)
         backend_prompt = self._build_backend_prompt(message)
-        self.active_runs[execution_key] = ActiveRun(started_at=utc_now(), description=self.session_ux.shorten(message_summary, 72), cancel=cancel)
         typing_state: dict[str, Any] | None = None
         streaming: FeishuStreamingSession | None = None
         streaming_broken = False
@@ -457,6 +447,36 @@ class AgentRuntime:
                 apply_live_progress(live_state, event)
                 request_streaming_update()
 
+            interaction_controller = RunInteractionController(
+                self.messenger,
+                chat_id=message.chat_id,
+                root_id=self._root_id_for_message(message),
+                action_context=self._build_card_action_context(message, session.base_key),
+                reply_target_getter=lambda: (
+                    streaming.message_id()
+                    if streaming is not None and streaming.has_started() and streaming.message_id()
+                    else (message.reply_to_message_id or ("" if self._is_card_action_message(message) else message.message_id))
+                ),
+                emit_progress=on_progress,
+                send_text=lambda text: self.messenger.send_text(
+                    message.chat_id,
+                    text,
+                    reply_to_message_id=(
+                        streaming.message_id()
+                        if streaming is not None and streaming.has_started() and streaming.message_id()
+                        else (message.reply_to_message_id or ("" if self._is_card_action_message(message) else message.message_id))
+                    ),
+                    root_id=self._root_id_for_message(message),
+                ),
+                cancel_event=cancel_event,
+            )
+            self.active_runs[execution_key] = ActiveRun(
+                started_at=utc_now(),
+                description=self.session_ux.shorten(message_summary, 72),
+                cancel=cancel,
+                try_handle_input=interaction_controller.try_handle_message,
+            )
+
             reply = await backend.run(
                 session,
                 backend_prompt,
@@ -466,6 +486,7 @@ class AgentRuntime:
                     cancel_event=cancel_event,
                     on_partial_text=on_partial_text,
                     on_progress=on_progress,
+                    on_server_request=interaction_controller.request if interaction_controller is not None else None,
                 ),
             )
             updated = SessionRecord(
@@ -493,6 +514,8 @@ class AgentRuntime:
                 await self._reply_final(message, f"处理失败：{exc}", streaming, live_state)
         finally:
             stop_spinner_task()
+            if interaction_controller is not None:
+                await interaction_controller.shutdown()
             self.active_runs.pop(execution_key, None)
             if typing_state is not None:
                 try:

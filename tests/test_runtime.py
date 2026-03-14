@@ -132,6 +132,18 @@ class FakeBackend(Backend):
         return BackendReply(text=f"echo: {prompt}", native_session_id="native_1", metadata={"usage": {"input_tokens": 100, "cached_input_tokens": 50, "output_tokens": 20, "total_tokens": 170, "model_context_window": 1000}})
 
 
+class SequentialNativeBackend(Backend):
+    name = "fake"
+
+    def __init__(self) -> None:
+        self.calls: list[tuple[SessionRecord, str]] = []
+
+    async def run(self, session: SessionRecord, prompt: str, context: BackendContext) -> BackendReply:
+        _ = context
+        self.calls.append((session, prompt))
+        return BackendReply(text=f"echo: {prompt}", native_session_id=f"native_{len(self.calls)}")
+
+
 class FakeStreamingSession:
     def __init__(self, messenger):
         self.started = False
@@ -212,6 +224,69 @@ class InterruptibleBackend(Backend):
         await context.cancel_event.wait()
         self.cancelled.set()
         raise RuntimeError("interrupted by /stop")
+
+
+class ApprovalRequestBackend(Backend):
+    name = "fake"
+
+    def __init__(self) -> None:
+        self.decision = ""
+        self.started = asyncio.Event()
+
+    async def run(self, session: SessionRecord, prompt: str, context: BackendContext) -> BackendReply:
+        _ = session, prompt
+        if context.on_server_request is None:
+            raise AssertionError("on_server_request is required")
+        self.started.set()
+        result = await context.on_server_request(
+            "item/commandExecution/requestApproval",
+            {
+                "threadId": "thread_1",
+                "turnId": "turn_1",
+                "itemId": "item_1",
+                "command": "pytest -q",
+                "cwd": "/workspace",
+                "reason": "Run tests before applying changes.",
+            },
+        )
+        self.decision = str(result.get("decision") or "")
+        return BackendReply(text=f"decision: {self.decision}", native_session_id="native_approval")
+
+
+class ToolUserInputBackend(Backend):
+    name = "fake"
+
+    def __init__(self) -> None:
+        self.answers: dict[str, object] | None = None
+        self.started = asyncio.Event()
+
+    async def run(self, session: SessionRecord, prompt: str, context: BackendContext) -> BackendReply:
+        _ = session, prompt
+        if context.on_server_request is None:
+            raise AssertionError("on_server_request is required")
+        self.started.set()
+        result = await context.on_server_request(
+            "item/tool/requestUserInput",
+            {
+                "threadId": "thread_1",
+                "turnId": "turn_1",
+                "itemId": "item_2",
+                "questions": [
+                    {
+                        "id": "deploy_env",
+                        "header": "Deploy Env",
+                        "question": "Which environment should I deploy to?",
+                        "options": [
+                            {"label": "staging", "description": "Safer validation first."},
+                            {"label": "production", "description": "Ship it live."},
+                        ],
+                    }
+                ],
+            },
+        )
+        self.answers = result
+        chosen = result.get("answers", {}).get("deploy_env", {}).get("answers", [""])[0]  # type: ignore[index,union-attr]
+        return BackendReply(text=f"env: {chosen}", native_session_id="native_input")
 
 
 class QueuedFollowUpBackend(Backend):
@@ -350,6 +425,34 @@ async def test_runtime_runs_backend_turn(tmp_path: Path) -> None:
     assert messenger.messages[-1] == "echo: hello"
     session = store.load_session(runtime.build_session_key(make_message("hello")))
     assert session.native_session_id == "native_1"
+    await runtime.shutdown()
+
+
+@pytest.mark.asyncio
+async def test_runtime_top_level_messages_start_independent_sessions_by_default(tmp_path: Path) -> None:
+    config = make_config(tmp_path)
+    config.workspace_root.mkdir(parents=True, exist_ok=True)
+    config.main_workspace_dir.mkdir(parents=True, exist_ok=True)
+    config.develop_workspace_dir.mkdir(parents=True, exist_ok=True)
+    store = StateStore(config)
+    messenger = FakeMessenger()
+    backend = SequentialNativeBackend()
+    runtime = AgentRuntime(config, store, messenger, backends={"codex": backend})
+
+    first_message = make_message("first task", event_suffix="root_a")
+    second_message = make_message("second task", event_suffix="root_b")
+
+    await runtime.dispatch_message(first_message)
+    await runtime.dispatch_message(second_message)
+
+    first_session = store.load_session(runtime.build_session_key(first_message))
+    second_session = store.load_session(runtime.build_session_key(second_message))
+
+    assert first_session.session_id != second_session.session_id
+    assert first_session.native_session_id == "native_1"
+    assert second_session.native_session_id == "native_2"
+    assert backend.calls[0][0].native_session_id == ""
+    assert backend.calls[1][0].native_session_id == ""
     await runtime.shutdown()
 
 
@@ -934,8 +1037,32 @@ async def test_runtime_merges_follow_up_messages_during_active_run(tmp_path: Pat
     run_task = asyncio.create_task(runtime.dispatch_message(make_message("first", event_suffix="first")))
     await asyncio.wait_for(backend.first_started.wait(), timeout=1)
 
-    await runtime.dispatch_message(make_message("补充一", event_suffix="follow_1"))
-    await runtime.dispatch_message(make_message("补充二", event_suffix="follow_2"))
+    await runtime.dispatch_message(
+        IncomingMessage(
+            event_id="evt_follow_1",
+            message_id="om_follow_1",
+            chat_id="oc_1",
+            chat_type="p2p",
+            sender_open_id="ou_user",
+            root_id="om_first",
+            thread_id="thread_first",
+            text="补充一",
+            actionable=True,
+        )
+    )
+    await runtime.dispatch_message(
+        IncomingMessage(
+            event_id="evt_follow_2",
+            message_id="om_follow_2",
+            chat_id="oc_1",
+            chat_type="p2p",
+            sender_open_id="ou_user",
+            root_id="om_first",
+            thread_id="thread_first",
+            text="补充二",
+            actionable=True,
+        )
+    )
 
     backend.release_first.set()
     await asyncio.wait_for(run_task, timeout=1)
@@ -965,7 +1092,19 @@ async def test_runtime_stop_keeps_queued_follow_up(tmp_path: Path) -> None:
     run_task = asyncio.create_task(runtime.dispatch_message(make_message("long running", event_suffix="queued_run")))
     await asyncio.wait_for(backend.first_started.wait(), timeout=1)
 
-    await runtime.dispatch_message(make_message("补充 stop", event_suffix="queued_follow_up"))
+    await runtime.dispatch_message(
+        IncomingMessage(
+            event_id="evt_queued_follow_up",
+            message_id="om_queued_follow_up",
+            chat_id="oc_1",
+            chat_type="p2p",
+            sender_open_id="ou_user",
+            root_id="om_queued_run",
+            thread_id="thread_queued_run",
+            text="补充 stop",
+            actionable=True,
+        )
+    )
     await runtime.dispatch_message(make_message("/stop", event_suffix="queued_stop"))
     await asyncio.wait_for(run_task, timeout=1)
 
@@ -975,6 +1114,83 @@ async def test_runtime_stop_keeps_queued_follow_up(tmp_path: Path) -> None:
     assert "已停止当前回复。" in messenger.messages
     assert messenger.messages[-1] == "done: 补充 stop"
     assert len(runtime.active_runs) == 0
+    await runtime.shutdown()
+
+
+@pytest.mark.asyncio
+async def test_runtime_routes_card_action_approval_to_active_interaction(tmp_path: Path) -> None:
+    config = make_config(tmp_path)
+    config.workspace_root.mkdir(parents=True, exist_ok=True)
+    config.main_workspace_dir.mkdir(parents=True, exist_ok=True)
+    config.develop_workspace_dir.mkdir(parents=True, exist_ok=True)
+    store = StateStore(config)
+    messenger = FakeMessenger()
+    backend = ApprovalRequestBackend()
+    runtime = AgentRuntime(config, store, messenger, backends={"codex": backend})
+
+    run_task = asyncio.create_task(runtime.dispatch_message(make_message("needs approval", event_suffix="needs_approval")))
+    await asyncio.wait_for(backend.started.wait(), timeout=1)
+
+    while not messenger.cards:
+        await asyncio.sleep(0)
+    prompt_card = messenger.cards[-1]
+    prompt_commands = extract_card_commands(prompt_card)
+    allow_once_command = next(command for command in prompt_commands if command.startswith("/__openrelay_interaction__") and command.endswith(" accept"))
+
+    parsed = parse_card_action_event(
+        {
+            "token": "tok_interaction_accept",
+            "operator": {"open_id": "ou_user"},
+            "action": {"value": find_card_action_value(prompt_card, allow_once_command)},
+            "context": {"open_chat_id": "oc_1", "open_message_id": "om_interaction_card"},
+        }
+    )
+    assert parsed.message is not None
+
+    await runtime.dispatch_message(parsed.message)
+    await asyncio.wait_for(run_task, timeout=1)
+
+    assert backend.decision == "accept"
+    assert messenger.card_calls[-1]["update_message_id"] == "om_interaction_card"
+    assert messenger.messages[-1] == "decision: accept"
+    await runtime.shutdown()
+
+
+@pytest.mark.asyncio
+async def test_runtime_routes_text_reply_to_active_user_input_interaction(tmp_path: Path) -> None:
+    config = make_config(tmp_path)
+    config.workspace_root.mkdir(parents=True, exist_ok=True)
+    config.main_workspace_dir.mkdir(parents=True, exist_ok=True)
+    config.develop_workspace_dir.mkdir(parents=True, exist_ok=True)
+    store = StateStore(config)
+    messenger = FakeMessenger()
+    backend = ToolUserInputBackend()
+    runtime = AgentRuntime(config, store, messenger, backends={"codex": backend})
+
+    run_task = asyncio.create_task(runtime.dispatch_message(make_message("needs env", event_suffix="needs_env")))
+    await asyncio.wait_for(backend.started.wait(), timeout=1)
+
+    while not messenger.cards:
+        await asyncio.sleep(0)
+    assert "Which environment should I deploy to?" in extract_card_text(messenger.cards[-1])
+
+    await runtime.dispatch_message(
+        IncomingMessage(
+            event_id="evt_env_answer",
+            message_id="om_env_answer",
+            chat_id="oc_1",
+            chat_type="p2p",
+            sender_open_id="ou_user",
+            root_id="om_needs_env",
+            thread_id="thread_needs_env",
+            text="production",
+            actionable=True,
+        )
+    )
+    await asyncio.wait_for(run_task, timeout=1)
+
+    assert backend.answers == {"answers": {"deploy_env": {"answers": ["production"]}}}
+    assert messenger.messages[-1] == "env: production"
     await runtime.shutdown()
 
 
@@ -1215,6 +1431,42 @@ async def test_runtime_thread_reply_reuses_top_level_thread_scope(tmp_path: Path
         "follow up in thread",
         "echo: follow up in thread",
     ]
+    await runtime.shutdown()
+
+
+@pytest.mark.asyncio
+async def test_runtime_resume_binds_top_level_thread_scope_to_existing_session(tmp_path: Path) -> None:
+    config = make_config(tmp_path)
+    config.workspace_root.mkdir(parents=True, exist_ok=True)
+    config.main_workspace_dir.mkdir(parents=True, exist_ok=True)
+    config.develop_workspace_dir.mkdir(parents=True, exist_ok=True)
+    store = StateStore(config)
+    messenger = FakeMessenger()
+    backend = FakeBackend()
+    runtime = AgentRuntime(config, store, messenger, backends={"codex": backend})
+
+    existing = store.load_session("p2p:oc_1")
+    existing.native_session_id = "native_existing"
+    store.save_session(existing)
+
+    await runtime.dispatch_message(make_message(f"/resume {existing.session_id}", event_suffix="resume_existing"))
+
+    thread_reply = IncomingMessage(
+        event_id="evt_resume_follow_up",
+        message_id="om_resume_follow_up",
+        chat_id="oc_1",
+        chat_type="p2p",
+        sender_open_id="ou_user",
+        root_id="om_resume_existing",
+        thread_id="thread_resume_existing",
+        text="continue existing",
+        actionable=True,
+    )
+
+    await runtime.dispatch_message(thread_reply)
+
+    assert backend.calls[-1][0].session_id == existing.session_id
+    assert backend.calls[-1][0].native_session_id == "native_existing"
     await runtime.shutdown()
 
 

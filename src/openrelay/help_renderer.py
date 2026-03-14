@@ -211,7 +211,9 @@ class HelpRenderer:
         lines = [
             "- 同一任务继续干：通常不用命令，直接发消息。",
             "- 当前回复还在跑时，继续发消息会进入下一轮；连续补充会自动合并。",
+            "- 私聊顶层直接发新消息：默认会开新的 Codex 会话；想回旧会话时再用 /resume。",
             "- 开新任务或切话题：/new <label>；回旧 backend session：/resume list、/resume latest。",
+            "- `/new` 和 `/resume` 只允许在私聊顶层使用；子 thread 会固定绑定当前 Codex 会话。",
             "- `/resume` 只恢复本地 session_id，不直接暴露原生 thread 历史。",
             "- 换执行位置：/cwd <path> 切目录；/main 回稳定工作区；/develop 进修复工作区。",
             "- 快捷目录：/shortcut add <name> <path> [all|main|develop]、/shortcut list、/shortcut cd <name>。",

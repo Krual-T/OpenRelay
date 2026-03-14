@@ -189,3 +189,50 @@ def test_build_reply_card_splits_inline_thinking_tags() -> None:
     assert reasoning_panel["header"]["title"]["content"] == "🧾 中间过程"
     assert reasoning_panel["elements"][0]["content"] == "先看 runtime"
     assert card["body"]["elements"][1]["content"] == "#### Answer"
+
+
+def test_apply_live_progress_tracks_pending_interaction_items() -> None:
+    state = {
+        "history": [],
+        "history_items": [],
+        "commands": [],
+        "heading": "",
+        "status": "",
+        "current_command": "",
+        "last_command": None,
+        "last_reasoning": "",
+        "reasoning_text": "",
+        "reasoning_started_at": "",
+        "reasoning_elapsed_ms": 0,
+        "partial_text": "",
+        "spinner_frame": 0,
+        "started_at": "2026-03-11T00:00:00+00:00",
+    }
+
+    apply_live_progress(
+        state,
+        {
+            "type": "interaction.requested",
+            "interaction": {
+                "id": "ix_1",
+                "title": "Command Approval Required",
+                "detail": "Command: `pytest -q`\nCWD: `/workspace`",
+            },
+        },
+    )
+    apply_live_progress(
+        state,
+        {
+            "type": "interaction.resolved",
+            "interaction": {
+                "id": "ix_1",
+                "title": "Command Approval Required",
+                "state": "completed",
+                "detail": "Allow once",
+            },
+        },
+    )
+
+    text = build_process_panel_text(state)
+    assert "• **Command Approval Required**" in text
+    assert "└ Allow once" in text

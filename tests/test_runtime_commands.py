@@ -85,6 +85,20 @@ def make_message(text: str, sender_open_id: str = "ou_user", suffix: str = "cmd"
     )
 
 
+def make_thread_message(text: str, suffix: str = "thread_cmd") -> IncomingMessage:
+    return IncomingMessage(
+        event_id=f"evt_{suffix}",
+        message_id=f"om_{suffix}",
+        chat_id="oc_1",
+        chat_type="p2p",
+        sender_open_id="ou_user",
+        root_id="om_root",
+        thread_id="thread_1",
+        text=text,
+        actionable=True,
+    )
+
+
 
 def build_router(tmp_path: Path) -> tuple[RuntimeCommandRouter, StateStore, FakeHooks]:
     config = make_config(tmp_path)
@@ -163,6 +177,46 @@ async def test_runtime_command_router_parses_resume_list_page_and_sort(tmp_path:
     await router.handle(make_message(f"/resume list --page 2 --sort {SESSION_SORT_ACTIVE}", suffix="resume_list"), session.base_key, session)
 
     assert hooks.session_list_calls == [(session.base_key, 2, SESSION_SORT_ACTIVE)]
+    store.close()
+
+
+@pytest.mark.asyncio
+async def test_runtime_command_router_rejects_resume_inside_thread(tmp_path: Path) -> None:
+    router, store, hooks = build_router(tmp_path)
+    session = store.load_session("p2p:oc_1")
+
+    handled = await router.handle(make_thread_message("/resume list", suffix="thread_resume"), session.base_key, session)
+
+    assert handled is True
+    assert hooks.session_list_calls == []
+    assert hooks.replies[-1]["text"] == "`/resume` 只允许在私聊顶层使用；子 thread 会固定绑定当前 Codex 会话。"
+    store.close()
+
+
+@pytest.mark.asyncio
+async def test_runtime_command_router_new_binds_current_top_level_thread_scope(tmp_path: Path) -> None:
+    router, store, hooks = build_router(tmp_path)
+    session = store.load_session("p2p:oc_1")
+
+    await router.handle(make_message("/new bugfix", suffix="new_scope"), session.base_key, session)
+
+    scoped = store.find_session("p2p:oc_1:thread:om_new_scope")
+    assert scoped is not None
+    assert scoped.session_id != session.session_id
+    assert hooks.replies[-1]["text"].startswith("已新建会话 ")
+    store.close()
+
+
+@pytest.mark.asyncio
+async def test_runtime_command_router_rejects_new_inside_thread(tmp_path: Path) -> None:
+    router, store, hooks = build_router(tmp_path)
+    session = store.load_session("p2p:oc_1")
+
+    handled = await router.handle(make_thread_message("/new bugfix", suffix="thread_new"), session.base_key, session)
+
+    assert handled is True
+    assert hooks.replies[-1]["text"] == "`/new` 只允许在私聊顶层使用；子 thread 会固定绑定当前 Codex 会话。"
+    assert store.find_session("p2p:oc_1:thread:om_thread_new") is None
     store.close()
 
 

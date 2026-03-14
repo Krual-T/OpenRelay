@@ -249,6 +249,61 @@ def _complete_web_search_item(state: LiveReplyState, search: dict[str, Any]) -> 
     item["title"] = "Searched web"
 
 
+def _resolve_plan_item(state: LiveReplyState, plan_id: str) -> dict[str, Any]:
+    item = _find_history_item(
+        state,
+        lambda entry: entry.get("type") == "plan" and str(entry.get("plan_id") or "") == plan_id,
+    )
+    if item is not None:
+        return item
+    return _append_history_item(
+        state,
+        {
+            "type": "plan",
+            "state": "running",
+            "title": "Updating plan",
+            "plan_id": plan_id,
+            "detail": "",
+        },
+    )
+
+
+def _resolve_interaction_item(state: LiveReplyState, interaction: dict[str, Any]) -> dict[str, Any]:
+    interaction_id = str(interaction.get("id") or "").strip()
+    item = _find_history_item(
+        state,
+        lambda entry: entry.get("type") == "interaction"
+        and ((interaction_id and str(entry.get("interaction_id") or "") == interaction_id) or (not interaction_id and entry.get("state") == "running")),
+    )
+    title = _normalize_inline(interaction.get("title")) or "Waiting for input"
+    detail = str(interaction.get("detail") or "").strip()
+    if item is None:
+        item = _append_history_item(
+            state,
+            {
+                "type": "interaction",
+                "state": "running",
+                "title": title,
+                "interaction_id": interaction_id,
+                "detail": detail,
+            },
+        )
+    else:
+        item["title"] = title
+        if detail:
+            item["detail"] = detail
+    return item
+
+
+def _complete_interaction_item(state: LiveReplyState, interaction: dict[str, Any]) -> None:
+    item = _resolve_interaction_item(state, interaction)
+    raw_state = str(interaction.get("state") or "completed").strip()
+    item["state"] = raw_state or "completed"
+    detail = str(interaction.get("detail") or "").strip()
+    if detail:
+        item["detail"] = detail
+
+
 def create_live_reply_state(
     session: SessionRecord,
     format_cwd: Callable[[str, SessionRecord | None, str | None], str],
@@ -407,6 +462,49 @@ def apply_live_progress(state: LiveReplyState, event: dict[str, Any] | None) -> 
         state["heading"] = "Drafting response"
         if isinstance(event.get("text"), str) and event["text"].strip():
             state["status"] = event["text"]
+        push_live_history(state, state["status"])
+        return
+    if event_type == "plan.delta":
+        state["heading"] = "Planning"
+        state["status"] = "Updating plan"
+        item = _resolve_plan_item(state, "plan-stream")
+        if isinstance(event.get("text"), str):
+            item["detail"] = event["text"]
+        push_live_history(state, state["status"])
+        return
+    if event_type == "plan.updated":
+        state["heading"] = "Planning"
+        state["status"] = "Plan updated"
+        explanation = str(event.get("explanation") or "").strip()
+        plan = event.get("plan") if isinstance(event.get("plan"), list) else []
+        item = _resolve_plan_item(state, "plan-stream")
+        item["state"] = "completed"
+        item["title"] = "Updated plan"
+        detail_lines = [explanation] if explanation else []
+        for step in plan:
+            if not isinstance(step, dict):
+                continue
+            step_text = _normalize_inline(step.get("step"))
+            step_status = _normalize_inline(step.get("status"))
+            if step_text:
+                detail_lines.append(f"{step_status or 'pending'}: {step_text}")
+        item["detail"] = "\n".join(detail_lines).strip()
+        push_live_history(state, state["status"])
+        return
+    if event_type == "interaction.requested":
+        interaction = event.get("interaction") if isinstance(event.get("interaction"), dict) else {}
+        finalize_reasoning_timing(state)
+        _complete_reasoning_item(state)
+        state["heading"] = "Waiting for input"
+        state["status"] = _normalize_inline(interaction.get("title")) or "Waiting for user input"
+        _resolve_interaction_item(state, interaction)
+        push_live_history(state, state["status"])
+        return
+    if event_type == "interaction.resolved":
+        interaction = event.get("interaction") if isinstance(event.get("interaction"), dict) else {}
+        state["heading"] = "Resuming"
+        state["status"] = _normalize_inline(interaction.get("detail")) or "User input received"
+        _complete_interaction_item(state, interaction)
         push_live_history(state, state["status"])
         return
     if event_type == "turn.completed":
