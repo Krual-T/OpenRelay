@@ -121,7 +121,10 @@ class RuntimeCommandRouter:
             return True
 
         if name == "/new":
-            next_session = self.store.create_next_session(session_key, session, arg_text)
+            if not self._can_use_top_level_session_command(message):
+                await self.hooks.reply(message, "`/new` 只允许在私聊顶层使用；子 thread 会固定绑定当前 Codex 会话。", command_reply=True)
+                return True
+            next_session = self.store.create_next_session(self._top_level_thread_scope_key(message), session, arg_text)
             label = f" ({next_session.label})" if next_session.label else ""
             await self.hooks.reply(message, f"已新建会话 {next_session.session_id}{label}，原生 Codex 会话会在首条真实消息时创建。", command_reply=True)
             return True
@@ -192,24 +195,40 @@ class RuntimeCommandRouter:
         return True
 
     async def _handle_resume(self, message: IncomingMessage, session_key: str, session: SessionRecord, arg_text: str) -> bool:
+        if not self._can_use_top_level_session_command(message):
+            await self.hooks.reply(message, "`/resume` 只允许在私聊顶层使用；子 thread 会固定绑定当前 Codex 会话。", command_reply=True, command_name="/resume")
+            return True
         try:
             args = self._parse_resume_command_args(arg_text)
         except ValueError as exc:
             await self.hooks.reply(message, f"resume 参数无效：{exc}\n{RESUME_USAGE}", command_reply=True, command_name="/resume")
             return True
 
+        scope_key = self._top_level_thread_scope_key(message)
         if not args.target or args.target.lower() == "list":
             await self.hooks.send_session_list(message, session_key, session, args.page, args.sort_mode)
             return True
 
-        merged_sessions = self.session_browser.list_entries(session_key, session, limit=max(50, args.page * DEFAULT_SESSION_LIST_PAGE_SIZE + 1), sort_mode=args.sort_mode)
-        resumed = self.session_browser.resume(session_key, session, args.target, merged_sessions)
+        merged_sessions = self.session_browser.list_entries(scope_key, session, limit=max(50, args.page * DEFAULT_SESSION_LIST_PAGE_SIZE + 1), sort_mode=args.sort_mode)
+        resumed = self.session_browser.resume(scope_key, session, args.target, merged_sessions)
         if resumed is None:
             fallback_page = self.session_browser.list_page(session_key, session, page=args.page, page_size=DEFAULT_SESSION_LIST_PAGE_SIZE, sort_mode=args.sort_mode)
             await self.hooks.reply(message, f"恢复失败。\n\n{self.session_ux.format_session_list_page(fallback_page)}", command_reply=True)
             return True
         await self.hooks.reply(message, self.session_ux.format_resume_success(resumed.session, entry=resumed.entry), command_reply=True)
         return True
+
+    def _is_top_level_p2p_command(self, message: IncomingMessage) -> bool:
+        return message.chat_type == "p2p" and not message.root_id and not message.thread_id
+
+    def _is_card_action_message(self, message: IncomingMessage) -> bool:
+        return message.event_id.startswith("card-action-")
+
+    def _can_use_top_level_session_command(self, message: IncomingMessage) -> bool:
+        return self._is_top_level_p2p_command(message) or self._is_card_action_message(message)
+
+    def _top_level_thread_scope_key(self, message: IncomingMessage) -> str:
+        return f"p2p:{message.chat_id}:thread:{message.message_id}"
 
     def _parse_resume_command_args(self, arg_text: str) -> ResumeCommandArgs:
         tokens = shlex.split(arg_text) if arg_text else []

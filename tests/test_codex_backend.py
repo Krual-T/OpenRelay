@@ -6,7 +6,7 @@ from pathlib import Path
 import pytest
 
 from openrelay.backends.base import BackendContext
-from openrelay.backends.codex import CodexAppServerClient
+from openrelay.backends.codex import CodexAppServerClient, CodexTurn
 from openrelay.models import SessionRecord, utc_now
 
 
@@ -281,6 +281,23 @@ def test_codex_process_env_overrides_sqlite_home(tmp_path: Path, monkeypatch: py
     assert env["CODEX_THREAD_ID"] == "thread-from-parent"
 
 
+def test_codex_initialize_params_opt_out_experimental_api(tmp_path: Path) -> None:
+    client = CodexAppServerClient(
+        codex_path="codex",
+        workspace_root=tmp_path,
+        sqlite_home=tmp_path / "codex-state",
+        model="gpt-test",
+        safety_mode="danger-full-access",
+    )
+
+    params = client._build_initialize_params()
+
+    assert params == {
+        "clientInfo": {"name": "openrelay", "version": "0.1.0"},
+        "capabilities": {"experimentalApi": False},
+    }
+
+
 def test_codex_build_turn_input_includes_local_images(tmp_path: Path) -> None:
     client = CodexAppServerClient(
         codex_path="codex",
@@ -297,3 +314,105 @@ def test_codex_build_turn_input_includes_local_images(tmp_path: Path) -> None:
         {"type": "localImage", "path": "/tmp/a.png"},
         {"type": "localImage", "path": "/tmp/b.png"},
     ]
+
+
+@pytest.mark.asyncio
+async def test_codex_server_request_with_id_is_not_treated_as_pending_response(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    client = CodexAppServerClient(
+        codex_path="codex",
+        workspace_root=tmp_path,
+        sqlite_home=tmp_path / "codex-state",
+        model="gpt-test",
+        safety_mode="danger-full-access",
+    )
+    pending = asyncio.get_running_loop().create_future()
+    client.pending_requests[1] = pending
+    server_results: list[tuple[int, dict[str, object]]] = []
+
+    async def fake_send_server_result(request_id: int | str, result: dict[str, object]) -> None:
+        server_results.append((int(request_id), result))
+
+    monkeypatch.setattr(client, "_send_server_result", fake_send_server_result)
+
+    await client._handle_message(
+        {
+            "id": 1,
+            "method": "item/fileChange/requestApproval",
+            "params": {"threadId": "thread_1", "turnId": "turn_1", "itemId": "item_1"},
+        }
+    )
+
+    assert client.pending_requests == {1: pending}
+    assert not pending.done()
+    assert server_results == [(1, {"decision": "decline"})]
+
+
+@pytest.mark.asyncio
+async def test_codex_reasoning_prefers_summary_text_over_raw_content(tmp_path: Path) -> None:
+    _ = tmp_path
+    progress_events: list[dict[str, object]] = []
+
+    async def on_progress(event: dict[str, object]) -> None:
+        progress_events.append(event)
+
+    turn = CodexTurn(thread_id="thread_1", on_progress=on_progress)
+
+    await turn.handle_notification(
+        object(),
+        "item/completed",
+        {
+            "threadId": "thread_1",
+            "turnId": "turn_1",
+            "item": {
+                "id": "reasoning_1",
+                "type": "reasoning",
+                "summary": ["concise summary"],
+                "content": ["verbose internal trace"],
+            },
+        },
+    )
+
+    assert progress_events == [{"type": "reasoning.completed", "text": "concise summary"}]
+
+
+@pytest.mark.asyncio
+async def test_codex_server_request_routes_to_matching_turn_callback(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    client = CodexAppServerClient(
+        codex_path="codex",
+        workspace_root=tmp_path,
+        sqlite_home=tmp_path / "codex-state",
+        model="gpt-test",
+        safety_mode="danger-full-access",
+    )
+    captured: list[tuple[int | str, dict[str, object]]] = []
+    handled: list[tuple[str, dict[str, object]]] = []
+
+    async def on_server_request(method: str, params: dict[str, object]) -> dict[str, object]:
+        handled.append((method, params))
+        return {"decision": "accept"}
+
+    async def fake_send_server_result(request_id: int | str, result: dict[str, object]) -> None:
+        captured.append((request_id, result))
+
+    monkeypatch.setattr(client, "_send_server_result", fake_send_server_result)
+    client.active_turns.add(CodexTurn(thread_id="thread_1", turn_id="turn_1", on_server_request=on_server_request))
+
+    await client._handle_message(
+        {
+            "id": 99,
+            "method": "item/commandExecution/requestApproval",
+            "params": {"threadId": "thread_1", "turnId": "turn_1", "itemId": "item_1"},
+        }
+    )
+
+    assert handled == [
+        (
+            "item/commandExecution/requestApproval",
+            {"threadId": "thread_1", "turnId": "turn_1", "itemId": "item_1"},
+        )
+    ]
+    assert captured == [(99, {"decision": "accept"})]

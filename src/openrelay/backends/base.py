@@ -27,6 +27,7 @@ class BackendContext:
     local_image_paths: tuple[str, ...] = ()
     on_partial_text: Callable[[str], Awaitable[None]] | None = None
     on_progress: Callable[[dict[str, object]], Awaitable[None]] | None = None
+    on_server_request: Callable[[str, dict[str, object]], Awaitable[dict[str, object]]] | None = None
     cancel_event: asyncio.Event | None = None
 
 

@@ -74,3 +74,4 @@ class ActiveRun:
     started_at: str
     description: str
     cancel: Callable[[str], Awaitable[None]]
+    try_handle_input: Callable[["IncomingMessage"], Awaitable[bool]] | None = None

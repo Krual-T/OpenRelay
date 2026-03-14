@@ -6,7 +6,7 @@ import logging
 from asyncio.subprocess import PIPE, Process
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import Any, TypeAlias
 
 from openrelay.backends.base import Backend, BackendContext, build_subprocess_env, safety_to_codex_approval
 from openrelay.models import BackendReply, SessionRecord
@@ -16,7 +16,10 @@ DEFAULT_REQUEST_TIMEOUT_SECONDS: float | None = None
 DEFAULT_INTERRUPT_GRACE_SECONDS = 5.0
 DEFAULT_RESUME_TIMEOUT_SECONDS = 15.0
 STOP_INTERRUPT_REASON = "interrupted by /stop"
+JSONRPC_INTERNAL_ERROR = -32603
+JSONRPC_METHOD_NOT_FOUND = -32601
 LOGGER = logging.getLogger("openrelay.backends.codex")
+RequestId: TypeAlias = int | str
 
 
 class InterruptedError(RuntimeError):
@@ -27,11 +30,50 @@ def build_cancel_reset_reason(method: str) -> str:
     return f"Codex app-server request {method} cancelled by /stop before response"
 
 
+def coerce_request_id(value: Any) -> RequestId:
+    if isinstance(value, (int, str)):
+        return value
+    raise TypeError(f"unsupported JSON-RPC request id: {value!r}")
+
+
+def combine_indexed_text(parts_by_index: dict[int, str]) -> str:
+    parts: list[str] = []
+    for index in sorted(parts_by_index):
+        text = str(parts_by_index.get(index) or "").strip()
+        if text:
+            parts.append(text)
+    return "\n\n".join(parts).strip()
+
+
+@dataclass(slots=True)
+class ReasoningItemState:
+    content_by_index: dict[int, str] = field(default_factory=dict)
+    summary_by_index: dict[int, str] = field(default_factory=dict)
+
+    def append_content(self, index: int, delta: str) -> None:
+        self.content_by_index[index] = f"{self.content_by_index.get(index, '')}{delta or ''}"
+
+    def append_summary(self, index: int, delta: str) -> None:
+        self.summary_by_index[index] = f"{self.summary_by_index.get(index, '')}{delta or ''}"
+
+    def seed_content(self, parts: list[str]) -> None:
+        for index, part in enumerate(parts):
+            self.content_by_index[index] = str(part)
+
+    def seed_summary(self, parts: list[str]) -> None:
+        for index, part in enumerate(parts):
+            self.summary_by_index[index] = str(part)
+
+    def text(self) -> str:
+        return combine_indexed_text(self.summary_by_index) or combine_indexed_text(self.content_by_index)
+
+
 @dataclass(slots=True, eq=False)
 class CodexTurn:
     thread_id: str
     on_partial_text: Any = None
     on_progress: Any = None
+    on_server_request: Any = None
     turn_id: str = ""
     final_text: str = ""
     interrupted: bool = False
@@ -41,9 +83,11 @@ class CodexTurn:
     agent_messages: list[str] = field(default_factory=list)
     command_by_id: dict[str, dict[str, Any]] = field(default_factory=dict)
     command_output_by_id: dict[str, str] = field(default_factory=dict)
-    reasoning_by_id: dict[str, str] = field(default_factory=dict)
+    file_change_output_by_id: dict[str, str] = field(default_factory=dict)
+    reasoning_by_id: dict[str, ReasoningItemState] = field(default_factory=dict)
     reasoning_order: list[str] = field(default_factory=list)
     agent_text_by_id: dict[str, str] = field(default_factory=dict)
+    plan_text_by_id: dict[str, str] = field(default_factory=dict)
     usage: dict[str, Any] | None = None
     future: asyncio.Future[BackendReply] | None = None
 
@@ -54,10 +98,18 @@ class CodexTurn:
         if item_id and item_id not in self.reasoning_order:
             self.reasoning_order.append(item_id)
 
+    def _reasoning_state(self, item_id: str) -> ReasoningItemState:
+        self._remember_reasoning_item(item_id)
+        state = self.reasoning_by_id.get(item_id)
+        if state is None:
+            state = ReasoningItemState()
+            self.reasoning_by_id[item_id] = state
+        return state
+
     def _combined_reasoning_text(self) -> str:
         parts: list[str] = []
         for item_id in self.reasoning_order:
-            text = str(self.reasoning_by_id.get(item_id) or "").strip()
+            text = self._reasoning_state(item_id).text().strip()
             if text:
                 parts.append(text)
         return "\n\n".join(parts).strip()
@@ -89,169 +141,287 @@ class CodexTurn:
             except Exception:
                 return
 
+    async def _emit_progress(self, event: dict[str, Any]) -> None:
+        if self.on_progress is not None:
+            await self.on_progress(event)
+
+    async def _emit_partial_text(self, text: str) -> None:
+        if not text:
+            return
+        self.final_text = text
+        await self._emit_progress({"type": "assistant.partial", "text": text})
+        if self.on_partial_text is not None:
+            await self.on_partial_text(text)
+
+    def _extract_search(self, item: dict[str, Any]) -> dict[str, Any]:
+        return {
+            "id": str(item.get("id") or ""),
+            "query": str(item.get("query") or ""),
+            "action": item.get("action") if isinstance(item.get("action"), dict) else {},
+        }
+
+    async def _handle_turn_started(self, client: "CodexAppServerClient", params: dict[str, Any]) -> None:
+        turn = params.get("turn") if isinstance(params.get("turn"), dict) else {}
+        await self.set_turn_id(client, str(turn.get("id") or self.turn_id))
+
+    async def _handle_agent_message_delta(self, params: dict[str, Any]) -> None:
+        item_id = str(params.get("itemId") or "")
+        text = f"{self.agent_text_by_id.get(item_id, '')}{params.get('delta') or ''}"
+        self.agent_text_by_id[item_id] = text
+        await self._emit_partial_text(text)
+
+    async def _handle_reasoning_text_delta(self, params: dict[str, Any]) -> None:
+        item_id = str(params.get("itemId") or "")
+        content_index = int(params.get("contentIndex") or 0)
+        reasoning = self._reasoning_state(item_id)
+        reasoning.append_content(content_index, str(params.get("delta") or ""))
+        await self._emit_progress({"type": "reasoning.delta", "text": self._combined_reasoning_text()})
+
+    async def _handle_reasoning_summary_delta(self, params: dict[str, Any]) -> None:
+        item_id = str(params.get("itemId") or "")
+        summary_index = int(params.get("summaryIndex") or 0)
+        reasoning = self._reasoning_state(item_id)
+        reasoning.append_summary(summary_index, str(params.get("delta") or ""))
+        await self._emit_progress({"type": "reasoning.delta", "text": self._combined_reasoning_text()})
+
+    async def _handle_command_output_delta(self, params: dict[str, Any]) -> None:
+        item_id = str(params.get("itemId") or "")
+        self.command_output_by_id[item_id] = f"{self.command_output_by_id.get(item_id, '')}{params.get('delta') or ''}"
+
+    async def _handle_item_started(self, params: dict[str, Any]) -> None:
+        item = params.get("item") if isinstance(params.get("item"), dict) else {}
+        item_type = item.get("type")
+        if item_type == "reasoning":
+            self._reasoning_state(str(item.get("id") or ""))
+            await self._emit_progress({"type": "reasoning.started"})
+            return
+        if item_type == "webSearch":
+            await self._emit_progress({"type": "web_search.started", "search": self._extract_search(item)})
+            return
+        if item_type == "commandExecution":
+            item_id = str(item.get("id") or "")
+            command = {
+                "id": item_id,
+                "command": str(item.get("command") or ""),
+                "outputPreview": self.command_output_by_id.get(item_id, ""),
+                "exitCode": None,
+            }
+            self.command_by_id[item_id] = command
+            await self._emit_progress({"type": "command.started", "command": command})
+
+    async def _handle_item_completed(self, params: dict[str, Any]) -> None:
+        item = params.get("item") if isinstance(params.get("item"), dict) else {}
+        item_type = item.get("type")
+        if item_type == "agentMessage":
+            item_id = str(item.get("id") or "")
+            text = str(item.get("text") or self.agent_text_by_id.get(item_id, "")).strip()
+            if text:
+                self.final_text = text
+                self.agent_messages.append(text)
+                await self._emit_progress({"type": "agent.message", "text": text})
+            return
+        if item_type == "reasoning":
+            item_id = str(item.get("id") or "")
+            reasoning = self._reasoning_state(item_id)
+            summary = item.get("summary")
+            content = item.get("content")
+            if isinstance(summary, list):
+                reasoning.seed_summary([str(part) for part in summary])
+            if isinstance(content, list):
+                reasoning.seed_content([str(part) for part in content])
+            text = self._combined_reasoning_text() or reasoning.text()
+            await self._emit_progress({"type": "reasoning.completed", "text": text})
+            return
+        if item_type == "webSearch":
+            await self._emit_progress({"type": "web_search.completed", "search": self._extract_search(item)})
+            return
+        if item_type == "commandExecution":
+            item_id = str(item.get("id") or "")
+            previous = self.command_by_id.get(item_id, {})
+            command = {
+                "id": item_id,
+                "command": str(item.get("command") or previous.get("command") or ""),
+                "outputPreview": str(
+                    item.get("aggregatedOutput")
+                    or self.command_output_by_id.get(item_id, "")
+                    or previous.get("outputPreview")
+                    or ""
+                ),
+                "exitCode": item.get("exitCode") if isinstance(item.get("exitCode"), int) else None,
+            }
+            self.command_by_id[item_id] = command
+            await self._emit_progress({"type": "command.completed", "command": command})
+            return
+        if item_type == "plan":
+            item_id = str(item.get("id") or "")
+            text = str(item.get("text") or self.plan_text_by_id.get(item_id, "")).strip()
+            if text:
+                self.plan_text_by_id[item_id] = text
+                await self._emit_progress({"type": "plan.completed", "text": text})
+
+    async def _handle_token_usage_updated(self, params: dict[str, Any]) -> None:
+        token_usage = params.get("tokenUsage") if isinstance(params.get("tokenUsage"), dict) else {}
+        last = (
+            token_usage.get("last")
+            if isinstance(token_usage.get("last"), dict)
+            else token_usage.get("total")
+            if isinstance(token_usage.get("total"), dict)
+            else {}
+        )
+        self.usage = {
+            "input_tokens": last.get("inputTokens"),
+            "cached_input_tokens": last.get("cachedInputTokens"),
+            "output_tokens": last.get("outputTokens"),
+            "reasoning_output_tokens": last.get("reasoningOutputTokens"),
+            "total_tokens": last.get("totalTokens"),
+            "model_context_window": token_usage.get("modelContextWindow"),
+        }
+
+    async def _handle_error(self, params: dict[str, Any]) -> None:
+        if params.get("willRetry"):
+            return
+        self.done = True
+        if self.future is not None and not self.future.done():
+            error = params.get("error") if isinstance(params.get("error"), dict) else {}
+            self.future.set_exception(RuntimeError(str(error.get("message") or params)))
+
+    async def _handle_turn_completed(self, params: dict[str, Any]) -> None:
+        turn = params.get("turn") if isinstance(params.get("turn"), dict) else {}
+        status = str(turn.get("status") or "")
+        self.done = True
+        await self._emit_progress({"type": "turn.completed", "usage": self.usage})
+        if status == "completed":
+            reply = BackendReply(
+                text=(self.final_text or (self.agent_messages[-1] if self.agent_messages else "")).strip(),
+                native_session_id=self.thread_id,
+                metadata={"usage": self.usage or {}},
+            )
+            if self.future is not None and not self.future.done():
+                self.future.set_result(reply)
+            return
+        if status == "interrupted":
+            if self.future is not None and not self.future.done():
+                self.future.set_exception(InterruptedError(self.interrupt_message))
+            return
+        message = str(turn.get("error", {}).get("message") or f"Turn {status or 'failed'}")
+        if self.future is not None and not self.future.done():
+            self.future.set_exception(RuntimeError(message))
+
     async def handle_notification(self, client: "CodexAppServerClient", method: str, params: dict[str, Any]) -> None:
         if self.done:
             return
-        thread_id = str(params.get("threadId") or params.get("thread", {}).get("id") or "")
-        turn_id = str(params.get("turnId") or params.get("turn", {}).get("id") or "")
+        thread = params.get("thread") if isinstance(params.get("thread"), dict) else {}
+        turn = params.get("turn") if isinstance(params.get("turn"), dict) else {}
+        thread_id = str(params.get("threadId") or thread.get("id") or "")
+        turn_id = str(params.get("turnId") or turn.get("id") or "")
         if not self.matches(thread_id, turn_id):
             return
 
         if method == "turn/started":
-            await self.set_turn_id(client, str(params.get("turn", {}).get("id") or self.turn_id))
+            await self._handle_turn_started(client, params)
             return
-
         if method == "item/agentMessage/delta":
-            item_id = str(params.get("itemId") or "")
-            text = f"{self.agent_text_by_id.get(item_id, '')}{params.get('delta') or ''}"
-            self.agent_text_by_id[item_id] = text
-            if text:
-                self.final_text = text
-                if self.on_partial_text is not None:
-                    await self.on_partial_text(text)
+            await self._handle_agent_message_delta(params)
             return
-
-        if method in {"item/reasoning/textDelta", "item/reasoning/summaryTextDelta"}:
-            item_id = str(params.get("itemId") or "")
-            self._remember_reasoning_item(item_id)
-            self.reasoning_by_id[item_id] = f"{self.reasoning_by_id.get(item_id, '')}{params.get('delta') or ''}"
-            if self.on_progress is not None:
-                await self.on_progress({"type": "reasoning.delta", "text": self._combined_reasoning_text()})
+        if method == "item/reasoning/textDelta":
+            await self._handle_reasoning_text_delta(params)
             return
-
+        if method == "item/reasoning/summaryTextDelta":
+            await self._handle_reasoning_summary_delta(params)
+            return
+        if method == "item/reasoning/summaryPartAdded":
+            self._reasoning_state(str(params.get("itemId") or ""))
+            return
+        if method == "item/plan/delta":
+            item_id = str(params.get("itemId") or "")
+            text = f"{self.plan_text_by_id.get(item_id, '')}{params.get('delta') or ''}"
+            self.plan_text_by_id[item_id] = text
+            await self._emit_progress({"type": "plan.delta", "text": text})
+            return
         if method == "item/commandExecution/outputDelta":
+            await self._handle_command_output_delta(params)
+            return
+        if method == "item/commandExecution/terminalInteraction":
+            await self._emit_progress(
+                {
+                    "type": "command.terminal",
+                    "interaction": {
+                        "itemId": str(params.get("itemId") or ""),
+                        "processId": str(params.get("processId") or ""),
+                        "stdin": str(params.get("stdin") or ""),
+                    },
+                }
+            )
+            return
+        if method == "item/fileChange/outputDelta":
             item_id = str(params.get("itemId") or "")
-            self.command_output_by_id[item_id] = f"{self.command_output_by_id.get(item_id, '')}{params.get('delta') or ''}"
+            self.file_change_output_by_id[item_id] = f"{self.file_change_output_by_id.get(item_id, '')}{params.get('delta') or ''}"
             return
-
+        if method == "turn/plan/updated":
+            await self._emit_progress(
+                {
+                    "type": "plan.updated",
+                    "plan": params.get("plan") if isinstance(params.get("plan"), list) else [],
+                    "explanation": params.get("explanation"),
+                }
+            )
+            return
+        if method == "item/mcpToolCall/progress":
+            await self._emit_progress(
+                {
+                    "type": "mcp_tool.progress",
+                    "progress": {
+                        "itemId": str(params.get("itemId") or ""),
+                        "content": params.get("content"),
+                    },
+                }
+            )
+            return
+        if method == "serverRequest/resolved":
+            await self._emit_progress(
+                {
+                    "type": "server_request.resolved",
+                    "requestId": params.get("requestId"),
+                    "threadId": str(params.get("threadId") or ""),
+                }
+            )
+            return
         if method == "item/started":
-            item = params.get("item") if isinstance(params.get("item"), dict) else {}
-            if item.get("type") == "reasoning":
-                self._remember_reasoning_item(str(item.get("id") or ""))
-                if self.on_progress is not None:
-                    await self.on_progress({"type": "reasoning.started"})
-                return
-            if item.get("type") == "webSearch":
-                if self.on_progress is not None:
-                    await self.on_progress(
-                        {
-                            "type": "web_search.started",
-                            "search": {
-                                "id": str(item.get("id") or ""),
-                                "query": str(item.get("query") or ""),
-                                "action": item.get("action") if isinstance(item.get("action"), dict) else {},
-                            },
-                        }
-                    )
-                return
-            if item.get("type") == "commandExecution":
-                command = {
-                    "id": str(item.get("id") or ""),
-                    "command": str(item.get("command") or ""),
-                    "outputPreview": self.command_output_by_id.get(str(item.get("id") or ""), ""),
-                    "exitCode": None,
-                }
-                self.command_by_id[command["id"]] = command
-                if self.on_progress is not None:
-                    await self.on_progress({"type": "command.started", "command": command})
+            await self._handle_item_started(params)
             return
-
         if method == "item/completed":
-            item = params.get("item") if isinstance(params.get("item"), dict) else {}
-            item_type = item.get("type")
-            if item_type == "agentMessage":
-                item_id = str(item.get("id") or "")
-                text = str(item.get("text") or self.agent_text_by_id.get(item_id, "")).strip()
-                if text:
-                    self.final_text = text
-                    self.agent_messages.append(text)
-                    if self.on_progress is not None:
-                        await self.on_progress({"type": "agent.message", "text": text})
-                return
-            if item_type == "reasoning":
-                item_id = str(item.get("id") or "")
-                self._remember_reasoning_item(item_id)
-                text = self.reasoning_by_id.get(item_id, "")
-                if not text:
-                    summary = item.get("summary")
-                    content = item.get("content")
-                    if isinstance(summary, list):
-                        text = "\n".join(str(part) for part in summary)
-                    elif isinstance(content, list):
-                        text = "\n".join(str(part) for part in content)
-                if text:
-                    self.reasoning_by_id[item_id] = text
-                if self.on_progress is not None:
-                    await self.on_progress({"type": "reasoning.completed", "text": self._combined_reasoning_text() or text})
-                return
-            if item_type == "webSearch":
-                if self.on_progress is not None:
-                    await self.on_progress(
-                        {
-                            "type": "web_search.completed",
-                            "search": {
-                                "id": str(item.get("id") or ""),
-                                "query": str(item.get("query") or ""),
-                                "action": item.get("action") if isinstance(item.get("action"), dict) else {},
-                            },
-                        }
-                    )
-                return
-            if item_type == "commandExecution":
-                item_id = str(item.get("id") or "")
-                previous = self.command_by_id.get(item_id, {})
-                command = {
-                    "id": item_id,
-                    "command": str(item.get("command") or previous.get("command") or ""),
-                    "outputPreview": str(item.get("aggregatedOutput") or self.command_output_by_id.get(item_id, "") or previous.get("outputPreview") or ""),
-                    "exitCode": item.get("exitCode") if isinstance(item.get("exitCode"), int) else None,
-                }
-                self.command_by_id[item_id] = command
-                if self.on_progress is not None:
-                    await self.on_progress({"type": "command.completed", "command": command})
+            await self._handle_item_completed(params)
             return
-
         if method == "thread/tokenUsage/updated":
-            token_usage = params.get("tokenUsage") if isinstance(params.get("tokenUsage"), dict) else {}
-            last = token_usage.get("last") if isinstance(token_usage.get("last"), dict) else token_usage.get("total") if isinstance(token_usage.get("total"), dict) else {}
-            self.usage = {
-                "input_tokens": last.get("inputTokens"),
-                "cached_input_tokens": last.get("cachedInputTokens"),
-                "output_tokens": last.get("outputTokens"),
-                "reasoning_output_tokens": last.get("reasoningOutputTokens"),
-                "total_tokens": last.get("totalTokens"),
-                "model_context_window": token_usage.get("modelContextWindow"),
-            }
+            await self._handle_token_usage_updated(params)
             return
-
         if method == "error":
-            if params.get("willRetry"):
-                return
-            self.done = True
-            if self.future is not None and not self.future.done():
-                self.future.set_exception(RuntimeError(str(params.get("error", {}).get("message") or params)))
+            await self._handle_error(params)
             return
-
         if method == "turn/completed":
-            turn = params.get("turn") if isinstance(params.get("turn"), dict) else {}
-            status = str(turn.get("status") or "")
-            self.done = True
-            if status == "completed":
-                reply = BackendReply(
-                    text=(self.final_text or (self.agent_messages[-1] if self.agent_messages else "")).strip(),
-                    native_session_id=self.thread_id,
-                    metadata={"usage": self.usage or {}},
-                )
-                if self.future is not None and not self.future.done():
-                    self.future.set_result(reply)
-                return
-            if status == "interrupted":
-                if self.future is not None and not self.future.done():
-                    self.future.set_exception(InterruptedError(self.interrupt_message))
-                return
-            message = str(turn.get("error", {}).get("message") or f"Turn {status or 'failed'}")
-            if self.future is not None and not self.future.done():
-                self.future.set_exception(RuntimeError(message))
+            await self._handle_turn_completed(params)
+
+    async def handle_server_request(
+        self,
+        client: "CodexAppServerClient",
+        request_id: RequestId,
+        method: str,
+        params: dict[str, Any],
+    ) -> bool:
+        if self.done:
+            return False
+        thread_id = str(params.get("threadId") or "")
+        turn_id = str(params.get("turnId") or "")
+        if not self.matches(thread_id, turn_id):
+            return False
+        if self.on_server_request is None:
+            return False
+        try:
+            result = await self.on_server_request(method, params)
+        except NotImplementedError:
+            return False
+        await client._send_server_result(request_id, result if isinstance(result, dict) else {})
+        return True
 
 
 class CodexAppServerClient:
@@ -277,7 +447,7 @@ class CodexAppServerClient:
         self.resume_timeout_seconds = resume_timeout_seconds
         self.process: Process | None = None
         self.stderr_text: str = ""
-        self.pending_requests: dict[int, asyncio.Future[Any]] = {}
+        self.pending_requests: dict[RequestId, asyncio.Future[Any]] = {}
         self.active_turns: set[CodexTurn] = set()
         self.thread_registry: set[str] = set()
         self._ready_task: asyncio.Task[None] | None = None
@@ -297,6 +467,101 @@ class CodexAppServerClient:
         if float(seconds).is_integer():
             return f"{int(seconds)}s"
         return f"{seconds:.2f}s"
+
+    def _build_initialize_params(self) -> dict[str, Any]:
+        return {
+            "clientInfo": {"name": "openrelay", "version": "0.1.0"},
+            "capabilities": {"experimentalApi": False},
+        }
+
+    def _build_thread_params(self, session: SessionRecord) -> dict[str, Any]:
+        params = {
+            "cwd": session.cwd,
+            "model": session.model_override or self.model or None,
+            "sandbox": session.safety_mode,
+            "approvalPolicy": safety_to_codex_approval(session.safety_mode),
+        }
+        return {key: value for key, value in params.items() if value not in {None, ""}}
+
+    def _build_turn_start_params(
+        self,
+        session: SessionRecord,
+        thread_id: str,
+        prompt: str,
+        local_image_paths: tuple[str, ...],
+    ) -> dict[str, Any]:
+        return {
+            "threadId": thread_id,
+            "cwd": session.cwd,
+            "approvalPolicy": safety_to_codex_approval(session.safety_mode),
+            **({"model": session.model_override} if session.model_override else {}),
+            "input": self._build_turn_input(prompt, local_image_paths),
+        }
+
+    async def _write_message(self, payload: dict[str, Any]) -> None:
+        if self.process is None or self.process.stdin is None:
+            raise RuntimeError("Codex app-server is not running")
+        raw = json.dumps(payload, ensure_ascii=False) + "\n"
+        self.process.stdin.write(raw.encode("utf-8"))
+        await self.process.stdin.drain()
+
+    async def _send_server_result(self, request_id: RequestId, result: dict[str, Any]) -> None:
+        await self._write_message({"id": request_id, "result": result})
+
+    async def _send_server_error(self, request_id: RequestId, code: int, message: str, data: Any = None) -> None:
+        payload: dict[str, Any] = {"id": request_id, "error": {"code": code, "message": message}}
+        if data is not None:
+            payload["error"]["data"] = data
+        await self._write_message(payload)
+
+    def _format_rpc_error(self, error: Any) -> str:
+        if not isinstance(error, dict):
+            return str(error)
+        message = str(error.get("message") or "Codex app-server request failed")
+        code = error.get("code")
+        if isinstance(code, int):
+            return f"{message} (code {code})"
+        return message
+
+    async def _handle_server_request(self, request_id: RequestId, method: str, params: dict[str, Any]) -> None:
+        if method == "item/commandExecution/requestApproval":
+            await self._send_server_result(request_id, {"decision": "decline"})
+            return
+        if method == "item/fileChange/requestApproval":
+            await self._send_server_result(request_id, {"decision": "decline"})
+            return
+        if method == "item/permissions/requestApproval":
+            await self._send_server_result(request_id, {"permissions": {}})
+            return
+        if method == "item/tool/requestUserInput":
+            await self._send_server_result(request_id, {"answers": {}})
+            return
+        if method == "mcpServer/elicitation/request":
+            await self._send_server_result(request_id, {"action": "decline"})
+            return
+        if method == "item/tool/call":
+            tool_name = str(params.get("tool") or "unknown")
+            await self._send_server_result(
+                request_id,
+                {
+                    "success": False,
+                    "contentItems": [
+                        {
+                            "type": "inputText",
+                            "text": f"openrelay does not support dynamic tool calls ({tool_name})",
+                        }
+                    ],
+                },
+            )
+            return
+        if method in {"applyPatchApproval", "execCommandApproval"}:
+            await self._send_server_result(request_id, {"decision": "denied"})
+            return
+        await self._send_server_error(
+            request_id,
+            JSONRPC_METHOD_NOT_FOUND,
+            f"openrelay does not support server request method {method}",
+        )
 
     async def _terminate_process(self, process: Process | None) -> None:
         if process is None:
@@ -355,10 +620,7 @@ class CodexAppServerClient:
         self._stdout_task = asyncio.create_task(self._read_stdout())
         self._stderr_task = asyncio.create_task(self._read_stderr())
         self._wait_task = asyncio.create_task(self._watch_process())
-        await self.request(
-            "initialize",
-            {"clientInfo": {"name": "openrelay", "version": "0.1.0"}},
-        )
+        await self.request("initialize", self._build_initialize_params())
 
     def _build_process_env(self) -> dict[str, str]:
         env = build_subprocess_env("codex")
@@ -378,7 +640,10 @@ class CodexAppServerClient:
                 message = json.loads(raw)
             except json.JSONDecodeError:
                 continue
-            await self._handle_message(message)
+            try:
+                await self._handle_message(message)
+            except Exception:
+                LOGGER.exception("failed to handle Codex app-server message: %s", raw)
 
     async def _read_stderr(self) -> None:
         assert self.process is not None and self.process.stderr is not None
@@ -406,15 +671,31 @@ class CodexAppServerClient:
         self.active_turns.clear()
 
     async def _handle_message(self, message: dict[str, Any]) -> None:
-        if "id" in message:
-            request_id = int(message["id"])
+        if "id" in message and "method" not in message and ("result" in message or "error" in message):
+            request_id = coerce_request_id(message["id"])
             future = self.pending_requests.pop(request_id, None)
             if future is None or future.done():
                 return
             if "error" in message:
-                future.set_exception(RuntimeError(json.dumps(message["error"])))
+                future.set_exception(RuntimeError(self._format_rpc_error(message["error"])))
             else:
                 future.set_result(message.get("result"))
+            return
+        if "id" in message:
+            request_id = coerce_request_id(message["id"])
+            method = message.get("method")
+            if not isinstance(method, str):
+                await self._send_server_error(request_id, JSONRPC_INTERNAL_ERROR, "invalid JSON-RPC request")
+                return
+            params = message.get("params") if isinstance(message.get("params"), dict) else {}
+            for turn in list(self.active_turns):
+                if await turn.handle_server_request(self, request_id, method, params):
+                    return
+            try:
+                await self._handle_server_request(request_id, method, params)
+            except Exception as exc:
+                LOGGER.exception("failed to handle Codex server request %s", method)
+                await self._send_server_error(request_id, JSONRPC_INTERNAL_ERROR, str(exc))
             return
         method = message.get("method")
         if not isinstance(method, str):
@@ -447,9 +728,7 @@ class CodexAppServerClient:
             self.pending_requests.pop(request_id, None)
             future.cancel()
             raise InterruptedError(cancel_reason)
-        payload = json.dumps({"id": request_id, "method": method, "params": params}, ensure_ascii=False) + "\n"
-        self.process.stdin.write(payload.encode("utf-8"))
-        await self.process.stdin.drain()
+        await self._write_message({"id": request_id, "method": method, "params": params})
         async def wait_for_response() -> Any:
             if self.request_timeout_seconds is None:
                 return await future
@@ -487,13 +766,7 @@ class CodexAppServerClient:
 
     async def ensure_thread(self, session: SessionRecord, context: BackendContext) -> str:
         await self.ensure_ready()
-        params = {
-            "cwd": session.cwd,
-            "model": session.model_override or self.model or None,
-            "sandbox": session.safety_mode,
-            "approvalPolicy": safety_to_codex_approval(session.safety_mode),
-        }
-        params = {key: value for key, value in params.items() if value not in {None, ""}}
+        params = self._build_thread_params(session)
         if session.native_session_id:
             thread_id = session.native_session_id
             if thread_id not in self.thread_registry:
@@ -547,19 +820,18 @@ class CodexAppServerClient:
         if context.on_progress is not None:
             await context.on_progress({"type": "run.started"})
         thread_id = await self.ensure_thread(session, context)
-        turn = CodexTurn(thread_id=thread_id, on_partial_text=context.on_partial_text, on_progress=context.on_progress)
+        turn = CodexTurn(
+            thread_id=thread_id,
+            on_partial_text=context.on_partial_text,
+            on_progress=context.on_progress,
+            on_server_request=context.on_server_request,
+        )
         self.active_turns.add(turn)
         watcher: asyncio.Task[None] | None = None
         try:
             result = await self.request(
                 "turn/start",
-                {
-                    "threadId": thread_id,
-                    "cwd": session.cwd,
-                    "approvalPolicy": safety_to_codex_approval(session.safety_mode),
-                    **({"model": session.model_override} if session.model_override else {}),
-                    "input": self._build_turn_input(prompt, context.local_image_paths),
-                },
+                self._build_turn_start_params(session, thread_id, prompt, context.local_image_paths),
                 cancel_event=context.cancel_event,
                 reset_on_cancel=True,
             )

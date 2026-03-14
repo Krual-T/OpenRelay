@@ -425,7 +425,7 @@ class StateStore:
             model_override=overrides.get("model_override") if overrides.get("model_override") is not None else (current.model_override if current else self._default_model()),
             safety_mode=overrides.get("safety_mode") or (current.safety_mode if current else self._default_mode()),
             release_channel=release_channel,
-            last_usage=current.last_usage if current else {},
+            last_usage={},
         )
         saved = self.save_session(session)
         if requested_key != owner_key:
