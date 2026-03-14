@@ -13,6 +13,7 @@ from .browser import (
     SessionSortMode,
 )
 from .list_card import build_resume_list_command, build_session_list_card
+from .lifecycle import SessionLifecycleResolver
 from .scope import SessionScopeResolver
 from .ux import SessionUX
 
@@ -25,6 +26,7 @@ __all__ = [
     "SESSION_SORT_MODES",
     "SESSION_SORT_UPDATED",
     "SessionBrowser",
+    "SessionLifecycleResolver",
     "SessionListEntry",
     "SessionListPage",
     "SessionResumeResult",

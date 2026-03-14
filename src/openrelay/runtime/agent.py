@@ -6,7 +6,6 @@ from collections import defaultdict, deque
 from dataclasses import dataclass
 import logging
 import os
-from pathlib import Path
 import sys
 from typing import Any, Awaitable, Callable
 
@@ -26,7 +25,7 @@ from openrelay.core import (
     utc_now,
 )
 from openrelay.feishu import FeishuMessenger, FeishuStreamingSession, FeishuTypingManager, build_streaming_content
-from openrelay.session import SessionBrowser, SessionScopeResolver, SessionSortMode, SessionUX, build_session_list_card
+from openrelay.session import SessionBrowser, SessionLifecycleResolver, SessionScopeResolver, SessionSortMode, SessionUX, build_session_list_card
 from openrelay.storage import StateStore
 
 from .commands import PanelCommandArgs, RuntimeCommandHooks, RuntimeCommandRouter
@@ -35,30 +34,10 @@ from .help import HelpRenderer
 from .interactions import RunInteractionController
 from .live import apply_live_progress, build_process_panel_text, build_reply_card, create_live_reply_state
 from .panel import build_panel_card
-
-
-DEFAULT_SYSTEMD_SERVICE_UNIT = "openrelay.service"
+from .restart import RuntimeRestartController, get_systemd_service_unit, is_systemd_service_process
 NON_BLOCKING_ACTIVE_RUN_COMMANDS = {"/ping", "/status", "/usage", "/help", "/tools", "/panel", "/restart"}
 DEFAULT_IMAGE_PROMPT = "用户发送了图片。请先查看图片内容，再根据图片直接回答用户。"
 LOGGER = logging.getLogger("openrelay.runtime")
-
-
-def get_systemd_service_unit(env: dict[str, str] | None = None) -> str:
-    current_env = os.environ if env is None else env
-    raw_unit = (current_env.get("OPENRELAY_SYSTEMD_UNIT") or "").strip()
-    return raw_unit or DEFAULT_SYSTEMD_SERVICE_UNIT
-
-
-def is_systemd_service_process(env: dict[str, str] | None = None, pid: int | None = None) -> bool:
-    current_env = os.environ if env is None else env
-    current_pid = os.getpid() if pid is None else pid
-    raw_exec_pid = (current_env.get("SYSTEMD_EXEC_PID") or "").strip()
-    if not raw_exec_pid:
-        return False
-    try:
-        return int(raw_exec_pid) == current_pid
-    except ValueError:
-        return False
 
 
 @dataclass(slots=True)
@@ -307,6 +286,7 @@ class AgentRuntime:
         self.session_browser = SessionBrowser(config, store)
         self.session_ux = SessionUX(config, store)
         self.session_scope = SessionScopeResolver(config, store, LOGGER)
+        self.session_lifecycle = SessionLifecycleResolver(config, store)
         self.help_renderer = HelpRenderer(config, store, self.session_ux)
         self.command_router = RuntimeCommandRouter(
             config,
@@ -327,7 +307,7 @@ class AgentRuntime:
                 available_backend_names=self.available_backend_names,
             ),
         )
-        self._restart_started = False
+        self.restart_controller = RuntimeRestartController(LOGGER)
 
     async def shutdown(self) -> None:
         await CodexBackend.shutdown_all()
@@ -376,48 +356,13 @@ class AgentRuntime:
     def _build_execution_key(self, session_key: str, session: SessionRecord, *, force_session_scope: bool = False) -> str:
         return f"session:{session.session_id}"
 
-    def _is_placeholder_control_session(self, session: SessionRecord, session_key: str) -> bool:
-        if session.base_key != session_key or session.native_session_id:
-            return False
-        if self.store.list_messages(session.session_id):
-            return False
-        release_channel = session.release_channel or "main"
-        return (
-            session.label == ""
-            and session.backend == self.config.backend.default_backend
-            and session.cwd == str(get_release_workspace(self.config, release_channel))
-            and session.model_override == self.config.backend.default_model
-            and session.safety_mode == self.config.backend.default_safety_mode
-            and release_channel == "main"
-        )
-
-    def _find_visible_control_session(self, session_key: str) -> SessionRecord | None:
-        for summary in self.store.list_sessions(session_key, limit=50):
-            if summary.base_key == session_key and summary.message_count == 0 and not summary.native_session_id:
-                continue
-            return self.store.get_session(summary.session_id)
-        return None
-
     def _load_session_for_message(self, message: IncomingMessage, session_key: str) -> SessionRecord:
-        if self._is_top_level_control_command(message):
-            current = self.store.find_session(session_key)
-            visible = self._find_visible_control_session(session_key)
-            if current is not None:
-                if visible is not None and self._is_placeholder_control_session(current, session_key):
-                    return visible
-                return current
-            if visible is not None:
-                return visible
-            return self.store.load_session(session_key)
-        if self.store.has_session_scope(session_key):
-            return self.store.load_session(session_key)
-        if self._is_top_level_message(message):
-            control_key = self._compose_session_key(message)
-            template = self.store.find_session(control_key)
-            return self.store.create_next_session(session_key, template)
-        control_key = self._compose_session_key(message)
-        template = self.store.find_session(control_key) if session_key != control_key else None
-        return self.store.load_session(session_key, template=template)
+        return self.session_lifecycle.load_for_message(
+            session_key,
+            is_top_level_control_command=self._is_top_level_control_command(message),
+            is_top_level_message=self._is_top_level_message(message),
+            control_key=self._compose_session_key(message),
+        )
 
     def _resolve_stop_execution_key(self, message: IncomingMessage, session_key: str, session: SessionRecord) -> str:
         return self._build_execution_key(session_key, session)
@@ -1001,10 +946,7 @@ class AgentRuntime:
         return len(tokens) == 1 or tokens[1].lower() == "list"
 
     def _schedule_restart(self) -> None:
-        if self._restart_started:
-            return
-        self._restart_started = True
-        asyncio.create_task(self._restart_process())
+        self.restart_controller.schedule_restart(self._restart_process())
 
     async def _restart_process(self) -> None:
         await asyncio.sleep(0.4)
@@ -1014,7 +956,7 @@ class AgentRuntime:
                 await self._restart_systemd_service(unit_name)
                 return
             except Exception:
-                self._restart_started = False
+                self.restart_controller.mark_failed()
                 LOGGER.exception("failed to restart %s via systemd", unit_name)
                 raise
         try:
@@ -1024,7 +966,7 @@ class AgentRuntime:
         try:
             os.execvpe(sys.executable, [sys.executable, "-m", "openrelay"], os.environ)
         except Exception:
-            self._restart_started = False
+            self.restart_controller.mark_failed()
             LOGGER.exception("failed to restart openrelay process")
             raise
 
