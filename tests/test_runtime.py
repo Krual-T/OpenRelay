@@ -1911,11 +1911,11 @@ async def test_runtime_restart_process_uses_systemd_restart_when_service_managed
     def fake_execvpe(_file: str, _argv: list[str], _env: dict[str, str]) -> None:
         raise AssertionError("execvpe should not be called for systemd-managed restart")
 
-    monkeypatch.setattr("openrelay.runtime.asyncio.sleep", fake_sleep)
-    monkeypatch.setattr("openrelay.runtime.is_systemd_service_process", lambda env=None, pid=None: True)
+    monkeypatch.setattr("openrelay.runtime.agent.asyncio.sleep", fake_sleep)
+    monkeypatch.setattr("openrelay.runtime.agent.is_systemd_service_process", lambda env=None, pid=None: True)
     monkeypatch.setattr(runtime, "_restart_systemd_service", fake_restart_systemd_service)
-    monkeypatch.setattr("openrelay.runtime.CodexBackend.shutdown_all", fake_shutdown_all)
-    monkeypatch.setattr("openrelay.runtime.os.execvpe", fake_execvpe)
+    monkeypatch.setattr("openrelay.runtime.agent.CodexBackend.shutdown_all", fake_shutdown_all)
+    monkeypatch.setattr("openrelay.runtime.agent.os.execvpe", fake_execvpe)
 
     await runtime._restart_process()
 
@@ -1946,11 +1946,11 @@ async def test_runtime_restart_process_execs_and_shuts_down_backends(tmp_path: P
     async def fake_restart_systemd_service(_unit_name: str) -> None:
         raise AssertionError("systemd restart should not be used outside service-managed mode")
 
-    monkeypatch.setattr("openrelay.runtime.asyncio.sleep", fake_sleep)
-    monkeypatch.setattr("openrelay.runtime.is_systemd_service_process", lambda env=None, pid=None: False)
+    monkeypatch.setattr("openrelay.runtime.agent.asyncio.sleep", fake_sleep)
+    monkeypatch.setattr("openrelay.runtime.agent.is_systemd_service_process", lambda env=None, pid=None: False)
     monkeypatch.setattr(runtime, "_restart_systemd_service", fake_restart_systemd_service)
-    monkeypatch.setattr("openrelay.runtime.os.execvpe", fake_execvpe)
-    monkeypatch.setattr("openrelay.runtime.CodexBackend.shutdown_all", fake_shutdown_all)
+    monkeypatch.setattr("openrelay.runtime.agent.os.execvpe", fake_execvpe)
+    monkeypatch.setattr("openrelay.runtime.agent.CodexBackend.shutdown_all", fake_shutdown_all)
 
     await runtime._restart_process()
 

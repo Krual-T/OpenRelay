@@ -11,13 +11,11 @@ from typing import Any, Awaitable, Callable
 
 from openrelay.backends import Backend, BackendDescriptor, BackendContext, CodexBackend, build_builtin_backend_descriptors, instantiate_builtin_backends
 from openrelay.config import AppConfig
-from openrelay.feishu import FeishuMessenger
-from openrelay.feishu_reply_card import build_streaming_content
+from openrelay.feishu import FeishuMessenger, FeishuStreamingSession, build_streaming_content
 from openrelay.follow_up import QueuedFollowUp
 from openrelay.help_renderer import HelpRenderer
 from openrelay.models import ActiveRun, IncomingMessage, SessionRecord, utc_now
 from openrelay.panel_card import build_panel_card
-from openrelay.streaming_card import FeishuStreamingSession
 from openrelay.typing import FeishuTypingManager
 from openrelay.release import (
     append_release_event,

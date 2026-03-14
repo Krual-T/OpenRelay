@@ -9,8 +9,7 @@ from fastapi.responses import JSONResponse, Response
 import uvicorn
 
 from openrelay.config import AppConfig, ConfigError, load_config
-from openrelay.feishu import FeishuEventDispatcher, FeishuMessenger, build_raw_request
-from openrelay.feishu_ws import FeishuWebSocketClient
+from openrelay.feishu import FeishuEventDispatcher, FeishuMessenger, FeishuWebSocketClient, build_raw_request
 from openrelay.runtime import AgentRuntime
 from openrelay.state import StateStore
 
