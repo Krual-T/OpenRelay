@@ -43,7 +43,7 @@ class _ReplyRoute:
     force_new_message: bool = False
 
 
-class AgentRuntime:
+class RuntimeOrchestrator:
     def __init__(
         self,
         config: AppConfig,

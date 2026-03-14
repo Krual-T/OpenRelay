@@ -117,7 +117,8 @@
 - **本轮已收敛**：
   - [x] `/help` 展示逻辑从 `runtime.py` 抽成独立模块，并保持现有行为。
   - [x] 会话列表查询 / 恢复与展示格式化拆层，为 `/resume` 卡片分页排序预留稳定接口。
-  - [x] 命令路由从 `AgentRuntime` 主类收敛到 `RuntimeCommandRouter`，`runtime.py` 不再承载主命令分支树。
+  - [x] 命令路由从 `RuntimeOrchestrator` 主类收敛到 `RuntimeCommandRouter`，`runtime.py` 不再承载主命令分支树。
+  - [x] runtime 入口类已从 `AgentRuntime` 更名为 `RuntimeOrchestrator`，显式表达“消息编排器”职责。
   - [x] 已补独立模块测试并完成最小回归与全量回归验证。
 - **后续 follow-up**：
   - [ ] 拆出 `/panel` 与 `/resume` 的独立会话列表 / 卡片模块。

@@ -59,7 +59,7 @@
 - `SessionBrowser` 负责会话列表查询、排序和分页视图
 - `SessionListCard` 负责把当前页渲染成飞书卡片
 - `RuntimeCommandRouter` 负责解析 `/resume ... --page ... --sort ...`
-- `AgentRuntime` 只负责发送卡片与失败回退
+- `RuntimeOrchestrator` 只负责发送卡片与失败回退，不再承担 agent 语义之外的命名噪音
 
 ## 本轮不做
 

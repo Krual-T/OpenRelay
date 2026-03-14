@@ -10,7 +10,7 @@ from openrelay.core import AppConfig, BackendConfig, DirectoryShortcut, FeishuCo
 from openrelay.feishu import SentMessageRef, parse_card_action_event
 from openrelay.runtime import MERGED_FOLLOW_UP_INTRO
 from openrelay.core import BackendReply, IncomingMessage, SessionRecord
-from openrelay.runtime import AgentRuntime, DEFAULT_IMAGE_PROMPT, get_systemd_service_unit, is_systemd_service_process
+from openrelay.runtime import RuntimeOrchestrator, DEFAULT_IMAGE_PROMPT, get_systemd_service_unit, is_systemd_service_process
 from openrelay.session import SessionUX
 from openrelay.storage import StateStore
 
@@ -460,7 +460,7 @@ async def test_runtime_runs_backend_turn(tmp_path: Path) -> None:
     store = StateStore(config)
     messenger = FakeMessenger()
     backend = FakeBackend()
-    runtime = AgentRuntime(config, store, messenger, backends={"codex": backend})
+    runtime = RuntimeOrchestrator(config, store, messenger, backends={"codex": backend})
 
     await runtime.dispatch_message(make_message("hello"))
 
@@ -480,7 +480,7 @@ async def test_runtime_top_level_messages_start_independent_sessions_by_default(
     store = StateStore(config)
     messenger = FakeMessenger()
     backend = SequentialNativeBackend()
-    runtime = AgentRuntime(config, store, messenger, backends={"codex": backend})
+    runtime = RuntimeOrchestrator(config, store, messenger, backends={"codex": backend})
 
     first_message = make_message("first task", event_suffix="root_a")
     second_message = make_message("second task", event_suffix="root_b")
@@ -508,7 +508,7 @@ async def test_runtime_blocks_unauthorized_sender(tmp_path: Path) -> None:
     store = StateStore(config)
     messenger = FakeMessenger()
     backend = FakeBackend()
-    runtime = AgentRuntime(config, store, messenger, backends={"codex": backend})
+    runtime = RuntimeOrchestrator(config, store, messenger, backends={"codex": backend})
 
     await runtime.dispatch_message(make_message("hello", sender_open_id="ou_other"))
 
@@ -525,7 +525,7 @@ async def test_runtime_panel_command_sends_card(tmp_path: Path) -> None:
     config.develop_workspace_dir.mkdir(parents=True, exist_ok=True)
     store = StateStore(config)
     messenger = FakeMessenger()
-    runtime = AgentRuntime(config, store, messenger, backends={"codex": FakeBackend()})
+    runtime = RuntimeOrchestrator(config, store, messenger, backends={"codex": FakeBackend()})
 
     await runtime.dispatch_message(make_message("/panel"))
     assert messenger.cards
@@ -559,7 +559,7 @@ async def test_runtime_panel_shortcuts_switch_cwd_from_button(tmp_path: Path) ->
     )
     store = StateStore(config)
     messenger = FakeMessenger()
-    runtime = AgentRuntime(config, store, messenger, backends={"codex": FakeBackend()})
+    runtime = RuntimeOrchestrator(config, store, messenger, backends={"codex": FakeBackend()})
 
     await runtime.dispatch_message(make_message("/panel", event_suffix="panel_shortcuts_main"))
 
@@ -606,7 +606,7 @@ async def test_runtime_resume_list_sends_paginated_sortable_card(tmp_path: Path)
     config.develop_workspace_dir.mkdir(parents=True, exist_ok=True)
     store = StateStore(config)
     messenger = FakeMessenger()
-    runtime = AgentRuntime(config, store, messenger, backends={"codex": FakeBackend()})
+    runtime = RuntimeOrchestrator(config, store, messenger, backends={"codex": FakeBackend()})
 
     older = store.load_session("p2p:oc_1")
     older.label = "older"
@@ -645,7 +645,7 @@ async def test_runtime_panel_navigation_updates_same_card_for_card_actions(tmp_p
     config.develop_workspace_dir.mkdir(parents=True, exist_ok=True)
     store = StateStore(config)
     messenger = FakeMessenger()
-    runtime = AgentRuntime(config, store, messenger, backends={"codex": FakeBackend()})
+    runtime = RuntimeOrchestrator(config, store, messenger, backends={"codex": FakeBackend()})
 
     await runtime.dispatch_message(make_message("/panel", event_suffix="panel_nav_root"))
     home_card = messenger.cards[-1]
@@ -690,7 +690,7 @@ async def test_runtime_resume_list_navigation_updates_same_card_for_card_actions
     config.develop_workspace_dir.mkdir(parents=True, exist_ok=True)
     store = StateStore(config)
     messenger = FakeMessenger()
-    runtime = AgentRuntime(config, store, messenger, backends={"codex": FakeBackend()})
+    runtime = RuntimeOrchestrator(config, store, messenger, backends={"codex": FakeBackend()})
 
     older = store.load_session("p2p:oc_1")
     older.label = "older"
@@ -729,7 +729,7 @@ async def test_runtime_help_card_action_updates_same_message_when_opening_panel(
     config.develop_workspace_dir.mkdir(parents=True, exist_ok=True)
     store = StateStore(config)
     messenger = FakeMessenger()
-    runtime = AgentRuntime(config, store, messenger, backends={"codex": FakeBackend()})
+    runtime = RuntimeOrchestrator(config, store, messenger, backends={"codex": FakeBackend()})
 
     await runtime.dispatch_message(make_message("/help", event_suffix="help_panel_nav"))
     help_card = messenger.cards[-1]
@@ -767,7 +767,7 @@ async def test_runtime_panel_views_show_structured_results(tmp_path: Path) -> No
     )
     store = StateStore(config)
     messenger = FakeMessenger()
-    runtime = AgentRuntime(config, store, messenger, backends={"codex": FakeBackend()})
+    runtime = RuntimeOrchestrator(config, store, messenger, backends={"codex": FakeBackend()})
 
     current = store.load_session("p2p:oc_1")
     current.label = "current"
@@ -823,7 +823,7 @@ async def test_runtime_help_command_shows_actionable_guidance(tmp_path: Path) ->
     config.develop_workspace_dir.mkdir(parents=True, exist_ok=True)
     store = StateStore(config)
     messenger = FakeMessenger()
-    runtime = AgentRuntime(config, store, messenger, backends={"codex": FakeBackend()})
+    runtime = RuntimeOrchestrator(config, store, messenger, backends={"codex": FakeBackend()})
 
     await runtime.dispatch_message(make_message("/help", event_suffix="help0"))
     assert messenger.cards
@@ -892,7 +892,7 @@ async def test_runtime_main_switch_creates_release_session(tmp_path: Path) -> No
     config.develop_workspace_dir.mkdir(parents=True, exist_ok=True)
     store = StateStore(config)
     messenger = FakeMessenger()
-    runtime = AgentRuntime(config, store, messenger, backends={"codex": FakeBackend()})
+    runtime = RuntimeOrchestrator(config, store, messenger, backends={"codex": FakeBackend()})
 
     await runtime.dispatch_message(make_message("/develop bugfix", sender_open_id="ou_user", event_suffix="dev"))
     await runtime.dispatch_message(make_message("/main restore", sender_open_id="ou_user", event_suffix="main"))
@@ -913,7 +913,7 @@ async def test_runtime_sandbox_command_requires_admin_for_danger(tmp_path: Path)
     config.develop_workspace_dir.mkdir(parents=True, exist_ok=True)
     store = StateStore(config)
     messenger = FakeMessenger()
-    runtime = AgentRuntime(config, store, messenger, backends={"codex": FakeBackend()})
+    runtime = RuntimeOrchestrator(config, store, messenger, backends={"codex": FakeBackend()})
 
     await runtime.dispatch_message(make_message("/sandbox danger-full-access"))
     assert messenger.messages[-1] == "danger-full-access 只允许管理员切换。"
@@ -940,7 +940,7 @@ async def test_runtime_card_stream_mode_uses_streaming_session(tmp_path: Path) -
         sessions.append(session)
         return session
 
-    runtime = AgentRuntime(
+    runtime = RuntimeOrchestrator(
         config,
         store,
         messenger,
@@ -981,7 +981,7 @@ async def test_runtime_card_stream_mode_puts_reasoning_into_collapsible_panel(tm
         sessions.append(session)
         return session
 
-    runtime = AgentRuntime(
+    runtime = RuntimeOrchestrator(
         config,
         store,
         messenger,
@@ -1021,7 +1021,7 @@ async def test_runtime_streaming_update_does_not_block_backend_turn(tmp_path: Pa
         sessions.append(session)
         return session
 
-    runtime = AgentRuntime(
+    runtime = RuntimeOrchestrator(
         config,
         store,
         messenger,
@@ -1051,7 +1051,7 @@ async def test_runtime_stop_interrupts_active_run(tmp_path: Path) -> None:
     store = StateStore(config)
     messenger = FakeMessenger()
     backend = InterruptibleBackend()
-    runtime = AgentRuntime(config, store, messenger, backends={"codex": backend})
+    runtime = RuntimeOrchestrator(config, store, messenger, backends={"codex": backend})
 
     run_task = asyncio.create_task(runtime.dispatch_message(make_message("long running", event_suffix="run")))
     await asyncio.wait_for(backend.started.wait(), timeout=1)
@@ -1075,7 +1075,7 @@ async def test_runtime_merges_follow_up_messages_during_active_run(tmp_path: Pat
     store = StateStore(config)
     messenger = FakeMessenger()
     backend = QueuedFollowUpBackend()
-    runtime = AgentRuntime(config, store, messenger, backends={"codex": backend})
+    runtime = RuntimeOrchestrator(config, store, messenger, backends={"codex": backend})
 
     run_task = asyncio.create_task(runtime.dispatch_message(make_message("first", event_suffix="first")))
     await asyncio.wait_for(backend.first_started.wait(), timeout=1)
@@ -1130,7 +1130,7 @@ async def test_runtime_stop_keeps_queued_follow_up(tmp_path: Path) -> None:
     store = StateStore(config)
     messenger = FakeMessenger()
     backend = StopThenContinueBackend()
-    runtime = AgentRuntime(config, store, messenger, backends={"codex": backend})
+    runtime = RuntimeOrchestrator(config, store, messenger, backends={"codex": backend})
 
     run_task = asyncio.create_task(runtime.dispatch_message(make_message("long running", event_suffix="queued_run")))
     await asyncio.wait_for(backend.first_started.wait(), timeout=1)
@@ -1169,7 +1169,7 @@ async def test_runtime_routes_card_action_approval_to_active_interaction(tmp_pat
     store = StateStore(config)
     messenger = FakeMessenger()
     backend = ApprovalRequestBackend()
-    runtime = AgentRuntime(config, store, messenger, backends={"codex": backend})
+    runtime = RuntimeOrchestrator(config, store, messenger, backends={"codex": backend})
 
     run_task = asyncio.create_task(runtime.dispatch_message(make_message("needs approval", event_suffix="needs_approval")))
     await asyncio.wait_for(backend.started.wait(), timeout=1)
@@ -1208,7 +1208,7 @@ async def test_runtime_routes_text_reply_to_active_user_input_interaction(tmp_pa
     store = StateStore(config)
     messenger = FakeMessenger()
     backend = ToolUserInputBackend()
-    runtime = AgentRuntime(config, store, messenger, backends={"codex": backend})
+    runtime = RuntimeOrchestrator(config, store, messenger, backends={"codex": backend})
 
     run_task = asyncio.create_task(runtime.dispatch_message(make_message("needs env", event_suffix="needs_env")))
     await asyncio.wait_for(backend.started.wait(), timeout=1)
@@ -1246,7 +1246,7 @@ async def test_runtime_ping_bypasses_active_run_queue(tmp_path: Path) -> None:
     store = StateStore(config)
     messenger = FakeMessenger()
     backend = QueuedFollowUpBackend()
-    runtime = AgentRuntime(config, store, messenger, backends={"codex": backend})
+    runtime = RuntimeOrchestrator(config, store, messenger, backends={"codex": backend})
 
     run_task = asyncio.create_task(runtime.dispatch_message(make_message("long running", event_suffix="run_ping")))
     await asyncio.wait_for(backend.first_started.wait(), timeout=1)
@@ -1269,7 +1269,7 @@ async def test_runtime_serializes_messages_sharing_same_local_session_across_thr
     store = StateStore(config)
     messenger = FakeMessenger()
     backend = NativeSessionConcurrencyBackend()
-    runtime = AgentRuntime(config, store, messenger, backends={"codex": backend})
+    runtime = RuntimeOrchestrator(config, store, messenger, backends={"codex": backend})
 
     shared_session = store.load_session("p2p:chat-a")
     shared_session.native_session_id = "native_shared"
@@ -1329,7 +1329,7 @@ async def test_runtime_allows_parallel_messages_for_different_local_sessions(tmp
     store = StateStore(config)
     messenger = FakeMessenger()
     backend = NativeSessionConcurrencyBackend()
-    runtime = AgentRuntime(config, store, messenger, backends={"codex": backend})
+    runtime = RuntimeOrchestrator(config, store, messenger, backends={"codex": backend})
 
     first_session = store.load_session("p2p:chat-a")
     first_session.native_session_id = "native_a"
@@ -1389,7 +1389,7 @@ async def test_runtime_uses_local_images_as_backend_input(tmp_path: Path) -> Non
     store = StateStore(config)
     messenger = FakeMessenger()
     backend = ImageAwareBackend()
-    runtime = AgentRuntime(config, store, messenger, backends={"codex": backend})
+    runtime = RuntimeOrchestrator(config, store, messenger, backends={"codex": backend})
 
     image_path = tmp_path / "sample.png"
     image_path.write_bytes(b"fake-image")
@@ -1423,7 +1423,7 @@ async def test_runtime_top_level_p2p_cwd_prefers_thread_reply(tmp_path: Path) ->
     target.mkdir(parents=True, exist_ok=True)
     store = StateStore(config)
     messenger = FakeMessenger()
-    runtime = AgentRuntime(config, store, messenger, backends={"codex": FakeBackend()})
+    runtime = RuntimeOrchestrator(config, store, messenger, backends={"codex": FakeBackend()})
 
     await runtime.dispatch_message(make_message("/cwd subdir", event_suffix="cwd"))
 
@@ -1441,7 +1441,7 @@ async def test_runtime_thread_reply_reuses_top_level_thread_scope(tmp_path: Path
     store = StateStore(config)
     messenger = FakeMessenger()
     backend = FakeBackend()
-    runtime = AgentRuntime(config, store, messenger, backends={"codex": backend})
+    runtime = RuntimeOrchestrator(config, store, messenger, backends={"codex": backend})
 
     top_level = make_message("first task", event_suffix="root")
     await runtime.dispatch_message(top_level)
@@ -1486,7 +1486,7 @@ async def test_runtime_thread_id_only_follow_up_reuses_original_thread_session_a
     store = StateStore(config)
     messenger = ThreadAwareFakeMessenger()
     backend = FakeBackend()
-    runtime = AgentRuntime(config, store, messenger, backends={"codex": backend})
+    runtime = RuntimeOrchestrator(config, store, messenger, backends={"codex": backend})
 
     await runtime.dispatch_message(make_message("first task", event_suffix="root"))
     first_session = store.load_session("p2p:oc_1:thread:om_root")
@@ -1521,7 +1521,7 @@ async def test_runtime_resume_binds_top_level_thread_scope_to_existing_session(t
     store = StateStore(config)
     messenger = FakeMessenger()
     backend = FakeBackend()
-    runtime = AgentRuntime(config, store, messenger, backends={"codex": backend})
+    runtime = RuntimeOrchestrator(config, store, messenger, backends={"codex": backend})
 
     existing = store.load_session("p2p:oc_1")
     existing.native_session_id = "native_existing"
@@ -1557,7 +1557,7 @@ async def test_runtime_reply_chain_without_thread_ids_reuses_previous_bot_reply_
     store = StateStore(config)
     messenger = FakeMessenger()
     backend = FakeBackend()
-    runtime = AgentRuntime(config, store, messenger, backends={"codex": backend})
+    runtime = RuntimeOrchestrator(config, store, messenger, backends={"codex": backend})
 
     await runtime.dispatch_message(make_message("first task", event_suffix="first"))
 
@@ -1597,7 +1597,7 @@ async def test_runtime_reply_chain_reuses_alias_when_user_replies_to_previous_us
     store = StateStore(config)
     messenger = FakeMessenger()
     backend = FakeBackend()
-    runtime = AgentRuntime(config, store, messenger, backends={"codex": backend})
+    runtime = RuntimeOrchestrator(config, store, messenger, backends={"codex": backend})
 
     await runtime.dispatch_message(make_message("first task", event_suffix="first"))
 
@@ -1651,7 +1651,7 @@ async def test_runtime_thread_follow_up_uses_root_id_scope_directly(tmp_path: Pa
     store = StateStore(config)
     messenger = FakeMessenger()
     backend = FakeBackend()
-    runtime = AgentRuntime(config, store, messenger, backends={"codex": backend})
+    runtime = RuntimeOrchestrator(config, store, messenger, backends={"codex": backend})
 
     top_level = make_message("first task", event_suffix="root_direct")
     await runtime.dispatch_message(top_level)
@@ -1687,7 +1687,7 @@ async def test_runtime_persists_native_thread_id_before_backend_returns(tmp_path
     store = StateStore(config)
     messenger = FakeMessenger()
     backend = ThreadAwareNativeBackend()
-    runtime = AgentRuntime(config, store, messenger, backends={"codex": backend})
+    runtime = RuntimeOrchestrator(config, store, messenger, backends={"codex": backend})
 
     message = make_message("start native thread", event_suffix="native_early")
     await runtime.dispatch_message(message)
@@ -1707,7 +1707,7 @@ async def test_runtime_group_thread_reply_reuses_top_level_thread_scope(tmp_path
     store = StateStore(config)
     messenger = FakeMessenger()
     backend = FakeBackend()
-    runtime = AgentRuntime(config, store, messenger, backends={"codex": backend})
+    runtime = RuntimeOrchestrator(config, store, messenger, backends={"codex": backend})
 
     top_level = IncomingMessage(
         event_id="evt_group_root",
@@ -1756,7 +1756,7 @@ async def test_runtime_top_level_resume_list_is_not_blocked_by_active_thread_run
     store = StateStore(config)
     messenger = FakeMessenger()
     backend = InterruptibleBackend()
-    runtime = AgentRuntime(config, store, messenger, backends={"codex": backend})
+    runtime = RuntimeOrchestrator(config, store, messenger, backends={"codex": backend})
 
     run_task = asyncio.create_task(runtime.dispatch_message(make_message("long running", event_suffix="resume_lock_run")))
     await asyncio.wait_for(backend.started.wait(), timeout=1)
@@ -1828,7 +1828,7 @@ async def test_runtime_cwd_command_rejects_missing_path(tmp_path: Path) -> None:
     config.develop_workspace_dir.mkdir(parents=True, exist_ok=True)
     store = StateStore(config)
     messenger = FakeMessenger()
-    runtime = AgentRuntime(config, store, messenger, backends={"codex": FakeBackend()})
+    runtime = RuntimeOrchestrator(config, store, messenger, backends={"codex": FakeBackend()})
 
     await runtime.dispatch_message(make_message("/cwd missing-dir", event_suffix="cwd_missing"))
 
@@ -1846,7 +1846,7 @@ async def test_runtime_status_shows_recent_context(tmp_path: Path) -> None:
     config.develop_workspace_dir.mkdir(parents=True, exist_ok=True)
     store = StateStore(config)
     messenger = FakeMessenger()
-    runtime = AgentRuntime(config, store, messenger, backends={"codex": FakeBackend()})
+    runtime = RuntimeOrchestrator(config, store, messenger, backends={"codex": FakeBackend()})
 
     await runtime.dispatch_message(make_message("hello context", event_suffix="ctx1"))
     await runtime.dispatch_message(make_message("/status", event_suffix="ctx2"))
@@ -1865,7 +1865,7 @@ async def test_runtime_usage_command_shows_context_usage(tmp_path: Path) -> None
     config.develop_workspace_dir.mkdir(parents=True, exist_ok=True)
     store = StateStore(config)
     messenger = FakeMessenger()
-    runtime = AgentRuntime(config, store, messenger, backends={"codex": FakeBackend()})
+    runtime = RuntimeOrchestrator(config, store, messenger, backends={"codex": FakeBackend()})
 
     await runtime.dispatch_message(make_message("hello usage", event_suffix="usage1"))
     await runtime.dispatch_message(make_message("/usage", event_suffix="usage2"))
@@ -1894,7 +1894,7 @@ async def test_runtime_restart_process_uses_systemd_restart_when_service_managed
     config = make_config(tmp_path)
     store = StateStore(config)
     messenger = FakeMessenger()
-    runtime = AgentRuntime(config, store, messenger, backends={"codex": FakeBackend()})
+    runtime = RuntimeOrchestrator(config, store, messenger, backends={"codex": FakeBackend()})
 
     async def fake_sleep(_seconds: float) -> None:
         return None
@@ -1911,11 +1911,11 @@ async def test_runtime_restart_process_uses_systemd_restart_when_service_managed
     def fake_execvpe(_file: str, _argv: list[str], _env: dict[str, str]) -> None:
         raise AssertionError("execvpe should not be called for systemd-managed restart")
 
-    monkeypatch.setattr("openrelay.runtime.agent.asyncio.sleep", fake_sleep)
-    monkeypatch.setattr("openrelay.runtime.agent.is_systemd_service_process", lambda env=None, pid=None: True)
+    monkeypatch.setattr("openrelay.runtime.orchestrator.asyncio.sleep", fake_sleep)
+    monkeypatch.setattr("openrelay.runtime.orchestrator.is_systemd_service_process", lambda env=None, pid=None: True)
     monkeypatch.setattr(runtime, "_restart_systemd_service", fake_restart_systemd_service)
-    monkeypatch.setattr("openrelay.runtime.agent.CodexBackend.shutdown_all", fake_shutdown_all)
-    monkeypatch.setattr("openrelay.runtime.agent.os.execvpe", fake_execvpe)
+    monkeypatch.setattr("openrelay.runtime.orchestrator.CodexBackend.shutdown_all", fake_shutdown_all)
+    monkeypatch.setattr("openrelay.runtime.orchestrator.os.execvpe", fake_execvpe)
 
     await runtime._restart_process()
 
@@ -1929,7 +1929,7 @@ async def test_runtime_restart_process_execs_and_shuts_down_backends(tmp_path: P
     config = make_config(tmp_path)
     store = StateStore(config)
     messenger = FakeMessenger()
-    runtime = AgentRuntime(config, store, messenger, backends={"codex": FakeBackend()})
+    runtime = RuntimeOrchestrator(config, store, messenger, backends={"codex": FakeBackend()})
 
     async def fake_sleep(_seconds: float) -> None:
         return None
@@ -1946,11 +1946,11 @@ async def test_runtime_restart_process_execs_and_shuts_down_backends(tmp_path: P
     async def fake_restart_systemd_service(_unit_name: str) -> None:
         raise AssertionError("systemd restart should not be used outside service-managed mode")
 
-    monkeypatch.setattr("openrelay.runtime.agent.asyncio.sleep", fake_sleep)
-    monkeypatch.setattr("openrelay.runtime.agent.is_systemd_service_process", lambda env=None, pid=None: False)
+    monkeypatch.setattr("openrelay.runtime.orchestrator.asyncio.sleep", fake_sleep)
+    monkeypatch.setattr("openrelay.runtime.orchestrator.is_systemd_service_process", lambda env=None, pid=None: False)
     monkeypatch.setattr(runtime, "_restart_systemd_service", fake_restart_systemd_service)
-    monkeypatch.setattr("openrelay.runtime.agent.os.execvpe", fake_execvpe)
-    monkeypatch.setattr("openrelay.runtime.agent.CodexBackend.shutdown_all", fake_shutdown_all)
+    monkeypatch.setattr("openrelay.runtime.orchestrator.os.execvpe", fake_execvpe)
+    monkeypatch.setattr("openrelay.runtime.orchestrator.CodexBackend.shutdown_all", fake_shutdown_all)
 
     await runtime._restart_process()
 
