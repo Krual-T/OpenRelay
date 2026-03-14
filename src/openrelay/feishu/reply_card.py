@@ -7,7 +7,8 @@ from typing import Any
 
 STREAMING_ELEMENT_ID = "streaming_content"
 LOADING_ELEMENT_ID = "loading_icon"
-DEFAULT_THINKING_TEXT = "思考中..."
+DEFAULT_THINKING_TEXT = "In Progress"
+PROCESS_LOG_PANEL_TITLE = "Execution Log"
 LOADING_ICON_IMAGE_KEY = "img_v3_02vb_496bec09-4b43-4773-ad6b-0cdd103cd2bg"
 REASONING_PREFIX = "Reasoning:\n"
 
@@ -467,7 +468,7 @@ def build_complete_card(
     text: object,
     *,
     panel_text: object = "",
-    panel_title: object = "🧾 中间过程",
+    panel_title: object = PROCESS_LOG_PANEL_TITLE,
 ) -> dict[str, Any]:
     raw_text = str(text or "").strip() or "回复为空。"
     extracted_reasoning, extracted_answer = split_reasoning_text(raw_text)
@@ -481,7 +482,7 @@ def build_complete_card(
                 "tag": "collapsible_panel",
                 "expanded": False,
                 "header": {
-                    "title": {"tag": "markdown", "content": str(panel_title or "🧾 中间过程").strip()},
+                    "title": {"tag": "markdown", "content": str(panel_title or PROCESS_LOG_PANEL_TITLE).strip()},
                     "vertical_align": "center",
                     "icon": {
                         "tag": "standard_icon",
