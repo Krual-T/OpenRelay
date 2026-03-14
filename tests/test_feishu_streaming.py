@@ -22,6 +22,32 @@ def test_build_streaming_card_json_uses_single_streaming_element() -> None:
     assert card["body"]["elements"][1]["icon"]["img_key"].startswith("img_")
 
 
+def test_build_streaming_card_json_switches_to_collapsible_process_panel_when_answer_starts() -> None:
+    card = build_streaming_card_json(
+        {
+            "history_items": [
+                {
+                    "type": "command",
+                    "state": "completed",
+                    "title": "Explored codebase",
+                    "mode": "exploration",
+                    "command": "rg -n Voyager",
+                    "exit_code": 0,
+                    "output_preview": "Gemini Voyager",
+                }
+            ],
+            "started_at": "2026-03-11T00:00:00+00:00",
+            "partial_text": "# Answer\n找到结果。",
+        }
+    )
+
+    assert card["body"]["elements"][0]["tag"] == "collapsible_panel"
+    assert card["body"]["elements"][0]["header"]["title"]["content"] == "Execution Log"
+    assert "Explored" in card["body"]["elements"][0]["elements"][0]["content"]
+    assert card["body"]["elements"][1]["element_id"] == STREAMING_ELEMENT_ID
+    assert card["body"]["elements"][1]["content"] == "#### Answer\n找到结果。"
+
+
 def test_build_streaming_content_prefers_partial_text_then_reasoning() -> None:
     assert build_streaming_content({"partial_text": "# Title\ncontent"}) == "#### Title\ncontent"
     assert build_streaming_content({"partial_text": "<think>先看代码</think>\n答案"}) == "答案"
@@ -39,7 +65,7 @@ def test_build_streaming_content_prefers_partial_text_then_reasoning() -> None:
     assert build_streaming_content({}) == ""
 
 
-def test_build_streaming_content_shows_process_before_answer() -> None:
+def test_build_streaming_content_returns_answer_only_after_answer_starts() -> None:
     content = build_streaming_content(
         {
             "history_items": [
@@ -58,13 +84,7 @@ def test_build_streaming_content_shows_process_before_answer() -> None:
         }
     )
 
-    assert "🔵 **Explored**" in content
-    assert "├ Search Voyager" in content
-    assert "├ `Gemini Voyager`" in content
-    assert "└ `Gemini Voyager 2`" in content
-    assert "Worked for" in content
-    assert "---" in content
-    assert "找到结果，准备整理。" in content
+    assert content == "找到结果，准备整理。"
 
 
 def test_build_streaming_content_marks_failed_command_with_red_dot() -> None:
@@ -113,6 +133,54 @@ def test_build_streaming_content_renders_web_search_as_blue_exploration() -> Non
     assert "🔵 **Searched**" in content
     assert "├ Search March 11 2026 AI news Reuters generative AI" in content
     assert "└ Search site:techcrunch.com AI March 11 2026" in content
+
+
+@pytest.mark.asyncio
+async def test_streaming_session_switches_to_collapsed_process_panel_when_answer_starts(monkeypatch: pytest.MonkeyPatch) -> None:
+    session = FeishuStreamingSession(object())
+    session.state = {
+        "card_id": "c1",
+        "sequence": 1,
+        "current_content": "",
+        "card_signature": ("plain", ""),
+    }
+    calls: list[tuple[str, object]] = []
+
+    async def fake_update_card_json(card_json: dict[str, object]) -> None:
+        calls.append(("update_json", card_json))
+
+    async def fake_update_card_content(text: str) -> None:
+        calls.append(("update_content", text))
+
+    monkeypatch.setattr(session, "update_card_json", fake_update_card_json)
+    monkeypatch.setattr(session, "update_card_content", fake_update_card_content)
+
+    await session.update(
+        {
+            "history_items": [
+                {
+                    "type": "command",
+                    "state": "completed",
+                    "title": "Explored codebase",
+                    "mode": "exploration",
+                    "command": "rg -n Voyager",
+                    "exit_code": 0,
+                    "output_preview": "Gemini Voyager",
+                }
+            ],
+            "started_at": "2026-03-11T00:00:00+00:00",
+            "partial_text": "# Answer\n找到结果。",
+        }
+    )
+
+    assert len(calls) == 1
+    assert calls[0][0] == "update_json"
+    card = calls[0][1]
+    assert isinstance(card, dict)
+    assert card["body"]["elements"][0]["tag"] == "collapsible_panel"
+    assert card["body"]["elements"][1]["content"] == "#### Answer\n找到结果。"
+    assert session.state["current_content"] == "#### Answer\n找到结果。"
+    assert session.state["card_signature"][0] == "answer_with_process"
 
 
 @pytest.mark.asyncio
