@@ -8,7 +8,7 @@ from openrelay.feishu import (
     build_process_panel_text as build_reply_process_panel_text,
     format_reasoning_duration,
 )
-from openrelay.models import SessionRecord, utc_now
+from openrelay.core import SessionRecord, utc_now
 
 
 LiveReplyState = dict[str, Any]

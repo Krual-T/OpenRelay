@@ -5,7 +5,7 @@ from dataclasses import dataclass
 
 from openrelay.backends.base import Backend
 from openrelay.backends.codex import CodexBackend
-from openrelay.config import AppConfig
+from openrelay.core import AppConfig
 
 
 @dataclass(slots=True)

@@ -6,7 +6,7 @@ from asyncio.subprocess import PIPE
 from typing import Any
 
 from openrelay.backends.base import Backend, BackendContext, build_subprocess_env, safety_to_claude_flags
-from openrelay.models import BackendReply, SessionRecord
+from openrelay.core import BackendReply, SessionRecord
 
 
 class ClaudeCodeBackend(Backend):

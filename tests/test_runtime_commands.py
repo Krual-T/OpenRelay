@@ -2,12 +2,11 @@ from pathlib import Path
 
 import pytest
 
-from openrelay.config import AppConfig, BackendConfig, FeishuConfig
-from openrelay.models import IncomingMessage
+from openrelay.core import AppConfig, BackendConfig, FeishuConfig, IncomingMessage
 from openrelay.runtime import HelpRenderer
 from openrelay.runtime import RuntimeCommandHooks, RuntimeCommandRouter
 from openrelay.session import SESSION_SORT_ACTIVE, SessionBrowser, SessionUX
-from openrelay.state import StateStore
+from openrelay.storage import StateStore
 
 
 class FakeHooks:

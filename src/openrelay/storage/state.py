@@ -8,9 +8,7 @@ import sqlite3
 import time
 import uuid
 
-from openrelay.config import AppConfig, DirectoryShortcut
-from openrelay.models import SessionRecord, SessionSummary, utc_now
-from openrelay.release import infer_release_channel
+from openrelay.core import AppConfig, DirectoryShortcut, SessionRecord, SessionSummary, infer_release_channel, utc_now
 
 
 DEDUP_TTL_SECONDS = 48 * 60 * 60
@@ -170,7 +168,7 @@ class StateStore:
         return f"s_{uuid.uuid4().hex[:12]}"
 
     def _default_cwd(self, release_channel: str = "main") -> str:
-        from openrelay.release import get_release_workspace
+        from openrelay.core import get_release_workspace
 
         return str(get_release_workspace(self.config, release_channel))
 

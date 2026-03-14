@@ -1,9 +1,9 @@
 import asyncio
 from pathlib import Path
 
-from openrelay.config import AppConfig, BackendConfig, FeishuConfig
+from openrelay.core import AppConfig, BackendConfig, FeishuConfig
 from openrelay.feishu import FeishuEventDispatcher
-from openrelay.models import IncomingMessage
+from openrelay.core import IncomingMessage
 
 
 

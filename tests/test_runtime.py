@@ -6,13 +6,13 @@ import os
 import pytest
 
 from openrelay.backends.base import Backend, BackendContext
-from openrelay.config import AppConfig, BackendConfig, DirectoryShortcut, FeishuConfig
+from openrelay.core import AppConfig, BackendConfig, DirectoryShortcut, FeishuConfig
 from openrelay.feishu import SentMessageRef, parse_card_action_event
 from openrelay.runtime import MERGED_FOLLOW_UP_INTRO
-from openrelay.models import BackendReply, IncomingMessage, SessionRecord
+from openrelay.core import BackendReply, IncomingMessage, SessionRecord
 from openrelay.runtime import AgentRuntime, DEFAULT_IMAGE_PROMPT, get_systemd_service_unit, is_systemd_service_process
 from openrelay.session import SessionUX
-from openrelay.state import StateStore
+from openrelay.storage import StateStore
 
 
 class FakeMessenger:

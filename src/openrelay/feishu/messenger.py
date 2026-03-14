@@ -10,7 +10,7 @@ from lark_oapi.api.im.v1 import ReplyMessageRequest, ReplyMessageRequestBody, Up
 from lark_oapi.core.enum import AccessTokenType, HttpMethod, LogLevel
 from lark_oapi.core.model import BaseRequest
 
-from openrelay.config import AppConfig
+from openrelay.core import AppConfig
 
 from .common import LOGGER, _ensure_success, _guess_file_suffix, _json_dumps, _read_text, _response_bytes, _response_headers, _response_payload
 from .parsing import build_markdown_post_content, split_text

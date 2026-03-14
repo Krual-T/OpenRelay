@@ -10,8 +10,7 @@ from lark_oapi.core.enum import LogLevel
 from lark_oapi.event.callback.model.p2_card_action_trigger import P2CardActionTrigger, P2CardActionTriggerResponse
 from lark_oapi.api.im.v1.model.p2_im_message_receive_v1 import P2ImMessageReceiveV1
 
-from openrelay.config import AppConfig
-from openrelay.models import IncomingMessage
+from openrelay.core import AppConfig, IncomingMessage
 
 from .common import LOGGER
 from .messenger import FeishuMessenger

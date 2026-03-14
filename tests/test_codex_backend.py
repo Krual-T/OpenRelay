@@ -7,7 +7,7 @@ import pytest
 
 from openrelay.backends.base import BackendContext
 from openrelay.backends.codex import CodexAppServerClient, CodexTurn
-from openrelay.models import SessionRecord, utc_now
+from openrelay.core import SessionRecord, utc_now
 
 
 class DummyStdin:

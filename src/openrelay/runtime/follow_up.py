@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field, replace
 
-from openrelay.models import IncomingMessage
+from openrelay.core import IncomingMessage
 
 
 MERGED_FOLLOW_UP_INTRO = "用户在上一条回复完成前连续补充了下面这些信息，请合并理解后继续当前任务："
