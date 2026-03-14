@@ -769,6 +769,14 @@ class CodexAppServerClient:
         params = self._build_thread_params(session)
         if session.native_session_id:
             thread_id = session.native_session_id
+            LOGGER.info(
+                "codex ensure_thread resume candidate session_id=%s native_session_id=%s cwd=%s model=%s safety_mode=%s",
+                session.session_id,
+                thread_id,
+                session.cwd,
+                session.model_override or self.model,
+                session.safety_mode,
+            )
             if thread_id not in self.thread_registry:
                 try:
                     await asyncio.wait_for(
@@ -801,7 +809,29 @@ class CodexAppServerClient:
                         exc,
                     )
                 else:
+                    if context.on_thread_started is not None:
+                        await context.on_thread_started(thread_id)
+                    LOGGER.info(
+                        "codex resumed existing thread session_id=%s thread_id=%s",
+                        session.session_id,
+                        thread_id,
+                    )
                     return thread_id
+            else:
+                LOGGER.info(
+                    "codex reusing in-memory thread session_id=%s thread_id=%s",
+                    session.session_id,
+                    thread_id,
+                )
+                return thread_id
+        LOGGER.info(
+            "codex starting fresh thread session_id=%s previous_native_session_id=%s cwd=%s model=%s safety_mode=%s",
+            session.session_id,
+            session.native_session_id,
+            session.cwd,
+            session.model_override or self.model,
+            session.safety_mode,
+        )
         result = await self.request(
             "thread/start",
             params,
@@ -812,6 +842,13 @@ class CodexAppServerClient:
         if not thread_id:
             raise RuntimeError("Codex app-server returned no thread id")
         self.thread_registry.add(thread_id)
+        if context.on_thread_started is not None:
+            await context.on_thread_started(thread_id)
+        LOGGER.info(
+            "codex started fresh thread session_id=%s thread_id=%s",
+            session.session_id,
+            thread_id,
+        )
         if context.on_progress is not None:
             await context.on_progress({"type": "thread.started", "threadId": thread_id})
         return thread_id
