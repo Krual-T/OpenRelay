@@ -40,11 +40,12 @@ from .reply_card import (
     STREAMING_ELEMENT_ID,
     build_complete_card,
     build_process_panel_text,
+    build_streaming_card_json,
     build_streaming_content,
     build_thinking_card_json,
     format_reasoning_duration,
 )
-from .streaming import FeishuStreamingSession, build_streaming_card_json
+from .streaming import FeishuStreamingSession
 from .typing import FeishuTypingManager
 from .types import ParsedWebhook, SentMessageRef
 from .ws_client import FeishuWebSocketClient

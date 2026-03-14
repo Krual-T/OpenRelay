@@ -19,10 +19,16 @@ from lark_oapi.api.cardkit.v1 import (
 
 from .messenger import FeishuMessenger, sent_message_ref_from_payload
 from .parsing import _read_text
-from .reply_card import DEFAULT_THINKING_TEXT, STREAMING_ELEMENT_ID, build_streaming_content, build_thinking_card_json
+from .reply_card import (
+    DEFAULT_THINKING_TEXT,
+    STREAMING_ELEMENT_ID,
+    build_streaming_card_json,
+    build_streaming_card_signature,
+    build_streaming_content,
+    build_thinking_card_json,
+)
 
 DEFAULT_STREAM_UPDATE_THROTTLE_MS = 100
-build_streaming_card_json = build_thinking_card_json
 
 
 class FeishuStreamingSession:
@@ -66,6 +72,7 @@ class FeishuStreamingSession:
                     "alias_ids": sent_message.alias_ids(),
                     "sequence": 1,
                     "current_content": "",
+                    "card_signature": ("plain", ""),
                 }
                 return
             except Exception:
@@ -78,6 +85,7 @@ class FeishuStreamingSession:
             "alias_ids": sent_message.alias_ids(),
             "sequence": 1,
             "current_content": "",
+            "card_signature": ("plain", ""),
         }
         if self.log is not None:
             self.log(f"streaming card started: {card_id}")
@@ -155,6 +163,23 @@ class FeishuStreamingSession:
         if self.state is None or self.closed:
             return
         next_content = build_streaming_content(live_state)
+        next_signature = build_streaming_card_signature(live_state)
+        current_signature = self.state.get("card_signature") or ("plain", "")
+        if next_content == str(self.state.get("current_content") or "") and next_signature == current_signature:
+            return
+        if next_signature != current_signature:
+            self.pending_content = ""
+            self._cancel_pending_flush_task()
+            async with self._lock:
+                if self.state is None or self.closed:
+                    return
+                current_signature = self.state.get("card_signature") or ("plain", "")
+                if next_signature != current_signature:
+                    await self.update_card_json(build_streaming_card_json(live_state))
+                    self.state["card_signature"] = next_signature
+                    self.state["current_content"] = next_content
+                    self.last_update_time = time.time() * 1000
+                    return
         if next_content == str(self.state.get("current_content") or ""):
             return
         now_ms = time.time() * 1000
