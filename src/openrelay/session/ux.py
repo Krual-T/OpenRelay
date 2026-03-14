@@ -4,11 +4,12 @@ import shlex
 from pathlib import Path
 from typing import Any
 
-from openrelay.config import AppConfig
+from openrelay.config import AppConfig, DirectoryShortcut
 from openrelay.models import SessionRecord
 from openrelay.release import format_release_channel, get_release_workspace, get_session_workspace_root, infer_release_channel
-from openrelay.session_browser import SessionListEntry, SessionListPage, SESSION_SORT_UPDATED
 from openrelay.state import StateStore
+
+from .browser import SESSION_SORT_UPDATED, SessionListEntry, SessionListPage
 
 
 class SessionUX:

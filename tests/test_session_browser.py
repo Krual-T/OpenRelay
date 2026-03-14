@@ -2,7 +2,7 @@ from pathlib import Path
 import json
 
 from openrelay.config import AppConfig, BackendConfig, FeishuConfig
-from openrelay.session_browser import DEFAULT_SESSION_LIST_SORT, SESSION_SORT_ACTIVE, SessionBrowser
+from openrelay.session import DEFAULT_SESSION_LIST_SORT, SESSION_SORT_ACTIVE, SessionBrowser
 from openrelay.state import StateStore
 
 

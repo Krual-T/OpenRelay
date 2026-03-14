@@ -7,7 +7,7 @@ from openrelay.card_theme import build_card_shell, build_section_block, build_st
 from openrelay.config import AppConfig
 from openrelay.models import SessionRecord
 from openrelay.release import format_release_channel, infer_release_channel
-from openrelay.session_ux import SessionUX
+from openrelay.session import SessionUX
 from openrelay.state import StateStore
 
 
