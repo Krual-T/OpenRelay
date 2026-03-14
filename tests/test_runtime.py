@@ -21,10 +21,18 @@ class FakeMessenger:
         self.cards: list[dict] = []
         self.text_calls: list[dict] = []
         self.card_calls: list[dict] = []
+        self._next_message_id = 1
 
-    async def send_text(self, chat_id: str, text: str, *, reply_to_message_id: str = "", root_id: str = "", force_new_message: bool = False) -> None:
+    def _allocate_message_id(self) -> str:
+        message_id = f"om_bot_{self._next_message_id}"
+        self._next_message_id += 1
+        return message_id
+
+    async def send_text(self, chat_id: str, text: str, *, reply_to_message_id: str = "", root_id: str = "", force_new_message: bool = False) -> tuple[str, ...]:
         self.messages.append(text)
+        message_id = self._allocate_message_id()
         self.text_calls.append({"chat_id": chat_id, "text": text, "reply_to_message_id": reply_to_message_id, "root_id": root_id, "force_new_message": force_new_message})
+        return (message_id,)
 
     async def send_interactive_card(
         self,
@@ -35,8 +43,9 @@ class FakeMessenger:
         root_id: str = "",
         force_new_message: bool = False,
         update_message_id: str = "",
-    ) -> None:
+    ) -> str:
         self.cards.append(card)
+        message_id = update_message_id or self._allocate_message_id()
         self.card_calls.append({
             "chat_id": chat_id,
             "card": card,
@@ -45,6 +54,7 @@ class FakeMessenger:
             "force_new_message": force_new_message,
             "update_message_id": update_message_id,
         })
+        return message_id
 
     async def close(self) -> None:
         return None
@@ -1467,6 +1477,46 @@ async def test_runtime_resume_binds_top_level_thread_scope_to_existing_session(t
 
     assert backend.calls[-1][0].session_id == existing.session_id
     assert backend.calls[-1][0].native_session_id == "native_existing"
+    await runtime.shutdown()
+
+
+@pytest.mark.asyncio
+async def test_runtime_reply_chain_without_thread_ids_reuses_previous_bot_reply_alias(tmp_path: Path) -> None:
+    config = make_config(tmp_path)
+    config.workspace_root.mkdir(parents=True, exist_ok=True)
+    config.main_workspace_dir.mkdir(parents=True, exist_ok=True)
+    config.develop_workspace_dir.mkdir(parents=True, exist_ok=True)
+    store = StateStore(config)
+    messenger = FakeMessenger()
+    backend = FakeBackend()
+    runtime = AgentRuntime(config, store, messenger, backends={"codex": backend})
+
+    await runtime.dispatch_message(make_message("first task", event_suffix="first"))
+
+    follow_up = IncomingMessage(
+        event_id="evt_parent_follow_up",
+        message_id="om_parent_follow_up",
+        chat_id="oc_1",
+        chat_type="p2p",
+        sender_open_id="ou_user",
+        parent_id="om_bot_1",
+        text="continue from reply",
+        actionable=True,
+    )
+
+    assert runtime.build_session_key(follow_up) == "p2p:oc_1:thread:om_first"
+
+    await runtime.dispatch_message(follow_up)
+
+    assert len(backend.calls) == 2
+    assert backend.calls[1][0].native_session_id == "native_1"
+    session = store.load_session("p2p:oc_1:thread:om_first")
+    assert [entry["content"] for entry in store.list_messages(session.session_id)] == [
+        "first task",
+        "echo: first task",
+        "continue from reply",
+        "echo: continue from reply",
+    ]
     await runtime.shutdown()
 
 

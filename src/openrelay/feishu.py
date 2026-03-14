@@ -424,15 +424,36 @@ class FeishuMessenger:
             handle.write(content)
             return str(Path(handle.name).resolve())
 
-    async def send_text(self, chat_id: str, text: str, *, reply_to_message_id: str = "", root_id: str = "", force_new_message: bool = False) -> None:
+    async def send_text(
+        self,
+        chat_id: str,
+        text: str,
+        *,
+        reply_to_message_id: str = "",
+        root_id: str = "",
+        force_new_message: bool = False,
+    ) -> tuple[str, ...]:
+        message_ids: list[str] = []
         for chunk in split_text(text):
             if reply_to_message_id and not force_new_message:
                 try:
-                    await self.reply_message(reply_to_message_id, "post", build_markdown_post_content(chunk), reply_in_thread=True)
+                    payload = await self.reply_message(
+                        reply_to_message_id,
+                        "post",
+                        build_markdown_post_content(chunk),
+                        reply_in_thread=True,
+                    )
+                    message_id = _read_text(payload.get("data", {}).get("message_id"))
+                    if message_id:
+                        message_ids.append(message_id)
                     continue
                 except Exception:
                     LOGGER.exception("reply text failed for message_id=%s", reply_to_message_id)
-            await self.create_message(chat_id, "post", build_markdown_post_content(chunk), root_id=root_id)
+            payload = await self.create_message(chat_id, "post", build_markdown_post_content(chunk), root_id=root_id)
+            message_id = _read_text(payload.get("data", {}).get("message_id"))
+            if message_id:
+                message_ids.append(message_id)
+        return tuple(message_ids)
 
     async def send_interactive_card(
         self,
@@ -443,21 +464,22 @@ class FeishuMessenger:
         root_id: str = "",
         force_new_message: bool = False,
         update_message_id: str = "",
-    ) -> None:
+    ) -> str:
         content = _json_dumps(card)
         if update_message_id:
             try:
                 await self.update_message(update_message_id, "interactive", content)
-                return
+                return update_message_id
             except Exception:
                 LOGGER.exception("update interactive card failed for message_id=%s", update_message_id)
         if reply_to_message_id and not force_new_message:
             try:
-                await self.reply_message(reply_to_message_id, "interactive", content, reply_in_thread=True)
-                return
+                payload = await self.reply_message(reply_to_message_id, "interactive", content, reply_in_thread=True)
+                return _read_text(payload.get("data", {}).get("message_id"))
             except Exception:
                 LOGGER.exception("reply interactive card failed for message_id=%s", reply_to_message_id)
-        await self.create_message(chat_id, "interactive", content, root_id=root_id)
+        payload = await self.create_message(chat_id, "interactive", content, root_id=root_id)
+        return _read_text(payload.get("data", {}).get("message_id"))
 
 
 
