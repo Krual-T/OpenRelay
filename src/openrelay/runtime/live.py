@@ -524,5 +524,5 @@ def build_reply_card(
     return build_complete_card(
         text,
         panel_text=process_text,
-        panel_title="🧾 中间过程",
+        panel_title="Execution Log",
     )

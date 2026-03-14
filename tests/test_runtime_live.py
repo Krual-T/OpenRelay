@@ -15,7 +15,7 @@ def test_build_reply_card_adds_collapsible_process_panel() -> None:
 
     process_panel = next(element for element in card["body"]["elements"] if element.get("tag") == "collapsible_panel")
     assert process_panel["expanded"] is False
-    assert process_panel["header"]["title"]["content"] == "🧾 中间过程"
+    assert process_panel["header"]["title"]["content"] == "Execution Log"
     assert process_panel["elements"][0]["content"] == "**状态**\n- 正在准备回复"
     assert card["body"]["elements"][-1] == {"tag": "markdown", "content": "done"}
 
@@ -186,7 +186,7 @@ def test_build_reply_card_splits_inline_thinking_tags() -> None:
     card = build_reply_card("<think>先看 runtime</think>\n# Answer")
 
     reasoning_panel = next(element for element in card["body"]["elements"] if element.get("tag") == "collapsible_panel")
-    assert reasoning_panel["header"]["title"]["content"] == "🧾 中间过程"
+    assert reasoning_panel["header"]["title"]["content"] == "Execution Log"
     assert reasoning_panel["elements"][0]["content"] == "先看 runtime"
     assert card["body"]["elements"][1]["content"] == "#### Answer"
 
