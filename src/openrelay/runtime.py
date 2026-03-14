@@ -163,7 +163,7 @@ class AgentRuntime:
             candidate = str(value or "").strip()
             if candidate and candidate not in alias_source_ids:
                 alias_source_ids.append(candidate)
-        if not alias_source_ids and message.message_id:
+        if message.message_id and message.message_id not in alias_source_ids:
             alias_source_ids.append(message.message_id)
         for alias_source_id in alias_source_ids:
             alias_key = self._compose_session_key(message, thread_id=alias_source_id)
