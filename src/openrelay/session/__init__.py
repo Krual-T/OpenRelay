@@ -14,6 +14,7 @@ from .browser import (
 )
 from .list_card import build_resume_list_command, build_session_list_card
 from .lifecycle import SessionLifecycleResolver
+from .mutations import SessionMutationService
 from .scope import SessionScopeResolver
 from .ux import SessionUX
 
@@ -33,6 +34,7 @@ __all__ = [
     "SessionScopeResolver",
     "SessionSortMode",
     "SessionUX",
+    "SessionMutationService",
     "build_resume_list_command",
     "build_session_list_card",
 ]

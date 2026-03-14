@@ -3,9 +3,10 @@ from pathlib import Path
 import pytest
 
 from openrelay.core import AppConfig, BackendConfig, FeishuConfig, IncomingMessage
+from openrelay.release import ReleaseCommandService
 from openrelay.runtime import HelpRenderer
 from openrelay.runtime import RuntimeCommandHooks, RuntimeCommandRouter
-from openrelay.session import SESSION_SORT_ACTIVE, SessionBrowser, SessionUX
+from openrelay.session import SESSION_SORT_ACTIVE, SessionBrowser, SessionMutationService, SessionUX
 from openrelay.storage import StateStore
 
 
@@ -15,8 +16,8 @@ class FakeHooks:
         self.help_calls: list[tuple[str, str]] = []
         self.panel_calls: list[tuple[str, str, str, int, str]] = []
         self.session_list_calls: list[tuple[str, int, str]] = []
-        self.switch_calls: list[tuple[str, str, str]] = []
         self.stop_calls: list[str] = []
+        self.cancel_calls: list[tuple[str, str]] = []
         self.restart_scheduled = 0
 
     async def reply(self, message: IncomingMessage, text: str, **kwargs) -> None:
@@ -31,11 +32,12 @@ class FakeHooks:
     async def send_session_list(self, message: IncomingMessage, session_key: str, session, page: int, sort_mode: str) -> None:
         self.session_list_calls.append((session_key, page, sort_mode))
 
-    async def switch_release_channel(self, message: IncomingMessage, session_key: str, session, target_channel: str, command_name: str, reason: str) -> None:
-        self.switch_calls.append((session_key, target_channel, command_name))
-
     async def stop(self, message: IncomingMessage, session_key: str) -> None:
         self.stop_calls.append(session_key)
+
+    async def cancel_active_run_for_session(self, session, command_name: str) -> bool:
+        self.cancel_calls.append((session.session_id, command_name))
+        return False
 
     def schedule_restart(self) -> None:
         self.restart_scheduled += 1
@@ -104,24 +106,27 @@ def build_router(tmp_path: Path) -> tuple[RuntimeCommandRouter, StateStore, Fake
     store = StateStore(config)
     session_ux = SessionUX(config, store)
     browser = SessionBrowser(config, store)
+    session_mutations = SessionMutationService(config, store, session_ux)
     hooks = FakeHooks()
     router = RuntimeCommandRouter(
         config,
         store,
         browser,
+        session_mutations,
         session_ux,
         HelpRenderer(config, store, session_ux),
+        ReleaseCommandService(config, store, session_ux, session_mutations),
         {"codex": object(), "claude": object()},
         RuntimeCommandHooks(
             reply=hooks.reply,
             send_help=hooks.send_help,
             send_panel=hooks.send_panel,
             send_session_list=hooks.send_session_list,
-            switch_release_channel=hooks.switch_release_channel,
             stop=hooks.stop,
             schedule_restart=hooks.schedule_restart,
             is_admin=hooks.is_admin,
             available_backend_names=hooks.available_backend_names,
+            cancel_active_run_for_session=hooks.cancel_active_run_for_session,
         ),
     )
     return router, store, hooks
@@ -164,6 +169,22 @@ async def test_runtime_command_router_parses_panel_view_page_and_sort(tmp_path: 
     await router.handle(make_message(f"/panel sessions --page 2 --sort {SESSION_SORT_ACTIVE}", suffix="panel_sessions"), session.base_key, session)
 
     assert hooks.panel_calls == [("om_panel_sessions", session.base_key, "sessions", 2, SESSION_SORT_ACTIVE)]
+    store.close()
+
+
+@pytest.mark.asyncio
+async def test_runtime_command_router_switches_release_via_service(tmp_path: Path) -> None:
+    router, store, hooks = build_router(tmp_path)
+    session = store.load_session("p2p:oc_1")
+
+    await router.handle(make_message("/develop bugfix", suffix="develop"), session.base_key, session)
+
+    switched = store.find_session(session.base_key)
+    assert switched is not None
+    assert switched.session_id != session.session_id
+    assert switched.release_channel == "develop"
+    assert hooks.cancel_calls == [(session.session_id, "/develop")]
+    assert "已切到 develop 修复版本。" in str(hooks.replies[-1]["text"])
     store.close()
 
 

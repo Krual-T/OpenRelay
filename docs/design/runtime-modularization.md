@@ -1,6 +1,6 @@
 # Runtime Modularization
 
-更新时间：2026-03-10
+更新时间：2026-03-15
 
 ## 背景
 
@@ -84,10 +84,13 @@
 - 把 `_handle_command` 的主分支树从 `RuntimeOrchestrator` 收敛到独立命令路由层
 - `RuntimeOrchestrator` 只保留命令相关协作入口与少量状态密切相关的 helper
 - 2026-03-15 新增 `src/openrelay/session/lifecycle.py`，把会话装载 / 占位会话复用策略移回 `openrelay.session`
+- 2026-03-15 新增 `src/openrelay/session/mutations.py`，把 `/new`、`/clear`、`/model`、`/sandbox`、`/backend`、`/cwd`、快捷目录等会话变更操作收敛为 session 域服务
 - 2026-03-15 新增 `src/openrelay/runtime/restart.py`，把 systemd / 进程重启控制从 `RuntimeOrchestrator` 分离为 runtime 内部协作者
 - `RuntimeOrchestrator` 进一步收敛为消息编排器，避免继续混入会话域策略和进程控制细节
 - 2026-03-15 新增 `src/openrelay/runtime/turn.py`，把 backend turn 生命周期、交互控制、流式回复状态从 `RuntimeOrchestrator` 移出
 - 2026-03-15 新增 `src/openrelay/runtime/execution.py`，把 active run、串行锁和 follow-up 队列从 `RuntimeOrchestrator` 移到执行协调器
+- 2026-03-15 新增 `src/openrelay/release/service.py`，把 release channel 切换、事件记录和 next-session 产出从 `RuntimeOrchestrator` / `RuntimeCommandRouter` 中抽离
+- `RuntimeCommandRouter` 现在只负责命令解析与调用协作者，不再直接拼接 release / session 变更细节
 - `RuntimeOrchestrator` 现在主要保留 dispatch、命令分流、session 解析委托与顶层异常边界
 
 ## 预期结果
