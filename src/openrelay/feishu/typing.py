@@ -9,7 +9,8 @@ from lark_oapi.api.im.v1 import (
     Emoji,
 )
 
-from openrelay.feishu import FeishuMessenger, _read_text
+from .messenger import FeishuMessenger
+from .parsing import _read_text
 
 
 TYPING_EMOJI = "Typing"
