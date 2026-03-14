@@ -6,7 +6,7 @@ import uuid
 from typing import Any, Awaitable, Callable
 
 from openrelay.feishu.cards import build_button, build_card_shell, build_section_block, build_status_hero, divider_block
-from openrelay.models import IncomingMessage
+from openrelay.core import IncomingMessage
 
 from .formatting import (
     chunk_actions,

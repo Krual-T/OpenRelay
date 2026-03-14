@@ -7,7 +7,7 @@ from dataclasses import dataclass
 import os
 from pathlib import Path
 
-from openrelay.models import BackendReply, SessionRecord
+from openrelay.core import BackendReply, SessionRecord
 
 
 ENV_WHITELIST = {

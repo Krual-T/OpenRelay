@@ -1,8 +1,8 @@
 import sqlite3
 from pathlib import Path
 
-from openrelay.config import AppConfig, BackendConfig, FeishuConfig
-from openrelay.state import StateStore
+from openrelay.core import AppConfig, BackendConfig, FeishuConfig
+from openrelay.storage import StateStore
 
 
 
@@ -80,7 +80,7 @@ def test_state_directory_shortcut_crud(tmp_path: Path) -> None:
     config.develop_workspace_dir.mkdir(parents=True, exist_ok=True)
     store = StateStore(config)
 
-    from openrelay.config import DirectoryShortcut
+    from openrelay.core import DirectoryShortcut
 
     saved = store.save_directory_shortcut(DirectoryShortcut(name="docs", path="docs", channels=("main",)))
     assert saved.name == "docs"

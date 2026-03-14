@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Any, TypeAlias
 
 from openrelay.backends.base import Backend, BackendContext, build_subprocess_env, safety_to_codex_approval
-from openrelay.models import BackendReply, SessionRecord
+from openrelay.core import BackendReply, SessionRecord
 
 
 DEFAULT_REQUEST_TIMEOUT_SECONDS: float | None = None

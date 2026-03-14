@@ -2,7 +2,7 @@ import json
 
 import pytest
 
-from openrelay.config import ConfigError, load_config
+from openrelay.core import ConfigError, load_config
 
 
 REQUIRED_ENV = {

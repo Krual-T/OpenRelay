@@ -7,8 +7,7 @@ from lark_oapi.api.im.v1.model.p2_im_message_receive_v1 import P2ImMessageReceiv
 from lark_oapi.core.model import RawRequest
 from lark_oapi.event.callback.model.p2_card_action_trigger import P2CardActionTrigger
 
-from openrelay.config import AppConfig
-from openrelay.models import IncomingMessage
+from openrelay.core import AppConfig, IncomingMessage
 
 from .common import (
     IMAGE_MESSAGE_PLACEHOLDER,

@@ -3,8 +3,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from openrelay.config import AppConfig
-from openrelay.models import SessionRecord, utc_now
+from openrelay.core.config import AppConfig
+from openrelay.core.models import SessionRecord, utc_now
 
 
 RELEASE_CHANNELS = {"main", "develop"}

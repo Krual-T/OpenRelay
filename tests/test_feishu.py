@@ -1,7 +1,7 @@
 import json
 from pathlib import Path
 
-from openrelay.config import AppConfig, BackendConfig, FeishuConfig
+from openrelay.core import AppConfig, BackendConfig, FeishuConfig
 from openrelay.feishu import parse_card_action_event, parse_message_event, parse_webhook_body, split_text, strip_mentions
 
 

@@ -2,9 +2,8 @@ from __future__ import annotations
 
 import logging
 
-from openrelay.config import AppConfig
-from openrelay.models import IncomingMessage
-from openrelay.state import StateStore
+from openrelay.core import AppConfig, IncomingMessage
+from openrelay.storage import StateStore
 
 
 class SessionScopeResolver:

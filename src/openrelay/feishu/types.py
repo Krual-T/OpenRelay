@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
-from openrelay.models import IncomingMessage
+from openrelay.core import IncomingMessage
 
 
 @dataclass(slots=True)
