@@ -89,3 +89,25 @@ def test_state_directory_shortcut_crud(tmp_path: Path) -> None:
     assert store.remove_directory_shortcut("docs") is True
     assert store.get_directory_shortcut("docs") is None
     store.close()
+
+
+def test_state_directory_shortcut_invalid_channels_fall_back_to_all(tmp_path: Path) -> None:
+    config = make_config(tmp_path)
+    config.workspace_root.mkdir(parents=True, exist_ok=True)
+    config.main_workspace_dir.mkdir(parents=True, exist_ok=True)
+    config.develop_workspace_dir.mkdir(parents=True, exist_ok=True)
+    store = StateStore(config)
+    store.connection.execute(
+        """
+        INSERT INTO directory_shortcuts(name, path, channels_json, created_at, updated_at)
+        VALUES('docs', 'docs', '["invalid"]', '2026-03-14T00:00:00Z', '2026-03-14T00:00:00Z')
+        """
+    )
+    store.connection.commit()
+
+    saved = store.get_directory_shortcut("docs")
+
+    assert saved is not None
+    assert saved.channels == ("all",)
+    assert store.list_directory_shortcuts()[0].channels == ("all",)
+    store.close()
