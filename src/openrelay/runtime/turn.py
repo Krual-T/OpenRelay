@@ -198,7 +198,7 @@ class BackendTurnSession:
         if previous_streaming is not None and previous_streaming.needs_rollover():
             await previous_streaming.freeze(snapshot, notice_text=STREAMING_ROLLOVER_NOTICE)
         self.streaming = None
-        next_streaming = await self._start_streaming_session(ReplyRoute(reply_to_message_id="", root_id="", force_new_message=True))
+        next_streaming = await self._start_streaming_session()
         if not next_streaming.is_active():
             return
         await next_streaming.update(snapshot)
