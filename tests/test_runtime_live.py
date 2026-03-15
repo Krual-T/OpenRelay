@@ -40,8 +40,6 @@ def test_build_process_panel_text_collects_status_command_and_reasoning() -> Non
         }
     )
 
-    assert "• **Starting Codex**" in text
-    assert "└ Preparing reply" in text
     assert "• **Thought for 1.2s**" in text
     assert "├ 先检查 runtime。" in text
     assert "└ 再看 card 渲染。" in text
@@ -50,6 +48,21 @@ def test_build_process_panel_text_collects_status_command_and_reasoning() -> Non
     assert "├ `file1`" in text
     assert "└ `file2`" in text
     assert "Worked for" in text
+
+
+def test_build_process_panel_text_hides_startup_status_items() -> None:
+    text = build_process_panel_text(
+        {
+            "history_items": [
+                {"type": "status", "state": "completed", "title": "Starting Codex", "detail": "Preparing reply"},
+                {"type": "status", "state": "completed", "title": "Connected session", "detail": "`native-thread-id`"},
+            ]
+        }
+    )
+
+    assert "Starting Codex" not in text
+    assert "Connected session" not in text
+    assert "native-thread-id" not in text
 
 
 def test_build_process_panel_text_marks_failed_command_with_red_dot() -> None:
