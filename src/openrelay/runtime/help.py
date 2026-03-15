@@ -180,7 +180,7 @@ class HelpRenderer:
         return [
             "- 直接再发一条真实消息，系统会基于当前本地上下文重新接上执行。",
             "- 如果现在其实是新任务，回顶层直接发新消息。",
-            "- 如果你要回到更早的某次 Codex 对话，先 /resume list 再恢复对应 thread。",
+            "- 如果你要回到更早的某次 Codex 对话，先 /resume 打开会话卡片，再连接对应 thread。",
         ]
 
     def build_prompt_examples(self, session: SessionRecord, message_count: int) -> list[str]:
@@ -219,7 +219,7 @@ class HelpRenderer:
             "- 同一任务继续干：通常不用命令，直接发消息。",
             "- 当前回复还在跑时，继续发消息会进入下一轮；连续补充会自动合并。",
             "- 私聊顶层直接发新消息：默认会开新的 Codex 会话；想回旧会话时再用 /resume。",
-            "- 开新任务或切话题：直接回顶层发新消息；查看或恢复旧 Codex thread：/resume list、/resume latest。",
+            "- 开新任务或切话题：直接回顶层发新消息；查看或恢复旧 Codex thread：/resume、/resume latest。",
             "- `/resume` 只允许在私聊顶层使用；子 thread 会固定绑定当前 Codex 会话。",
             "- `/resume` 直接读取并绑定 Codex 原生 thread 历史；`/compact` 会对当前 thread 发起 compact。",
             "- 换执行位置：/cwd <path> 切目录；/main 回稳定工作区；/develop 进修复工作区。",
@@ -238,7 +238,7 @@ class HelpRenderer:
     def build_command_button_groups(self, available_backends: list[str], action_context: dict[str, str]) -> list[list[dict[str, Any]]]:
         groups: list[list[tuple[str, str, str]]] = [
             [("状态", "/status", "primary"), ("用量", "/usage", "default"), ("面板", "/panel", "default")],
-            [("会话列表", "/resume list", "primary"), ("清空上下文", "/clear", "default")],
+            [("会话列表", "/resume", "primary"), ("清空上下文", "/clear", "default")],
             [("当前目录", "/cwd", "default"), ("切到 main", "/main", "default"), ("切到 develop", "/develop", "default")],
             [("模型", "/model", "default"), ("Sandbox", "/sandbox", "default"), ("停止", "/stop", "default")],
         ]

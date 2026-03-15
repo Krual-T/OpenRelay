@@ -700,22 +700,39 @@ async def test_runtime_resume_list_sends_paginated_sortable_card(tmp_path: Path)
     older.label = "older"
     older.native_session_id = "native_old"
     store.save_session(older)
-    for index in range(6):
+    for index in range(12):
         next_session = store.create_next_session(older.base_key, older, f"session-{index}")
         next_session.native_session_id = f"native_{index}"
         store.save_session(next_session)
 
-    await runtime.dispatch_message(make_message("/resume list", event_suffix="resume_list"))
+    await runtime.dispatch_message(make_message("/resume", event_suffix="resume_list"))
 
-    assert messenger.messages
-    assert "Codex 会话列表（第 1 页）：" in messenger.messages[-1]
-    assert "id=native_old" in messenger.messages[-1]
+    assert messenger.cards
+    first_card = messenger.cards[-1]
+    first_text = extract_card_text(first_card)
+    first_commands = extract_card_commands(first_card)
+    assert "Codex 会话" in first_text
+    assert "id=native_old" in first_text
+    assert "/resume native_old" in first_commands
+    assert messenger.card_calls[-1]["force_new_message"] is True
 
-    await runtime.dispatch_message(make_message("/resume list --page 2 --sort active-first", event_suffix="resume_page2"))
-    assert "Codex 会话列表（第 2 页）：" in messenger.messages[-1]
+    resume_page_2 = parse_card_action_event(
+        {
+            "token": "tok_resume_page2",
+            "operator": {"open_id": "ou_user"},
+            "action": {"value": find_card_action_value(first_card, "/resume --page 2")},
+            "context": {"open_chat_id": "oc_1", "open_message_id": "om_resume_card"},
+        }
+    )
+    assert resume_page_2.message is not None
+
+    await runtime.dispatch_message(resume_page_2.message)
+
+    assert messenger.card_calls[-1]["update_message_id"] == "om_resume_card"
+    assert "第 `2` 页" in extract_card_text(messenger.cards[-1])
 
     await runtime.dispatch_message(make_message(f"/resume {older.session_id}", event_suffix="resume_old"))
-    assert messenger.messages[-1].startswith("已绑定 Codex 会话：name native_old")
+    assert messenger.messages[-1].startswith("已连接 Codex 会话：name native_old")
     assert "thread_id=native_old" in messenger.messages[-1]
     await runtime.shutdown()
 
@@ -889,7 +906,7 @@ async def test_runtime_help_command_shows_actionable_guidance(tmp_path: Path) ->
     empty_commands = extract_card_commands(empty_card)
     assert "/status" in empty_commands
     assert "/usage" in empty_commands
-    assert "/resume list" in empty_commands
+    assert "/resume" in empty_commands
     assert "/cwd" in empty_commands
     assert "/main" in empty_commands
     assert "/develop" in empty_commands
@@ -1645,6 +1662,54 @@ async def test_runtime_resume_binds_top_level_thread_scope_to_existing_session(t
 
 
 @pytest.mark.asyncio
+async def test_runtime_resume_card_action_connects_thread_to_native_session(tmp_path: Path) -> None:
+    config = make_config(tmp_path)
+    config.workspace_root.mkdir(parents=True, exist_ok=True)
+    config.main_workspace_dir.mkdir(parents=True, exist_ok=True)
+    config.develop_workspace_dir.mkdir(parents=True, exist_ok=True)
+    store = StateStore(config)
+    messenger = FakeMessenger()
+    backend = NativeCommandBackend()
+    runtime = RuntimeOrchestrator(config, store, messenger, backends={"codex": backend})
+
+    await runtime.dispatch_message(make_message("/resume", event_suffix="resume_card"))
+    resume_card = messenger.cards[-1]
+
+    connect_action = parse_card_action_event(
+        {
+            "token": "tok_resume_connect",
+            "operator": {"open_id": "ou_user"},
+            "action": {"value": find_card_action_value(resume_card, "/resume native_old")},
+            "context": {"open_chat_id": "oc_1", "open_message_id": "om_resume_card"},
+        }
+    )
+    assert connect_action.message is not None
+
+    await runtime.dispatch_message(connect_action.message)
+
+    assert messenger.messages[-1].startswith("已连接 Codex 会话：name native_old")
+    assert messenger.text_calls[-1]["reply_to_message_id"] == "om_resume_card"
+    assert messenger.text_calls[-1]["force_new_message"] is False
+
+    thread_reply = IncomingMessage(
+        event_id="evt_resume_card_follow_up",
+        message_id="om_resume_card_follow_up",
+        chat_id="oc_1",
+        chat_type="p2p",
+        sender_open_id="ou_user",
+        root_id="om_resume_card",
+        thread_id="thread_resume_card",
+        text="continue connected thread",
+        actionable=True,
+    )
+
+    await runtime.dispatch_message(thread_reply)
+
+    assert backend.calls[-1][0].native_session_id == "native_old"
+    await runtime.shutdown()
+
+
+@pytest.mark.asyncio
 async def test_runtime_reply_chain_without_thread_ids_reuses_previous_bot_reply_alias(tmp_path: Path) -> None:
     config = make_config(tmp_path)
     config.workspace_root.mkdir(parents=True, exist_ok=True)
@@ -1861,10 +1926,10 @@ async def test_runtime_top_level_resume_list_is_not_blocked_by_active_thread_run
     run_task = asyncio.create_task(runtime.dispatch_message(make_message("long running", event_suffix="resume_lock_run")))
     await asyncio.wait_for(backend.started.wait(), timeout=1)
 
-    await runtime.dispatch_message(make_message("/resume list", event_suffix="resume_lock_list"))
+    await runtime.dispatch_message(make_message("/resume", event_suffix="resume_lock_list"))
 
-    assert messenger.messages
-    assert "Codex 会话列表（第 1 页）：" in messenger.messages[-1]
+    assert messenger.cards
+    assert "Codex 会话" in extract_card_text(messenger.cards[-1])
     assert all("已收到补充" not in message for message in messenger.messages)
 
     await runtime.dispatch_message(make_message("/stop", event_suffix="resume_lock_stop"))

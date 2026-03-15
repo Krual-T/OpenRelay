@@ -3,11 +3,12 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Awaitable, Callable
 
-from openrelay.backends import BackendDescriptor
-from openrelay.core import AppConfig, IncomingMessage, SessionRecord
+from openrelay.backends import BackendContext, BackendDescriptor
+from openrelay.core import AppConfig, IncomingMessage, SessionRecord, get_session_workspace_root
 from openrelay.feishu import FeishuMessenger
 from openrelay.presentation.panel import RuntimePanelPresenter
-from openrelay.presentation.session import SessionPresentation
+from openrelay.presentation.session import SessionPresentation, build_native_thread_list_card
+from openrelay.session import DEFAULT_SESSION_LIST_PAGE_SIZE
 from openrelay.session.browser import SessionBrowser, SessionSortMode
 from openrelay.session.shortcuts import SessionShortcutService
 from openrelay.session.workspace import SessionWorkspaceService
@@ -23,6 +24,7 @@ FallbackReply = Callable[[IncomingMessage, str, str], Awaitable[None]]
 class RuntimePanelService:
     config: AppConfig
     messenger: FeishuMessenger
+    backends: dict[str, object]
     backend_descriptors: dict[str, BackendDescriptor]
     session_browser: SessionBrowser
     session_presentation: SessionPresentation
@@ -55,8 +57,9 @@ class RuntimePanelService:
         page: int,
         sort_mode: SessionSortMode,
     ) -> None:
+        _ = session_key, sort_mode
         action_context = self.reply_policy.build_card_action_context(message, session_key)
-        card, fallback_text = self.presenter.build_session_list_payload(message, session_key, session, page, sort_mode, action_context)
+        card, fallback_text = await self._build_native_thread_list_payload(message, session, page, action_context)
         try:
             await self.messenger.send_interactive_card(
                 message.chat_id,
@@ -68,3 +71,74 @@ class RuntimePanelService:
             )
         except Exception:
             await self.reply_fallback(message, fallback_text, "/resume")
+
+    async def _build_native_thread_list_payload(
+        self,
+        message: IncomingMessage,
+        session: SessionRecord,
+        page: int,
+        action_context: dict[str, str],
+    ) -> tuple[dict[str, object], str]:
+        _ = message
+        backend = self.backends.get(session.backend)
+        if backend is None or not callable(getattr(backend, "list_threads", None)):
+            fallback = "当前后端不支持 `/resume` 原生命令。"
+            return build_native_thread_list_card({"action_context": action_context, "page": max(page, 1), "current_thread_id": session.native_session_id}), fallback
+
+        limit = max(DEFAULT_SESSION_LIST_PAGE_SIZE * max(page, 1) + 1, DEFAULT_SESSION_LIST_PAGE_SIZE + 1)
+        rows, _next_cursor = await getattr(backend, "list_threads")(
+            session,
+            BackendContext(workspace_root=get_session_workspace_root(self.config, session)),
+            limit,
+        )
+        thread_entries: list[dict[str, object]] = []
+        threads = list(rows or [])
+        start = (max(page, 1) - 1) * DEFAULT_SESSION_LIST_PAGE_SIZE
+        visible_threads = threads[start:start + DEFAULT_SESSION_LIST_PAGE_SIZE]
+        for index, row in enumerate(visible_threads, start=start + 1):
+            thread_id = str(getattr(row, "thread_id", "") or "").strip()
+            preview = self.session_presentation.shorten(str(getattr(row, "preview", "") or ""), 96)
+            title = str(getattr(row, "name", "") or preview or thread_id or f"thread {index}")
+            meta: list[str] = []
+            updated_at = str(getattr(row, "updated_at", "") or "").strip()
+            if updated_at:
+                meta.append(updated_at[:16].replace("T", " "))
+            status = str(getattr(row, "status", "") or "").strip()
+            if status:
+                meta.append(f"status={status}")
+            cwd = str(getattr(row, "cwd", "") or "").strip()
+            if cwd:
+                meta.append(f"cwd={self.workspace.format_cwd(cwd, session)}")
+            meta.append(f"id={thread_id}")
+            thread_entries.append(
+                {
+                    "index": index,
+                    "thread_id": thread_id,
+                    "active": thread_id == session.native_session_id,
+                    "title": self.session_presentation.shorten(title, 56),
+                    "meta": " · ".join(meta),
+                    "preview": preview,
+                }
+            )
+
+        card = build_native_thread_list_card(
+            {
+                "page": max(page, 1),
+                "has_previous": page > 1,
+                "has_next": start + DEFAULT_SESSION_LIST_PAGE_SIZE < len(threads),
+                "current_thread_id": session.native_session_id,
+                "action_context": action_context,
+                "threads": thread_entries,
+            }
+        )
+        lines = [f"Codex 会话列表（第 {max(page, 1)} 页）："]
+        if thread_entries:
+            for entry in thread_entries:
+                lines.append(f"{entry['index']}. {entry['title']}")
+                lines.append(f"   {entry['meta']}")
+                if entry["preview"]:
+                    lines.append(f"   预览：{entry['preview']}")
+        else:
+            lines.append("当前没有可连接的 Codex 会话。")
+        lines.extend(["", "直接点卡片按钮即可连接；也可以手输 `/resume <thread_id>`。"])
+        return card, "\n".join(lines)

@@ -35,7 +35,7 @@ from .help import HelpRenderer
 
 ADMIN_ONLY_COMMANDS = {"/restart"}
 PANEL_USAGE = "使用 /panel [sessions|directories|commands|status] [--page N] [--sort updated-desc|active-first]。"
-RESUME_USAGE = "使用 /resume [list|latest|<序号>|<thread_id>|<local_session_id>] [--page N] [--sort updated-desc|active-first]。"
+RESUME_USAGE = "使用 /resume 打开 Codex 会话卡片，或 /resume [latest|<序号>|<thread_id>|<local_session_id>] 直接连接。"
 SHORTCUT_USAGE = (
     "使用 /shortcut list | /shortcut add <name> <path> [all|main|develop] | "
     "/shortcut remove <name> | /shortcut cd <name>。"
@@ -263,15 +263,12 @@ class RuntimeCommandRouter:
         if backend is None:
             await self.hooks.reply(message, "当前后端不支持 `/resume` 原生命令。", command_reply=True, command_name="/resume")
             return True
-        if not args.target:
-            await self.hooks.reply(message, RESUME_USAGE, command_reply=True, command_name="/resume")
-            return True
-        if args.target.lower() == "list":
-            await self._reply_native_thread_list(message, session, backend, args.page)
+        if not args.target or args.target.lower() == "list":
+            await self.hooks.send_session_list(message, session_key, session, args.page, args.sort_mode)
             return True
         target_thread_id = await self._resolve_resume_thread_id(session_key, session, backend, args.target, args.page)
         if not target_thread_id:
-            await self.hooks.reply(message, "没有找到可恢复的 Codex 会话。先发 `/resume list` 看可用 thread。", command_reply=True, command_name="/resume")
+            await self.hooks.reply(message, "没有找到可连接的 Codex 会话。先发 `/resume` 看可用 thread。", command_reply=True, command_name="/resume")
             return True
         thread = await self._read_native_thread(session, backend, target_thread_id)
         resumed_session = self.session_mutations.bind_native_thread(
@@ -360,31 +357,6 @@ class RuntimeCommandRouter:
     async def _compact_native_thread(self, session: SessionRecord, backend: object, thread_id: str) -> dict[str, object]:
         result = await getattr(backend, "compact_thread")(session, self._build_native_backend_context(session), thread_id)
         return result if isinstance(result, dict) else {}
-
-    async def _reply_native_thread_list(self, message: IncomingMessage, session: SessionRecord, backend: object, page: int) -> None:
-        limit = max(DEFAULT_SESSION_LIST_PAGE_SIZE * max(page, 1), DEFAULT_SESSION_LIST_PAGE_SIZE)
-        threads = await self._list_native_threads(session, backend, limit)
-        start = (max(page, 1) - 1) * DEFAULT_SESSION_LIST_PAGE_SIZE
-        page_threads = threads[start:start + DEFAULT_SESSION_LIST_PAGE_SIZE]
-        if not page_threads:
-            await self.hooks.reply(message, "当前没有可恢复的 Codex 会话。", command_reply=True, command_name="/resume")
-            return
-        lines = [f"Codex 会话列表（第 {max(page, 1)} 页）："]
-        for index, thread in enumerate(page_threads, start=start + 1):
-            title = thread.name or thread.preview or thread.thread_id
-            lines.append(f"{index}. {self.session_presentation.shorten(title, 56)}")
-            meta: list[str] = [f"id={thread.thread_id}"]
-            if thread.updated_at:
-                meta.append(thread.updated_at[:16].replace('T', ' '))
-            if thread.status:
-                meta.append(f"status={thread.status}")
-            if thread.cwd:
-                meta.append(f"cwd={self.workspace.format_cwd(thread.cwd, session)}")
-            lines.append(f"   {' · '.join(meta)}")
-            if thread.preview:
-                lines.append(f"   预览：{self.session_presentation.shorten(thread.preview, 96)}")
-        lines.extend(["", "使用 /resume <编号|thread_id|local_session_id|latest> 继续该 Codex 会话。"])
-        await self.hooks.reply(message, "\n".join(lines), command_reply=True, command_name="/resume")
 
     async def _resolve_resume_thread_id(
         self,
