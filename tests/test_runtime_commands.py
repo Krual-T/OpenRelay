@@ -6,7 +6,14 @@ from openrelay.core import AppConfig, BackendConfig, FeishuConfig, IncomingMessa
 from openrelay.release import ReleaseCommandService
 from openrelay.runtime import HelpRenderer
 from openrelay.runtime import RuntimeCommandHooks, RuntimeCommandRouter
-from openrelay.session import SESSION_SORT_ACTIVE, SessionBrowser, SessionMutationService, SessionUX
+from openrelay.session import (
+    SESSION_SORT_ACTIVE,
+    SessionBrowser,
+    SessionMutationService,
+    SessionShortcutService,
+    SessionUX,
+    SessionWorkspaceService,
+)
 from openrelay.storage import StateStore
 
 
@@ -105,6 +112,7 @@ def build_router(tmp_path: Path) -> tuple[RuntimeCommandRouter, StateStore, Fake
     prepare_dirs(config)
     store = StateStore(config)
     session_ux = SessionUX(config, store)
+    workspace = SessionWorkspaceService(config)
     browser = SessionBrowser(config, store)
     session_mutations = SessionMutationService(config, store, session_ux)
     hooks = FakeHooks()
@@ -114,7 +122,8 @@ def build_router(tmp_path: Path) -> tuple[RuntimeCommandRouter, StateStore, Fake
         browser,
         session_mutations,
         session_ux,
-        HelpRenderer(config, store, session_ux),
+        workspace,
+        HelpRenderer(config, store, session_ux, workspace, SessionShortcutService(config, store, workspace)),
         ReleaseCommandService(config, store, session_ux, session_mutations),
         {"codex": object(), "claude": object()},
         RuntimeCommandHooks(

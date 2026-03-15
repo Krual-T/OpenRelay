@@ -1,27 +1,22 @@
 from __future__ import annotations
 
-import shlex
 from pathlib import Path
 from typing import Any
 
-from openrelay.core import (
-    AppConfig,
-    DirectoryShortcut,
-    SessionRecord,
-    format_release_channel,
-    get_release_workspace,
-    get_session_workspace_root,
-    infer_release_channel,
-)
+from openrelay.core import AppConfig, SessionRecord, format_release_channel, infer_release_channel
 from openrelay.storage import StateStore
 
 from .browser import SESSION_SORT_UPDATED, SessionListEntry, SessionListPage
+from .shortcuts import SessionShortcutService
+from .workspace import SessionWorkspaceService
 
 
 class SessionUX:
     def __init__(self, config: AppConfig, store: StateStore):
         self.config = config
         self.store = store
+        self.workspace = SessionWorkspaceService(config)
+        self.shortcuts = SessionShortcutService(config, store, self.workspace)
 
     def shorten(self, text: str, length: int) -> str:
         value = " ".join((text or "").split())
@@ -49,90 +44,19 @@ class SessionUX:
         )
 
     def format_cwd(self, cwd: str, session: SessionRecord | None = None, release_channel: str | None = None) -> str:
-        if release_channel:
-            workspace_root = get_release_workspace(self.config, release_channel).resolve()
-        elif session is not None:
-            workspace_root = get_session_workspace_root(self.config, session).resolve()
-        else:
-            workspace_root = self.config.workspace_root.resolve()
-        absolute = Path(cwd).expanduser().resolve() if cwd else workspace_root
-        try:
-            relative = absolute.relative_to(workspace_root)
-        except ValueError:
-            return str(absolute)
-        return "." if str(relative) == "." else str(relative)
+        return self.workspace.format_cwd(cwd, session, release_channel)
 
-    def resolve_cwd(self, current_cwd: str, relative_path: str, session: SessionRecord) -> Path:
-        workspace_root = get_session_workspace_root(self.config, session).resolve()
-        base = Path(current_cwd).expanduser().resolve() if current_cwd else workspace_root
-        requested = Path(relative_path.strip()).expanduser()
-        target = requested.resolve() if requested.is_absolute() else (base / requested).resolve()
-        if target != workspace_root and workspace_root not in target.parents:
-            raise ValueError("path escapes workspace root")
-        if not target.exists():
-            raise ValueError(f"path does not exist: {relative_path}")
-        if not target.is_dir():
-            raise ValueError(f"not a directory: {relative_path}")
-        return target
+    def resolve_cwd(self, current_cwd: str, relative_path: str, session: SessionRecord):
+        return self.workspace.resolve_cwd(current_cwd, relative_path, session)
 
     def build_directory_shortcut_entries(self, session: SessionRecord, limit: int = 4) -> list[dict[str, str]]:
-        channel = infer_release_channel(self.config, session)
-        workspace_root = get_session_workspace_root(self.config, session).resolve()
-        entries: list[dict[str, str]] = []
-        for shortcut in self.list_directory_shortcuts():
-            if "all" not in shortcut.channels and channel not in shortcut.channels:
-                continue
-            target = self._resolve_directory_shortcut_target(shortcut.path, workspace_root)
-            if target is None:
-                continue
-            entries.append(
-                {
-                    "label": shortcut.name,
-                    "display_path": self.format_cwd(str(target), None, channel),
-                    "command": f"/cwd {shlex.quote(str(target))}",
-                    "channels": ",".join(shortcut.channels),
-                    "raw_path": shortcut.path,
-                }
-            )
-            if len(entries) >= limit:
-                break
-        return entries
+        return self.shortcuts.build_directory_shortcut_entries(session, limit=limit)
 
-    def list_directory_shortcuts(self) -> tuple[DirectoryShortcut, ...]:
-        merged: list[DirectoryShortcut] = []
-        seen: set[str] = set()
-        for shortcut in (*self.store.list_directory_shortcuts(), *self.config.directory_shortcuts):
-            name_key = shortcut.name.strip().lower()
-            if not name_key or name_key in seen:
-                continue
-            seen.add(name_key)
-            merged.append(shortcut)
-        return tuple(merged)
+    def list_directory_shortcuts(self):
+        return self.shortcuts.list_directory_shortcuts()
 
     def resolve_directory_shortcut(self, name: str, session: SessionRecord) -> Path | None:
-        requested_name = name.strip().lower()
-        if not requested_name:
-            return None
-        channel = infer_release_channel(self.config, session)
-        workspace_root = get_session_workspace_root(self.config, session).resolve()
-        for shortcut in self.list_directory_shortcuts():
-            if shortcut.name.strip().lower() != requested_name:
-                continue
-            if "all" not in shortcut.channels and channel not in shortcut.channels:
-                return None
-            return self._resolve_directory_shortcut_target(shortcut.path, workspace_root)
-        return None
-
-    def _resolve_directory_shortcut_target(self, raw_path: str, workspace_root: Path) -> Path | None:
-        requested = Path(str(raw_path or "").strip()).expanduser()
-        if not requested:
-            return None
-        target = requested.resolve() if requested.is_absolute() else (workspace_root / requested).resolve()
-        if target != workspace_root and workspace_root not in target.parents:
-            return None
-        if not target.exists() or not target.is_dir():
-            return None
-        return target
+        return self.shortcuts.resolve_directory_shortcut(name, session)
 
     def build_session_title(self, label: str, session_id: str, first_user_message: str = "") -> str:
         return self.shorten(label or first_user_message or session_id or "未命名会话", 40) or "未命名会话"
@@ -284,24 +208,3 @@ class SessionUX:
         else:
             lines.append("usage_detail=unavailable")
         return lines
-
-    def build_panel_text(self, session: SessionRecord) -> str:
-        lines = [
-            "OpenRelay 面板",
-            f"当前会话={self.shorten(session.label or session.session_id, 40)}",
-            f"session_id={session.session_id}",
-            f"channel={format_release_channel(infer_release_channel(self.config, session))}",
-            f"cwd={self.format_cwd(session.cwd, session)}",
-            f"model={self.effective_model(session)}",
-            f"sandbox={session.safety_mode}",
-            "结果面：/panel sessions | /panel directories | /panel commands | /panel status",
-            "提示：/panel 现在是总入口；先选会话 / 目录 / 命令 / 状态，再进入对应结果面。",
-            "目录入口仍复用 /cwd 主路径；如需强制切回稳定版本，发送 /main 原因。",
-        ]
-        shortcut_entries = self.build_directory_shortcut_entries(session)
-        if shortcut_entries:
-            lines.append("常用目录：")
-            lines.extend([f"- {entry['label']} -> {entry['display_path']}" for entry in shortcut_entries])
-            lines.append("面板里的快捷目录按钮会直接执行稳定的 /cwd 切换。")
-        lines.append("commands: /panel sessions /panel directories /panel commands /panel status /resume list /resume latest /cwd <path> /main /develop /new /status /model [name|default] /sandbox [mode] /clear")
-        return "\n".join(lines)

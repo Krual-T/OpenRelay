@@ -4,15 +4,24 @@ from typing import Any
 
 from openrelay.feishu.cards import build_button, build_card_shell, build_section_block, build_status_hero, divider_block
 from openrelay.core import AppConfig, SessionRecord, format_release_channel, infer_release_channel
-from openrelay.session import SessionUX
+from openrelay.session import SessionShortcutService, SessionUX, SessionWorkspaceService
 from openrelay.storage import StateStore
 
 
 class HelpRenderer:
-    def __init__(self, config: AppConfig, store: StateStore, session_ux: SessionUX):
+    def __init__(
+        self,
+        config: AppConfig,
+        store: StateStore,
+        session_ux: SessionUX,
+        workspace: SessionWorkspaceService,
+        shortcuts: SessionShortcutService,
+    ):
         self.config = config
         self.store = store
         self.session_ux = session_ux
+        self.workspace = workspace
+        self.shortcuts = shortcuts
 
     def build_text(self, session: SessionRecord, available_backends: list[str]) -> str:
         message_count = len(self.store.list_messages(session.session_id))
@@ -25,7 +34,7 @@ class HelpRenderer:
             f"- 会话：{session.label or '未命名会话'} ({session.session_id})",
             f"- 会话阶段：{self.describe_session_phase(session, message_count)}",
             f"- 通道：{format_release_channel(infer_release_channel(self.config, session))}",
-            f"- 目录：{self.session_ux.format_cwd(session.cwd, session)}",
+            f"- 目录：{self.workspace.format_cwd(session.cwd, session)}",
             f"- 后端：{session.backend}",
             f"- 模型：{self.session_ux.effective_model(session)}",
             f"- sandbox：{session.safety_mode}",
@@ -73,7 +82,7 @@ class HelpRenderer:
                     ("会话", f"{session.label or '未命名会话'}\n`{session.session_id}`"),
                     ("阶段", self.describe_session_phase(session, message_count)),
                     ("通道", f"`{format_release_channel(infer_release_channel(self.config, session))}`"),
-                    ("目录", f"`{self.session_ux.format_cwd(session.cwd, session)}`"),
+                    ("目录", f"`{self.workspace.format_cwd(session.cwd, session)}`"),
                     ("后端 / 模型", f"`{session.backend}` · `{self.session_ux.effective_model(session)}`"),
                     ("Sandbox / 后端线程", f"`{session.safety_mode}` · `{session.native_session_id or 'pending'}`"),
                     ("上下文 / 本地消息", f"`{self.session_ux.format_context_usage(session)}` · `{message_count}`"),
@@ -204,7 +213,7 @@ class HelpRenderer:
         ]
 
     def build_command_guide(self, session: SessionRecord, available_backends: list[str]) -> list[str]:
-        shortcut_entries = self.session_ux.build_directory_shortcut_entries(session)
+        shortcut_entries = self.shortcuts.build_directory_shortcut_entries(session)
         lines = [
             "- 同一任务继续干：通常不用命令，直接发消息。",
             "- 当前回复还在跑时，继续发消息会进入下一轮；连续补充会自动合并。",

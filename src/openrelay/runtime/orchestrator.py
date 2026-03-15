@@ -1,10 +1,10 @@
 from __future__ import annotations
 
 import asyncio
-from dataclasses import dataclass
 import logging
 import os
 import sys
+from typing import Any
 from typing import Callable
 
 from openrelay.backends import Backend, BackendDescriptor, CodexBackend, build_builtin_backend_descriptors, instantiate_builtin_backends
@@ -12,32 +12,32 @@ from openrelay.core import (
     AppConfig,
     IncomingMessage,
     SessionRecord,
-    format_release_channel,
-    infer_release_channel,
 )
 from openrelay.feishu import FeishuMessenger, FeishuStreamingSession, FeishuTypingManager
 from openrelay.release import ReleaseCommandService
-from openrelay.session import SessionBrowser, SessionLifecycleResolver, SessionMutationService, SessionScopeResolver, SessionSortMode, SessionUX, build_session_list_card
+from openrelay.session import (
+    SessionBrowser,
+    SessionLifecycleResolver,
+    SessionMutationService,
+    SessionScopeResolver,
+    SessionShortcutService,
+    SessionUX,
+    SessionWorkspaceService,
+)
 from openrelay.storage import StateStore
 
-from .commands import PanelCommandArgs, RuntimeCommandHooks, RuntimeCommandRouter
+from .commands import RuntimeCommandHooks, RuntimeCommandRouter
 from .execution import ExecutionInput, RuntimeExecutionCoordinator
 from .follow_up import QueuedFollowUp
 from .help import HelpRenderer
 from .live import build_process_panel_text, build_reply_card
-from .panel import build_panel_card
+from .panel_service import RuntimePanelService
+from .replying import ReplyRoute, RuntimeReplyPolicy
 from .restart import RuntimeRestartController, get_systemd_service_unit, is_systemd_service_process
 from .turn import BackendTurnSession, TurnRuntimeContext
 NON_BLOCKING_ACTIVE_RUN_COMMANDS = {"/ping", "/status", "/usage", "/help", "/tools", "/panel", "/restart"}
 DEFAULT_IMAGE_PROMPT = "用户发送了图片。请先查看图片内容，再根据图片直接回答用户。"
 LOGGER = logging.getLogger("openrelay.runtime")
-
-
-@dataclass(slots=True)
-class _ReplyRoute:
-    reply_to_message_id: str
-    root_id: str
-    force_new_message: bool = False
 
 
 class RuntimeOrchestrator:
@@ -64,25 +64,40 @@ class RuntimeOrchestrator:
         self.typing_manager = typing_manager or FeishuTypingManager(messenger)
         self.session_browser = SessionBrowser(config, store)
         self.session_ux = SessionUX(config, store)
+        self.session_workspace = SessionWorkspaceService(config)
+        self.session_shortcuts = SessionShortcutService(config, store, self.session_workspace)
         self.session_mutations = SessionMutationService(config, store, self.session_ux)
         self.session_scope = SessionScopeResolver(config, store, LOGGER)
+        self.reply_policy = RuntimeReplyPolicy(config, self.session_scope)
         self.session_lifecycle = SessionLifecycleResolver(config, store)
         self.release_command_service = ReleaseCommandService(config, store, self.session_ux, self.session_mutations)
-        self.help_renderer = HelpRenderer(config, store, self.session_ux)
+        self.help_renderer = HelpRenderer(config, store, self.session_ux, self.session_workspace, self.session_shortcuts)
+        self.panel_service = RuntimePanelService(
+            config,
+            messenger,
+            self.backend_descriptors,
+            self.session_browser,
+            self.session_ux,
+            self.session_workspace,
+            self.session_shortcuts,
+            self.reply_policy,
+            self._reply_command_fallback,
+        )
         self.command_router = RuntimeCommandRouter(
             config,
             store,
             self.session_browser,
             self.session_mutations,
             self.session_ux,
+            self.session_workspace,
             self.help_renderer,
             self.release_command_service,
             self.backends,
             RuntimeCommandHooks(
                 reply=self._reply,
                 send_help=self._send_help,
-                send_panel=self._send_panel,
-                send_session_list=self._send_session_list,
+                send_panel=self.panel_service.send_panel,
+                send_session_list=self.panel_service.send_session_list,
                 stop=self._handle_stop,
                 schedule_restart=self._schedule_restart,
                 is_admin=self.is_admin,
@@ -278,12 +293,7 @@ class RuntimeOrchestrator:
         return True
 
     def _build_card_action_context(self, message: IncomingMessage, session_key: str) -> dict[str, str]:
-        return {
-            "rootId": message.root_id,
-            "threadId": message.thread_id or message.root_id,
-            "sessionKey": session_key,
-            "sessionOwnerOpenId": message.session_owner_open_id or (message.sender_open_id if message.chat_type == "group" and self.config.feishu.group_session_scope != "shared" else ""),
-        }
+        return self.reply_policy.build_card_action_context(message, session_key)
 
     def _build_turn_runtime_context(self) -> TurnRuntimeContext:
         return TurnRuntimeContext(
@@ -295,8 +305,8 @@ class RuntimeOrchestrator:
             streaming_session_factory=self.streaming_session_factory,
             execution_coordinator=self.execution_coordinator,
             build_card_action_context=self._build_card_action_context,
-            root_id_for_message=self._root_id_for_message,
-            is_card_action_message=self._is_card_action_message,
+            root_id_for_message=self.reply_policy.root_id_for_message,
+            is_card_action_message=self.reply_policy.is_card_action_message,
             build_session_key=self.build_session_key,
             remember_outbound_aliases=self._remember_outbound_aliases,
             reply_final=self._reply_final,
@@ -308,237 +318,13 @@ class RuntimeOrchestrator:
             await self.messenger.send_interactive_card(
                 message.chat_id,
                 card,
-                reply_to_message_id=self._command_reply_target(message),
-                root_id=self._root_id_for_message(message),
-                force_new_message=self._should_force_new_message_for_command_card(message),
-                update_message_id=self._command_card_update_target(message),
+                reply_to_message_id=self.reply_policy.command_reply_target(message),
+                root_id=self.reply_policy.root_id_for_message(message),
+                force_new_message=self.reply_policy.should_force_new_message_for_command_card(message),
+                update_message_id=self.reply_policy.command_card_update_target(message),
             )
         except Exception:
             await self._reply(message, self.help_renderer.build_text(session, self.available_backend_names()), command_reply=True, command_name="/help")
-
-    async def _send_panel(self, message: IncomingMessage, session_key: str, session: SessionRecord, args: PanelCommandArgs) -> None:
-        panel_info = self._build_panel_base_info(message, session_key, session, args.view)
-        fallback_text = ""
-        if args.view == "sessions":
-            session_page = self.session_browser.list_page(session_key, session, page=args.page, sort_mode=args.sort_mode)
-            card = build_panel_card(
-                {
-                    **panel_info,
-                    "page": session_page.page,
-                    "total_pages": session_page.total_pages,
-                    "sort_mode": session_page.sort_mode,
-                    "sessions": self.session_ux.build_session_display_entries(session_page.entries, start_index=session_page.start_index),
-                }
-            )
-            fallback_text = self._build_panel_sessions_text(session_page)
-        elif args.view == "directories":
-            directory_shortcuts = self.session_ux.build_directory_shortcut_entries(session)
-            card = build_panel_card({**panel_info, "directory_shortcuts": directory_shortcuts})
-            fallback_text = self._build_panel_directories_text(directory_shortcuts)
-        elif args.view == "commands":
-            command_entries = self._build_panel_command_entries()
-            card = build_panel_card({**panel_info, "command_entries": command_entries})
-            fallback_text = self._build_panel_commands_text(command_entries)
-        elif args.view == "status":
-            status_entries = self._build_panel_status_entries(session)
-            card = build_panel_card({**panel_info, "status_entries": status_entries})
-            fallback_text = self._build_panel_status_text(status_entries)
-        else:
-            entries = self.session_browser.list_entries(session_key, session, limit=6)
-            directory_shortcuts = self.session_ux.build_directory_shortcut_entries(session)
-            card = build_panel_card(
-                {
-                    **panel_info,
-                    "sessions": self.session_ux.build_session_display_entries(entries),
-                    "directory_shortcuts": directory_shortcuts,
-                }
-            )
-            fallback_text = self._build_panel_home_text(session, entries, directory_shortcuts)
-        try:
-            await self.messenger.send_interactive_card(
-                message.chat_id,
-                card,
-                reply_to_message_id=self._command_reply_target(message),
-                root_id=self._root_id_for_message(message),
-                force_new_message=self._should_force_new_message_for_command_card(message),
-                update_message_id=self._command_card_update_target(message),
-            )
-        except Exception:
-            await self._reply(message, fallback_text, command_reply=True, command_name="/panel")
-
-    async def _send_session_list(self, message: IncomingMessage, session_key: str, session: SessionRecord, page: int, sort_mode: SessionSortMode) -> None:
-        session_page = self.session_browser.list_page(session_key, session, page=page, sort_mode=sort_mode)
-        card = build_session_list_card(
-            {
-                "session_id": session.session_id,
-                "current_title": self.session_ux.build_session_title(session.label, session.session_id),
-                "channel": format_release_channel(infer_release_channel(self.config, session)),
-                "cwd": self.session_ux.format_cwd(session.cwd, session),
-                "page": session_page.page,
-                "total_pages": session_page.total_pages,
-                "total_entries": session_page.total_entries,
-                "sort_mode": session_page.sort_mode,
-                "has_previous": session_page.has_previous,
-                "has_next": session_page.has_next,
-                "action_context": self._build_card_action_context(message, session_key),
-                "sessions": self.session_ux.build_session_display_entries(session_page.entries, start_index=session_page.start_index),
-            }
-        )
-        try:
-            await self.messenger.send_interactive_card(
-                message.chat_id,
-                card,
-                reply_to_message_id=self._command_reply_target(message),
-                root_id=self._root_id_for_message(message),
-                force_new_message=self._should_force_new_message_for_command_card(message),
-                update_message_id=self._command_card_update_target(message),
-            )
-        except Exception:
-            await self._reply(message, self.session_ux.format_session_list_page(session_page), command_reply=True, command_name="/resume")
-
-    def _build_panel_base_info(self, message: IncomingMessage, session_key: str, session: SessionRecord, view: str) -> dict[str, Any]:
-        return {
-            "view": view,
-            "session_id": session.session_id,
-            "current_title": self.session_ux.build_session_title(session.label, session.session_id),
-            "channel": format_release_channel(infer_release_channel(self.config, session)),
-            "cwd": self.session_ux.format_cwd(session.cwd, session),
-            "model": self.session_ux.effective_model(session),
-            "provider": self.backend_descriptors.get(session.backend).transport if session.backend in self.backend_descriptors else "-",
-            "sandbox": session.safety_mode,
-            "context_usage": self.session_ux.format_context_usage(session),
-            "context_preview": self.session_ux.build_context_preview(session),
-            "action_context": self._build_card_action_context(message, session_key),
-        }
-
-    def _build_panel_command_entries(self) -> list[dict[str, str]]:
-        return [
-            {
-                "title": "恢复上一条",
-                "meta": "会话 · 最短继续路径",
-                "preview": "直接回到最近会话，不必先打开列表。",
-                "command": "/resume latest",
-                "action_label": "恢复上一条",
-                "action_type": "primary",
-            },
-            {
-                "title": "浏览会话结果",
-                "meta": "会话 · 翻页 / 排序",
-                "preview": "在面板里看最近会话，再决定恢复哪一条。",
-                "command": "/panel sessions",
-                "action_label": "看会话",
-            },
-            {
-                "title": "浏览目录结果",
-                "meta": "目录 · 快捷入口",
-                "preview": "优先点快捷目录；没有合适入口时再手写 /cwd。",
-                "command": "/panel directories",
-                "action_label": "看目录",
-            },
-            {
-                "title": "管理快捷目录",
-                "meta": "目录 · 新增 / 列表 / 快速切换",
-                "preview": "用 /shortcut add|list|cd 在飞书里维护自己的常用目录入口。",
-                "command": "/shortcut list",
-                "action_label": "看快捷目录",
-            },
-            {
-                "title": "查看完整状态",
-                "meta": "状态 · 目录 / 模型 / 上下文",
-                "preview": "先确认现场，再决定继续当前任务还是切上下文。",
-                "command": "/status",
-                "action_label": "看状态",
-            },
-            {
-                "title": "新建隔离会话",
-                "meta": "隔离 · 新任务 / 切话题",
-                "preview": "当目标已经变了时，不要继续堆在当前会话里。",
-                "command": "/new",
-                "action_label": "新会话",
-            },
-            {
-                "title": "打开帮助",
-                "meta": "引导 · 下一步建议",
-                "preview": "需要 prompt 示例或命令速查时使用。",
-                "command": "/help",
-                "action_label": "打开帮助",
-            },
-        ]
-
-    def _build_panel_status_entries(self, session: SessionRecord) -> list[dict[str, str]]:
-        channel = format_release_channel(infer_release_channel(self.config, session))
-        cwd = self.session_ux.format_cwd(session.cwd, session)
-        context_preview = self.session_ux.build_context_preview(session) or "还没有可总结的本地上下文。"
-        return [
-            {
-                "title": "当前会话状态",
-                "meta": f"{channel} · 目录 {cwd} · sandbox {session.safety_mode}",
-                "preview": f"模型 {self.session_ux.effective_model(session)} · 后端线程 {session.native_session_id or 'pending'}",
-                "command": "/status",
-                "action_label": "完整状态",
-                "action_type": "primary",
-            },
-            {
-                "title": "上下文与用量",
-                "meta": f"context_usage={self.session_ux.format_context_usage(session)}",
-                "preview": context_preview,
-                "command": "/usage",
-                "action_label": "查看用量",
-            },
-            {
-                "title": "继续当前任务",
-                "meta": "如果目标没变，通常直接发消息最快",
-                "preview": "要找旧会话就去会话结果；要切目录就去目录结果；不确定下一步时再打开帮助。",
-                "command": "/help",
-                "action_label": "打开帮助",
-            },
-        ]
-
-    def _build_panel_home_text(self, session: SessionRecord, entries: list[Any], directory_shortcuts: list[dict[str, str]]) -> str:
-        lines = [
-            self.session_ux.build_panel_text(session),
-            "",
-            "结果面：/panel sessions | /panel directories | /panel commands | /panel status",
-            "",
-            "最近会话：",
-            self.session_ux.format_session_list(entries[:3]),
-        ]
-        if directory_shortcuts:
-            lines.extend(["", "目录入口："])
-            lines.extend([f"- {entry['label']} -> {entry['display_path']}" for entry in directory_shortcuts[:3]])
-        else:
-            lines.extend(["", "目录入口：暂无快捷目录；可先 /cwd <path>。"])
-        return "\n".join(lines)
-
-    def _build_panel_sessions_text(self, session_page: Any) -> str:
-        return "\n".join([
-            "OpenRelay 面板 · 会话",
-            self.session_ux.format_session_list_page(session_page),
-            "",
-            "返回总览：/panel。",
-        ])
-
-    def _build_panel_directories_text(self, directory_shortcuts: list[dict[str, str]]) -> str:
-        lines = [
-            "OpenRelay 面板 · 目录",
-            "优先点快捷目录；没有合适入口时，再手写 /cwd <path>。",
-        ]
-        if directory_shortcuts:
-            lines.extend([f"- {entry['label']} -> {entry['display_path']}" for entry in directory_shortcuts])
-        else:
-            lines.append("- 当前没有配置快捷目录。")
-        lines.extend(["", "常用动作：/cwd /main /develop"])
-        return "\n".join(lines)
-
-    def _build_panel_commands_text(self, command_entries: list[dict[str, str]]) -> str:
-        lines = ["OpenRelay 面板 · 命令", "高频动作："]
-        lines.extend([f"- {entry['title']}：{entry['preview']} ({entry['command']})" for entry in command_entries])
-        return "\n".join(lines)
-
-    def _build_panel_status_text(self, status_entries: list[dict[str, str]]) -> str:
-        lines = ["OpenRelay 面板 · 状态", "先看现场，再决定下一步："]
-        lines.extend([f"- {entry['title']}：{entry['preview']} ({entry['command']})" for entry in status_entries])
-        return "\n".join(lines)
 
     async def _reply_final(
         self,
@@ -561,16 +347,19 @@ class RuntimeOrchestrator:
                 return
             except Exception:
                 LOGGER.exception("streaming final card update failed for event_id=%s", message.event_id)
-        await self._send_text_reply(message, text, self._build_default_reply_route(message))
+        await self._send_text_reply(message, text, self.reply_policy.default_route(message))
 
     async def _reply(self, message: IncomingMessage, text: str, command_reply: bool = False, command_name: str = "") -> None:
-        route = self._build_command_reply_route(message, command_name) if command_reply else self._build_default_reply_route(message)
+        route = self.reply_policy.command_route(message, command_name) if command_reply else self.reply_policy.default_route(message)
         await self._send_text_reply(message, text, route)
+
+    async def _reply_command_fallback(self, message: IncomingMessage, text: str, command_name: str) -> None:
+        await self._reply(message, text, command_reply=True, command_name=command_name)
 
     def available_backend_names(self) -> list[str]:
         return sorted(self.backends)
 
-    async def _send_text_reply(self, message: IncomingMessage, text: str, route: _ReplyRoute) -> None:
+    async def _send_text_reply(self, message: IncomingMessage, text: str, route: ReplyRoute) -> None:
         sent_messages = await self.messenger.send_text(
             message.chat_id,
             text,
@@ -580,44 +369,6 @@ class RuntimeOrchestrator:
         )
         session_key = self.build_session_key(message)
         self._remember_outbound_aliases(message, session_key, [sent_message.alias_ids() for sent_message in sent_messages])
-
-    def _build_default_reply_route(self, message: IncomingMessage) -> _ReplyRoute:
-        return _ReplyRoute(
-            reply_to_message_id=message.reply_to_message_id or ("" if self._is_card_action_message(message) else message.message_id),
-            root_id=self._root_id_for_message(message),
-        )
-
-    def _build_command_reply_route(self, message: IncomingMessage, command_name: str) -> _ReplyRoute:
-        return _ReplyRoute(
-            reply_to_message_id=self._command_reply_target(message),
-            root_id=self._root_id_for_message(message),
-            force_new_message=self._should_force_new_message_for_command(message, command_name),
-        )
-
-    def _command_reply_target(self, message: IncomingMessage) -> str:
-        return message.reply_to_message_id or ("" if self._is_card_action_message(message) else message.message_id)
-
-    def _command_card_update_target(self, message: IncomingMessage) -> str:
-        if not self._is_card_action_message(message):
-            return ""
-        return message.reply_to_message_id
-
-    def _root_id_for_message(self, message: IncomingMessage) -> str:
-        return self.session_scope.root_id_for_message(message)
-
-    def _is_card_action_message(self, message: IncomingMessage) -> bool:
-        return self.session_scope.is_card_action_message(message)
-
-    def _is_top_level_p2p_command(self, message: IncomingMessage) -> bool:
-        return message.chat_type == "p2p" and not message.root_id and not message.thread_id
-
-    def _should_force_new_message_for_command(self, message: IncomingMessage, command_name: str) -> bool:
-        if not self._is_top_level_p2p_command(message):
-            return False
-        return command_name not in {"/cwd", "/cd"}
-
-    def _should_force_new_message_for_command_card(self, message: IncomingMessage) -> bool:
-        return self._is_top_level_p2p_command(message) and not self._is_card_action_message(message)
 
     def _is_stop_command(self, text: str) -> bool:
         return text.strip().lower().startswith("/stop")
