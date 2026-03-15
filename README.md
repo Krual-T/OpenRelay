@@ -24,7 +24,7 @@
 - 命令集尽量对齐：`/panel`、`/ping`、`/stop`、`/restart`、`/main`、`/stable`、`/develop`、`/resume`、`/clear`、`/status`、`/cwd`、`/cd`、`/shortcut`、`/model`、`/sandbox`、`/tools`、`/help`
 - 会话支持 `main` / `develop` 工作区切换，并写入 `data/release-events.jsonl`
 - `/panel` 现在是飞书里的总入口：总览页下再分 `sessions / directories / commands / status` 四类结果面
-- `/panel`、`/resume list`、`/help` 这类导航型卡片在按钮切换时会优先原地更新，避免翻页和层级切换不断刷新消息
+- `/panel`、`/resume`、`/help` 这类导航型卡片在按钮切换时会优先原地更新，避免翻页和层级切换不断刷新消息
 - `/panel` 的会话结果继续复用 `/resume` 主路径，目录结果继续复用 `/cwd` 主路径，避免再长出第二套执行语义
 - `/panel` 仍会按 `main / develop` 作用域显示常用目录快捷按钮，点击后直接复用 `/cwd` 切换
 - `/resume` 现在直接读取并绑定 Codex 原生 thread；本地 session 只保留为当前作用域的轻量绑定壳
@@ -135,7 +135,7 @@ http://your-host:3000/feishu/webhook
 - `/restart` - 重启当前服务进程
 - `/main [reason]`、`/stable [reason]` - 原地切到 main 稳定工作区，并解绑当前 thread
 - `/develop [reason]` - 原地切到 develop 修复工作区，并解绑当前 thread
-- `/resume [list|latest|thread_id|local_session_id]` - 查看 Codex thread 列表并绑定到当前作用域；回复里直接返回原生 thread 历史
+- `/resume [latest|thread_id|local_session_id]` - 默认查看 Codex thread 列表；带目标时绑定到当前作用域
 - `/compact [thread_id|local_session_id]` - 对当前或指定 Codex thread 发起 compact
 - `/clear` - 清空当前 scope 的 thread 绑定和本地上下文，但保留目录与配置
 - `/status` - 查看当前会话状态

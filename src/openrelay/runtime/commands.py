@@ -570,7 +570,7 @@ class RuntimeCommandRouter:
             "\n".join([
                 f"cwd 已切换到 {self.workspace.format_cwd(next_session.cwd, next_session)}。",
                 "现在直接发消息，就会在这个目录进入 Codex。",
-                "当前 scope 已原地更新；如需切回旧 thread，请用 /resume list。",
+                "当前 scope 已原地更新；如需切回旧 thread，请用 /resume。",
             ]),
             command_reply=True,
             command_name=command_name,

@@ -32,7 +32,7 @@ def test_session_list_card_contains_pagination_and_sort_actions() -> None:
     )
 
     commands = extract_commands(card)
-    assert "/resume list --page 1 --sort updated-desc" in commands
-    assert "/resume list --page 3 --sort updated-desc" in commands
-    assert "/resume list --page 1 --sort active-first" in commands
+    assert "/resume --page 1 --sort updated-desc" in commands
+    assert "/resume --page 3 --sort updated-desc" in commands
+    assert "/resume --page 1 --sort active-first" in commands
     assert "/resume s_6 --page 2 --sort updated-desc" in commands

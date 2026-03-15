@@ -282,7 +282,7 @@ async def test_runtime_command_router_parses_resume_list_page_and_sort(tmp_path:
     router, store, hooks = build_router(tmp_path)
     session = store.load_session("p2p:oc_1")
 
-    await router.handle(make_message(f"/resume list --page 2 --sort {SESSION_SORT_ACTIVE}", suffix="resume_list"), session.base_key, session)
+    await router.handle(make_message(f"/resume --page 2 --sort {SESSION_SORT_ACTIVE}", suffix="resume_list"), session.base_key, session)
 
     assert hooks.session_list_calls == [(session.base_key, 2, SESSION_SORT_ACTIVE)]
     assert hooks.replies == []
@@ -306,7 +306,7 @@ async def test_runtime_command_router_parses_equals_style_paging_args(tmp_path: 
     router, store, hooks = build_router(tmp_path)
     session = store.load_session("p2p:oc_1")
 
-    await router.handle(make_message("/resume list --page=3 --sort=updated-desc", suffix="resume_equals"), session.base_key, session)
+    await router.handle(make_message("/resume --page=3 --sort=updated-desc", suffix="resume_equals"), session.base_key, session)
     await router.handle(make_message("/panel --page=2 --sort=active-first", suffix="panel_equals"), session.base_key, session)
 
     assert hooks.session_list_calls == [(session.base_key, 3, "updated-desc")]
@@ -320,7 +320,7 @@ async def test_runtime_command_router_rejects_resume_inside_thread(tmp_path: Pat
     router, store, hooks = build_router(tmp_path)
     session = store.load_session("p2p:oc_1")
 
-    handled = await router.handle(make_thread_message("/resume list", suffix="thread_resume"), session.base_key, session)
+    handled = await router.handle(make_thread_message("/resume", suffix="thread_resume"), session.base_key, session)
 
     assert handled is True
     assert hooks.session_list_calls == []

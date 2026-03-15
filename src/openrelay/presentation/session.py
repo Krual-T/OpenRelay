@@ -10,7 +10,7 @@ from openrelay.session.browser import SESSION_SORT_ACTIVE, SESSION_SORT_UPDATED,
 from openrelay.session.workspace import SessionWorkspaceService
 
 
-def build_resume_list_command(target: str = "list", *, page: int = 1, sort_mode: str = SESSION_SORT_UPDATED) -> str:
+def build_resume_list_command(target: str = "", *, page: int = 1, sort_mode: str = SESSION_SORT_UPDATED) -> str:
     parts = ["/resume"]
     if target:
         parts.append(target)
@@ -86,11 +86,11 @@ def build_session_list_card(info: dict[str, Any]) -> dict[str, Any]:
     else:
         elements.append(build_section_block("会话条目", ["> 当前没有可恢复的会话。"], emoji="🗂️"))
 
-    controls = [build_button(next_sort_label, build_resume_list_command("list", page=1, sort_mode=next_sort), "default", action_context)]
+    controls = [build_button(next_sort_label, build_resume_list_command(page=1, sort_mode=next_sort), "default", action_context)]
     if has_previous:
-        controls.insert(0, build_button("上一页", build_resume_list_command("list", page=page - 1, sort_mode=sort_mode), "default", action_context))
+        controls.insert(0, build_button("上一页", build_resume_list_command(page=page - 1, sort_mode=sort_mode), "default", action_context))
     if has_next:
-        controls.append(build_button("下一页", build_resume_list_command("list", page=page + 1, sort_mode=sort_mode), "primary", action_context))
+        controls.append(build_button("下一页", build_resume_list_command(page=page + 1, sort_mode=sort_mode), "primary", action_context))
     footer_note = build_note_bar(["排序切换不会改变恢复语义；真正执行仍统一走 `/resume` 主路径。"])
     if footer_note is not None:
         elements.append(footer_note)

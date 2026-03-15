@@ -189,10 +189,10 @@ def _build_home_card(info: dict[str, Any]) -> dict[str, Any]:
     elements: list[dict[str, Any]] = [*_build_header_elements(info, PANEL_HOME), divider_block()]
     _append_view_nav(elements, PANEL_HOME, action_context)
     elements.append(_markdown("**进入哪一类结果**\n> 这四个入口分别收敛会话、目录、命令和状态结果；下面的预览和结果页使用同一套项目语义。"))
-    elements.append(_action_row([build_button("恢复上一条", "/resume latest", "primary", action_context), build_button("会话列表", "/resume list", "default", action_context), build_button("当前状态", "/panel status", "default", action_context)]))
+    elements.append(_action_row([build_button("恢复上一条", "/resume latest", "primary", action_context), build_button("会话列表", "/resume", "default", action_context), build_button("当前状态", "/panel status", "default", action_context)]))
     elements.append(_markdown("**最近会话**\n> 想继续旧任务时，优先先看这里；如果不够，再切到完整会话结果页。"))
     _append_session_items(elements, sessions, action_context)
-    elements.append(_action_row([build_button("全部会话", "/panel sessions", "default", action_context), build_button("命令式列表", "/resume list", "default", action_context), build_button("帮助", "/help", "default", action_context)]))
+    elements.append(_action_row([build_button("全部会话", "/panel sessions", "default", action_context), build_button("命令式列表", "/resume", "default", action_context), build_button("帮助", "/help", "default", action_context)]))
     elements.append(_markdown("**目录入口**\n> 目录预览与目录结果页共用同一套入口语义；点击后都会复用 `/cwd` 主路径。"))
     _append_directory_items(elements, shortcuts, action_context)
     elements.append(_action_row([build_button("当前目录", "/cwd", "default", action_context), build_button("切到 main", "/main", "default", action_context), build_button("切到 develop", "/develop", "default", action_context)]))
@@ -212,7 +212,7 @@ def _build_sessions_card(info: dict[str, Any]) -> dict[str, Any]:
         build_button("当前优先", "/panel sessions --page 1 --sort active-first", "primary" if sort_mode == "active-first" else "default", action_context),
         build_button("恢复上一条", "/resume latest", "default", action_context),
     ]))
-    page_actions = [build_button("命令式列表", f"/resume list --page {page} --sort {sort_mode}", "default", action_context)]
+    page_actions = [build_button("命令式列表", f"/resume --page {page} --sort {sort_mode}", "default", action_context)]
     if page > 1:
         page_actions.insert(0, build_button("上一页", f"/panel sessions --page {page - 1} --sort {sort_mode}", "default", action_context))
     if page < total_pages:
@@ -419,7 +419,7 @@ class RuntimePanelPresenter:
             lines.extend(["", "目录入口：暂无快捷目录；可先 /cwd <path>。"])
         lines.extend([
             "",
-            "commands: /panel sessions /panel directories /panel commands /panel status /resume list /resume latest /cwd <path> /main /develop /status /model [name|default] /sandbox [mode] /clear",
+            "commands: /panel sessions /panel directories /panel commands /panel status /resume /resume latest /cwd <path> /main /develop /status /model [name|default] /sandbox [mode] /clear",
         ])
         return "\n".join(lines)
 

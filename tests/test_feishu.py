@@ -152,7 +152,7 @@ def test_parse_card_action_event() -> None:
             "operator": {"open_id": "ou_user"},
             "action": {
                 "value": {
-                    "command": "/resume list --page 2 --sort active-first",
+                    "command": "/resume --page 2 --sort active-first",
                     "root_id": "root_1",
                     "thread_id": "thread_1",
                     "session_key": "p2p:oc_1:thread:root_1",
@@ -166,7 +166,7 @@ def test_parse_card_action_event() -> None:
     assert parsed.message.reply_to_message_id == "om_card_1"
     assert parsed.message.session_key == "p2p:oc_1:thread:root_1"
     assert parsed.message.thread_id == "thread_1"
-    assert parsed.message.text == "/resume list --page 2 --sort active-first"
+    assert parsed.message.text == "/resume --page 2 --sort active-first"
 
 
 def test_parse_card_action_event_accepts_help_card_context_keys() -> None:
