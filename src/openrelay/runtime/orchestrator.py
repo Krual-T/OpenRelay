@@ -29,10 +29,11 @@ from .commands import RuntimeCommandHooks, RuntimeCommandRouter
 from .execution import ExecutionInput, RuntimeExecutionCoordinator
 from .follow_up import QueuedFollowUp
 from .help import HelpRenderer
+from .help_service import RuntimeHelpService
 from .live import build_process_panel_text, build_reply_card
 from .panel_service import RuntimePanelService
 from .replying import ReplyRoute, RuntimeReplyPolicy
-from .restart import RuntimeRestartController, get_systemd_service_unit, is_systemd_service_process
+from .restart import RuntimeRestartController
 from .turn import BackendTurnSession, TurnRuntimeContext
 NON_BLOCKING_ACTIVE_RUN_COMMANDS = {"/ping", "/status", "/usage", "/help", "/tools", "/panel", "/restart"}
 DEFAULT_IMAGE_PROMPT = "用户发送了图片。请先查看图片内容，再根据图片直接回答用户。"
@@ -71,6 +72,12 @@ class RuntimeOrchestrator:
         self.session_lifecycle = SessionLifecycleResolver(config, store)
         self.release_command_service = ReleaseCommandService(config, store, self.session_presentation, self.session_mutations)
         self.help_renderer = HelpRenderer(config, store, self.session_presentation, self.session_workspace, self.session_shortcuts)
+        self.help_service = RuntimeHelpService(
+            messenger,
+            self.help_renderer,
+            self.reply_policy,
+            self._reply_command_fallback,
+        )
         self.status_presenter = RuntimeStatusPresenter(config, store, self.session_presentation)
         self.panel_presenter = RuntimePanelPresenter(
             config,
@@ -107,7 +114,7 @@ class RuntimeOrchestrator:
             self.backends,
             RuntimeCommandHooks(
                 reply=self._reply,
-                send_help=self._send_help_via_renderer,
+                send_help=self.help_service.send_help,
                 send_panel=self.panel_service.send_panel,
                 send_session_list=self.panel_service.send_session_list,
                 stop=self._handle_stop,
@@ -136,14 +143,6 @@ class RuntimeOrchestrator:
 
     def _build_execution_key(self, session_key: str, session: SessionRecord, *, force_session_scope: bool = False) -> str:
         return f"session:{session.session_id}"
-
-    def _load_session_for_message(self, message: IncomingMessage, session_key: str) -> SessionRecord:
-        return self.session_lifecycle.load_for_message(
-            session_key,
-            is_top_level_control_command=self.session_scope.is_top_level_control_command(message),
-            is_top_level_message=self.session_scope.is_top_level_message(message),
-            control_key=self.session_scope.compose_key(message),
-        )
 
     def _resolve_stop_execution_key(self, message: IncomingMessage, session_key: str, session: SessionRecord) -> str:
         return self._build_execution_key(session_key, session)
@@ -179,7 +178,12 @@ class RuntimeOrchestrator:
 
             session_key = self.session_scope.build_session_key(message)
             self.session_scope.remember_inbound_aliases(message, session_key)
-            session = self._load_session_for_message(message, session_key)
+            session = self.session_lifecycle.load_for_message(
+                session_key,
+                is_top_level_control_command=self.session_scope.is_top_level_control_command(message),
+                is_top_level_message=self.session_scope.is_top_level_message(message),
+                control_key=self.session_scope.compose_key(message),
+            )
             LOGGER.info(
                 "dispatch resolved session event_id=%s message_id=%s session_key=%s session_id=%s native_session_id=%s root_id=%s thread_id=%s parent_id=%s",
                 message.event_id,
@@ -223,7 +227,12 @@ class RuntimeOrchestrator:
         message = pending_input.to_message() if isinstance(pending_input, QueuedFollowUp) else pending_input
         session_key = self.session_scope.build_session_key(message)
         self.session_scope.remember_inbound_aliases(message, session_key)
-        session = self._load_session_for_message(message, session_key)
+        session = self.session_lifecycle.load_for_message(
+            session_key,
+            is_top_level_control_command=self.session_scope.is_top_level_control_command(message),
+            is_top_level_message=self.session_scope.is_top_level_message(message),
+            control_key=self.session_scope.compose_key(message),
+        )
         LOGGER.info(
             "serialized input resolved session event_id=%s message_id=%s session_key=%s session_id=%s native_session_id=%s",
             message.event_id,
@@ -287,20 +296,6 @@ class RuntimeOrchestrator:
             remember_outbound_aliases=self.session_scope.remember_outbound_aliases,
             reply_final=self._reply_final,
         )
-
-    async def _send_help_via_renderer(self, message: IncomingMessage, session_key: str, session: SessionRecord) -> None:
-        card = self.help_renderer.build_card(session, self.available_backend_names(), self.reply_policy.build_card_action_context(message, session_key))
-        try:
-            await self.messenger.send_interactive_card(
-                message.chat_id,
-                card,
-                reply_to_message_id=self.reply_policy.command_reply_target(message),
-                root_id=self.reply_policy.root_id_for_message(message),
-                force_new_message=self.reply_policy.should_force_new_message_for_command_card(message),
-                update_message_id=self.reply_policy.command_card_update_target(message),
-            )
-        except Exception:
-            await self._reply(message, self.help_renderer.build_text(session, self.available_backend_names()), command_reply=True, command_name="/help")
 
     async def _reply_final(
         self,

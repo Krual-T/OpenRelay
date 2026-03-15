@@ -39,7 +39,7 @@ SHORTCUT_USAGE = (
 )
 
 ReplyHook = Callable[..., Awaitable[None]]
-SendHelpHook = Callable[[IncomingMessage, str, SessionRecord], Awaitable[None]]
+SendHelpHook = Callable[[IncomingMessage, str, SessionRecord, list[str]], Awaitable[None]]
 SendPanelHook = Callable[[IncomingMessage, str, SessionRecord, "PanelCommandArgs"], Awaitable[None]]
 SendSessionListHook = Callable[[IncomingMessage, str, SessionRecord, int, SessionSortMode], Awaitable[None]]
 StopHook = Callable[[IncomingMessage, str], Awaitable[None]]
@@ -133,7 +133,7 @@ class RuntimeCommandRouter:
             return True
 
         if name in {"/help", "/tools"}:
-            await self.hooks.send_help(message, session_key, session)
+            await self.hooks.send_help(message, session_key, session, self.hooks.available_backend_names())
             return True
 
         if name == "/panel":
