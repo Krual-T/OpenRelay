@@ -22,7 +22,7 @@ def test_build_streaming_card_json_uses_single_streaming_element() -> None:
     assert card["body"]["elements"][1]["icon"]["img_key"].startswith("img_")
 
 
-def test_build_streaming_card_json_switches_to_collapsible_process_panel_when_answer_starts() -> None:
+def test_build_streaming_card_json_keeps_single_streaming_element_when_answer_starts() -> None:
     card = build_streaming_card_json(
         {
             "history_items": [
@@ -41,11 +41,9 @@ def test_build_streaming_card_json_switches_to_collapsible_process_panel_when_an
         }
     )
 
-    assert card["body"]["elements"][0]["tag"] == "collapsible_panel"
-    assert card["body"]["elements"][0]["header"]["title"]["content"] == "Execution Log"
-    assert "Explored" in card["body"]["elements"][0]["elements"][0]["content"]
-    assert card["body"]["elements"][1]["element_id"] == STREAMING_ELEMENT_ID
-    assert card["body"]["elements"][1]["content"] == "#### Answer\n找到结果。"
+    assert card["body"]["elements"][0]["element_id"] == STREAMING_ELEMENT_ID
+    assert card["body"]["elements"][0]["content"] == ""
+    assert card["body"]["elements"][1]["element_id"] == "loading_icon"
 
 
 def test_build_streaming_content_prefers_partial_text_then_reasoning() -> None:
@@ -136,7 +134,7 @@ def test_build_streaming_content_renders_web_search_as_blue_exploration() -> Non
 
 
 @pytest.mark.asyncio
-async def test_streaming_session_switches_to_collapsed_process_panel_when_answer_starts(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_streaming_session_keeps_plain_streaming_card_when_answer_starts(monkeypatch: pytest.MonkeyPatch) -> None:
     session = FeishuStreamingSession(object())
     session.state = {
         "card_id": "c1",
@@ -174,13 +172,9 @@ async def test_streaming_session_switches_to_collapsed_process_panel_when_answer
     )
 
     assert len(calls) == 1
-    assert calls[0][0] == "update_json"
-    card = calls[0][1]
-    assert isinstance(card, dict)
-    assert card["body"]["elements"][0]["tag"] == "collapsible_panel"
-    assert card["body"]["elements"][1]["content"] == "#### Answer\n找到结果。"
+    assert calls[0] == ("update_content", "#### Answer\n找到结果。")
     assert session.state["current_content"] == "#### Answer\n找到结果。"
-    assert session.state["card_signature"][0] == "answer_with_process"
+    assert session.state["card_signature"][0] == "plain"
 
 
 @pytest.mark.asyncio

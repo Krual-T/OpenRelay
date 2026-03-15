@@ -452,10 +452,6 @@ def _streaming_answer_content(live_state: dict[str, Any] | None = None) -> str:
 
 
 def build_streaming_card_signature(live_state: dict[str, Any] | None = None) -> tuple[str, str]:
-    live_state = live_state or {}
-    process_text = build_process_panel_text(live_state)
-    if _streaming_answer_content(live_state) and process_text:
-        return ("answer_with_process", process_text)
     return ("plain", "")
 
 
@@ -476,49 +472,7 @@ def build_thinking_card_json() -> dict[str, Any]:
 
 
 def build_streaming_card_json(live_state: dict[str, Any] | None = None) -> dict[str, Any]:
-    live_state = live_state or {}
-    answer_content = _streaming_answer_content(live_state)
-    process_text = build_process_panel_text(live_state)
-    if not answer_content or not process_text:
-        return build_thinking_card_json()
-    return {
-        "schema": "2.0",
-        "config": {
-            "streaming_mode": True,
-            "summary": {"content": DEFAULT_THINKING_TEXT},
-        },
-        "body": {
-            "elements": [
-                {
-                    "tag": "collapsible_panel",
-                    "expanded": False,
-                    "header": {
-                        "title": {"tag": "markdown", "content": PROCESS_LOG_PANEL_TITLE},
-                        "vertical_align": "center",
-                        "icon": {
-                            "tag": "standard_icon",
-                            "token": "down-small-ccm_outlined",
-                            "size": "16px 16px",
-                        },
-                        "icon_position": "follow_text",
-                        "icon_expanded_angle": -180,
-                    },
-                    "border": {"color": "grey", "corner_radius": "5px"},
-                    "vertical_spacing": "8px",
-                    "padding": "8px 8px 8px 8px",
-                    "elements": [
-                        {
-                            "tag": "markdown",
-                            "content": process_text,
-                            "text_size": "notation",
-                        }
-                    ],
-                },
-                _build_streaming_markdown_element(answer_content),
-                _build_streaming_loading_element(),
-            ]
-        },
-    }
+    return build_thinking_card_json()
 
 
 def build_streaming_content(live_state: dict[str, Any] | None = None) -> str:
