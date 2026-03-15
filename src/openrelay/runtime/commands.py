@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-import os
 import shlex
 from typing import Awaitable, Callable, Literal
 
@@ -12,20 +11,18 @@ from openrelay.core import (
     IncomingMessage,
     SessionRecord,
     format_release_channel,
-    get_session_workspace_root,
-    infer_release_channel,
-    read_release_events,
-    summarize_release_event,
 )
+from openrelay.presentation.runtime_status import RuntimeStatusPresenter
+from openrelay.presentation.session import SessionPresentation
 from openrelay.release import ReleaseCommandService
 from openrelay.session import (
     DEFAULT_SESSION_LIST_PAGE_SIZE,
     DEFAULT_SESSION_LIST_SORT,
     SessionBrowser,
     SessionMutationService,
+    SessionScopeResolver,
     SessionShortcutService,
     SessionSortMode,
-    SessionUX,
     SessionWorkspaceService,
 )
 from openrelay.storage import StateStore
@@ -94,24 +91,28 @@ class RuntimeCommandRouter:
         config: AppConfig,
         store: StateStore,
         session_browser: SessionBrowser,
+        session_scope: SessionScopeResolver,
         session_mutations: SessionMutationService,
-        session_ux: SessionUX,
+        session_presentation: SessionPresentation,
         workspace: SessionWorkspaceService,
         shortcuts: SessionShortcutService,
         help_renderer: HelpRenderer,
         release_commands: ReleaseCommandService,
+        status_presenter: RuntimeStatusPresenter,
         backends: dict[str, object],
         hooks: RuntimeCommandHooks,
     ):
         self.config = config
         self.store = store
         self.session_browser = session_browser
+        self.session_scope = session_scope
         self.session_mutations = session_mutations
-        self.session_ux = session_ux
+        self.session_presentation = session_presentation
         self.workspace = workspace
         self.shortcuts = shortcuts
         self.help_renderer = help_renderer
         self.release_commands = release_commands
+        self.status_presenter = status_presenter
         self.backends = backends
         self.hooks = hooks
 
@@ -170,14 +171,14 @@ class RuntimeCommandRouter:
 
         if name == "/model":
             if not arg_text:
-                await self.hooks.reply(message, f"model={self.session_ux.effective_model(session)}", command_reply=True)
+                await self.hooks.reply(message, f"model={self.session_presentation.effective_model(session)}", command_reply=True)
                 return True
             next_session = self.session_mutations.switch_model(
                 session_key,
                 session,
                 "" if arg_text.lower() in {"default", "reset", "clear"} else arg_text,
             )
-            await self.hooks.reply(message, f"model 已切换到 {self.session_ux.effective_model(next_session)}，新的原生会话会在首条真实消息时创建。", command_reply=True)
+            await self.hooks.reply(message, f"model 已切换到 {self.session_presentation.effective_model(next_session)}，新的原生会话会在首条真实消息时创建。", command_reply=True)
             return True
 
         if name in {"/sandbox", "/mode"}:
@@ -204,7 +205,7 @@ class RuntimeCommandRouter:
             return True
 
         if name in {"/status", "/usage"}:
-            await self.hooks.reply(message, self._build_status_text(name, session_key, session), command_reply=True, command_name=name)
+            await self.hooks.reply(message, self.status_presenter.build_text(name, session_key, session), command_reply=True, command_name=name)
             return True
 
         if name in {"/cwd", "/cd"}:
@@ -242,22 +243,16 @@ class RuntimeCommandRouter:
         resumed = self.session_browser.resume(scope_key, session, args.target, merged_sessions)
         if resumed is None:
             fallback_page = self.session_browser.list_page(session_key, session, page=args.page, page_size=DEFAULT_SESSION_LIST_PAGE_SIZE, sort_mode=args.sort_mode)
-            await self.hooks.reply(message, f"恢复失败。\n\n{self.session_ux.format_session_list_page(fallback_page)}", command_reply=True)
+            await self.hooks.reply(message, f"恢复失败。\n\n{self.session_presentation.format_session_list_page(fallback_page)}", command_reply=True)
             return True
-        await self.hooks.reply(message, self.session_ux.format_resume_success(resumed.session, entry=resumed.entry), command_reply=True)
+        await self.hooks.reply(message, self.session_presentation.format_resume_success(resumed.session, entry=resumed.entry), command_reply=True)
         return True
 
-    def _is_top_level_p2p_command(self, message: IncomingMessage) -> bool:
-        return message.chat_type == "p2p" and not message.root_id and not message.thread_id
-
-    def _is_card_action_message(self, message: IncomingMessage) -> bool:
-        return message.event_id.startswith("card-action-")
-
     def _can_use_top_level_session_command(self, message: IncomingMessage) -> bool:
-        return self._is_top_level_p2p_command(message) or self._is_card_action_message(message)
+        return self.session_scope.is_top_level_p2p_command(message) or self.session_scope.is_card_action_message(message)
 
     def _top_level_thread_scope_key(self, message: IncomingMessage) -> str:
-        return f"p2p:{message.chat_id}:thread:{message.message_id}"
+        return self.session_scope.top_level_thread_scope_key(message)
 
     def _parse_resume_command_args(self, arg_text: str) -> ResumeCommandArgs:
         args = self._parse_paging_command_args(arg_text)
@@ -369,7 +364,7 @@ class RuntimeCommandRouter:
                         "已强制切到 main 稳定版本。" if target_channel == "main" else "已切到 develop 修复版本。",
                         f"session_id={result.session.session_id}",
                         f"channel={format_release_channel(target_channel)}",
-                        f"cwd={self.session_ux.format_cwd(result.session.cwd, result.session)}",
+                        f"cwd={self.session_presentation.format_cwd(result.session.cwd, result.session)}",
                         f"sandbox={result.session.safety_mode}",
                         f"reason={reason}" if reason else "",
                         "已中断上一条进行中的回复。" if result.cancelled_active_run else "",
@@ -516,25 +511,3 @@ class RuntimeCommandRouter:
         if len(tokens) > 3:
             raise ValueError("add 最多支持一个 channels 参数")
         return DirectoryShortcut(name=name, path=path, channels=channels)
-
-    def _build_status_text(self, command_name: str, session_key: str, session: SessionRecord) -> str:
-        latest_release_event = read_release_events(self.config, session_key=session_key, limit=1)
-        lines = [
-            f"session_base={session_key}",
-            f"session_id={session.session_id}",
-            f"context_label={session.label or '未命名会话'}",
-            f"channel={format_release_channel(infer_release_channel(self.config, session))}",
-            f"workspace_root={get_session_workspace_root(self.config, session)}",
-            f"model={self.session_ux.effective_model(session)}",
-            f"sandbox={session.safety_mode}",
-            f"cwd={self.session_ux.format_cwd(session.cwd, session)}",
-            f"messages={len(self.store.list_messages(session.session_id))}",
-            f"backend_thread={session.native_session_id or 'pending'}",
-            f"release_log={self.config.data_dir / 'release-events.jsonl'}",
-            f"server_pid={os.getpid()}",
-            f"last_release_event={summarize_release_event(latest_release_event[0]) if latest_release_event else 'none'}",
-        ]
-        lines.extend(self.session_ux.build_usage_lines(session))
-        if command_name == "/status":
-            lines.extend(["", "最近上下文：", *self.session_ux.build_context_lines(session)])
-        return "\n".join(lines)

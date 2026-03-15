@@ -4,7 +4,8 @@ from typing import Any
 
 from openrelay.feishu.cards import build_button, build_card_shell, build_section_block, build_status_hero, divider_block
 from openrelay.core import AppConfig, SessionRecord, format_release_channel, infer_release_channel
-from openrelay.session import SessionShortcutService, SessionUX, SessionWorkspaceService
+from openrelay.presentation.session import SessionPresentation
+from openrelay.session import SessionShortcutService, SessionWorkspaceService
 from openrelay.storage import StateStore
 
 
@@ -13,7 +14,7 @@ class HelpRenderer:
         self,
         config: AppConfig,
         store: StateStore,
-        session_ux: SessionUX,
+        session_ux: SessionPresentation,
         workspace: SessionWorkspaceService,
         shortcuts: SessionShortcutService,
     ):

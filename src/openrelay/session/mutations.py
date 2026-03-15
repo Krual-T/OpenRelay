@@ -4,18 +4,17 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from openrelay.core import AppConfig, DirectoryShortcut, SessionRecord, get_release_workspace
+from openrelay.presentation.session import SessionPresentation
 from openrelay.storage import StateStore
-
-from .ux import SessionUX
 
 
 @dataclass(slots=True)
 class SessionMutationService:
     config: AppConfig
     store: StateStore
-    session_ux: SessionUX
+    session_ux: SessionPresentation
 
-    def __init__(self, config: AppConfig, store: StateStore, session_ux: SessionUX) -> None:
+    def __init__(self, config: AppConfig, store: StateStore, session_ux: SessionPresentation) -> None:
         self.config = config
         self.store = store
         self.session_ux = session_ux

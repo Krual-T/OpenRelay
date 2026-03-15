@@ -27,15 +27,15 @@
 
 ### [x] OR-TASK-011 运行时职责边界设计收敛
 - **当前状态**：本轮已落地。
-- **已完成证据**：`docs/design/runtime-responsibility-boundary.md`。
+- **已完成证据**：`docs/design/runtime-responsibility-boundary.md`、`src/openrelay/presentation/`、`src/openrelay/runtime/orchestrator.py`、`src/openrelay/runtime/commands.py`、`src/openrelay/runtime/restart.py`、`tests/test_runtime.py`、`tests/test_runtime_commands.py`、`tests/test_runtime_help.py`。
 - **本轮已收敛**：
   - [x] 独立 design note 已明确 `RuntimeOrchestrator` 的最终职责，不再把它视为 runtime 的总控容器。
   - [x] 已给出 runtime / session / release / presentation 四层的方法归属判断规则。
   - [x] 已按文件列出整理前后的方法持有范围，并明确哪些包装方法应删除、哪些展示逻辑应迁出。
   - [x] 已给出最终目标文件结构，作为后续 runtime 边界重构的稳定落点。
 - **后续 follow-up**：
-  - [ ] 按设计逐步把 `session/ux.py`、`session/list_card.py`、`runtime/panel_service.py` 中的展示逻辑迁到独立 `presentation` 包。
-  - [ ] 在真正迁移 `RuntimeCommandRouter` 前，先收敛 scope helper 与 status 文案的单一归属，避免同一语义在 runtime / session / presentation 间重复。
+  - [x] 按设计逐步把 `session/ux.py`、`session/list_card.py`、`runtime/panel_service.py` 中的展示逻辑迁到独立 `presentation` 包。
+  - [x] 在真正迁移 `RuntimeCommandRouter` 前，先收敛 scope helper 与 status 文案的单一归属，避免同一语义在 runtime / session / presentation 间重复。
 
 
 ### [x] OR-TASK-010 单卡翻页与终极 `/panel` 导航

@@ -11,7 +11,8 @@ from openrelay.core import (
     get_release_workspace,
     infer_release_channel,
 )
-from openrelay.session import SessionMutationService, SessionUX
+from openrelay.presentation.session import SessionPresentation
+from openrelay.session import SessionMutationService
 from openrelay.storage import StateStore
 
 
@@ -27,7 +28,7 @@ class ReleaseCommandService:
         self,
         config: AppConfig,
         store: StateStore,
-        session_ux: SessionUX,
+        session_ux: SessionPresentation,
         session_mutations: SessionMutationService,
     ) -> None:
         self.config = config

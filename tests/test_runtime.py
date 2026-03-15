@@ -8,10 +8,11 @@ import pytest
 from openrelay.backends.base import Backend, BackendContext
 from openrelay.core import AppConfig, BackendConfig, DirectoryShortcut, FeishuConfig
 from openrelay.feishu import SentMessageRef, parse_card_action_event
+from openrelay.presentation.session import SessionPresentation
 from openrelay.runtime import MERGED_FOLLOW_UP_INTRO
 from openrelay.core import BackendReply, IncomingMessage, SessionRecord
 from openrelay.runtime import RuntimeOrchestrator, DEFAULT_IMAGE_PROMPT, get_systemd_service_unit, is_systemd_service_process
-from openrelay.session import SessionUX, SessionWorkspaceService
+from openrelay.session import SessionWorkspaceService
 from openrelay.storage import StateStore
 
 
@@ -481,7 +482,7 @@ async def test_runtime_runs_backend_turn(tmp_path: Path) -> None:
 
     assert backend.calls
     assert messenger.messages[-1] == "echo: hello"
-    session = store.load_session(runtime.build_session_key(make_message("hello")))
+    session = store.load_session(runtime.session_scope.build_session_key(make_message("hello")))
     assert session.native_session_id == "native_1"
     await runtime.shutdown()
 
@@ -503,8 +504,8 @@ async def test_runtime_top_level_messages_start_independent_sessions_by_default(
     await runtime.dispatch_message(first_message)
     await runtime.dispatch_message(second_message)
 
-    first_session = store.load_session(runtime.build_session_key(first_message))
-    second_session = store.load_session(runtime.build_session_key(second_message))
+    first_session = store.load_session(runtime.session_scope.build_session_key(first_message))
+    second_session = store.load_session(runtime.session_scope.build_session_key(second_message))
 
     assert first_session.session_id != second_session.session_id
     assert first_session.native_session_id == "native_1"
@@ -894,7 +895,7 @@ async def test_runtime_help_command_shows_actionable_guidance(tmp_path: Path) ->
         }
     )
     assert parsed.message is not None
-    assert parsed.message.session_key == runtime.build_session_key(make_message("/help", event_suffix="help0"))
+    assert parsed.message.session_key == runtime.session_scope.build_session_key(make_message("/help", event_suffix="help0"))
 
     await runtime.dispatch_message(parsed.message)
     assert messenger.messages[-1].startswith("session_base=p2p:oc_1")
@@ -1070,7 +1071,7 @@ async def test_runtime_streaming_update_does_not_block_backend_turn(tmp_path: Pa
     assert sessions[0].closed is True
     assert sessions[0].final_card is not None
     assert sessions[0].final_card["config"]["wide_screen_mode"] is True
-    session = store.load_session(runtime.build_session_key(make_message("hello blocked stream", event_suffix="blocked_stream")))
+    session = store.load_session(runtime.session_scope.build_session_key(make_message("hello blocked stream", event_suffix="blocked_stream")))
     assert session.native_session_id == "native_2"
     await runtime.shutdown()
 
@@ -1441,7 +1442,7 @@ async def test_runtime_uses_local_images_as_backend_input(tmp_path: Path) -> Non
 
     assert backend.prompts == [DEFAULT_IMAGE_PROMPT]
     assert backend.image_paths == [(str(image_path),)]
-    session = store.load_session(runtime.build_session_key(message))
+    session = store.load_session(runtime.session_scope.build_session_key(message))
     assert store.list_messages(session.session_id)[0]["content"] == "[图片]"
     await runtime.shutdown()
 
@@ -1492,15 +1493,15 @@ async def test_runtime_thread_reply_reuses_top_level_thread_scope(tmp_path: Path
         actionable=True,
     )
 
-    assert runtime.build_session_key(top_level) == "p2p:oc_1:thread:om_root"
-    assert runtime.build_session_key(control_message) == "p2p:oc_1"
-    assert runtime.build_session_key(thread_reply) == runtime.build_session_key(top_level)
+    assert runtime.session_scope.build_session_key(top_level) == "p2p:oc_1:thread:om_root"
+    assert runtime.session_scope.build_session_key(control_message) == "p2p:oc_1"
+    assert runtime.session_scope.build_session_key(thread_reply) == runtime.session_scope.build_session_key(top_level)
 
     await runtime.dispatch_message(thread_reply)
 
     assert len(backend.calls) == 2
     assert backend.calls[1][0].native_session_id == "native_1"
-    session = store.load_session(runtime.build_session_key(top_level))
+    session = store.load_session(runtime.session_scope.build_session_key(top_level))
     assert [entry["content"] for entry in store.list_messages(session.session_id)] == [
         "first task",
         "echo: first task",
@@ -1605,7 +1606,7 @@ async def test_runtime_reply_chain_without_thread_ids_reuses_previous_bot_reply_
         actionable=True,
     )
 
-    assert runtime.build_session_key(follow_up) == "p2p:oc_1:thread:om_first"
+    assert runtime.session_scope.build_session_key(follow_up) == "p2p:oc_1:thread:om_first"
 
     await runtime.dispatch_message(follow_up)
 
@@ -1657,7 +1658,7 @@ async def test_runtime_reply_chain_reuses_alias_when_user_replies_to_previous_us
         actionable=True,
     )
 
-    assert runtime.build_session_key(second_follow_up) == "p2p:oc_1:thread:om_first"
+    assert runtime.session_scope.build_session_key(second_follow_up) == "p2p:oc_1:thread:om_first"
 
     await runtime.dispatch_message(second_follow_up)
 
@@ -1702,7 +1703,7 @@ async def test_runtime_thread_follow_up_uses_root_id_scope_directly(tmp_path: Pa
         actionable=True,
     )
 
-    assert runtime.build_session_key(thread_follow_up) == "p2p:oc_1:thread:om_root_direct"
+    assert runtime.session_scope.build_session_key(thread_follow_up) == "p2p:oc_1:thread:om_root_direct"
     await runtime.dispatch_message(thread_follow_up)
 
     assert len(backend.calls) == 2
@@ -1725,7 +1726,7 @@ async def test_runtime_persists_native_thread_id_before_backend_returns(tmp_path
     message = make_message("start native thread", event_suffix="native_early")
     await runtime.dispatch_message(message)
 
-    session = store.load_session(runtime.build_session_key(message))
+    session = store.load_session(runtime.session_scope.build_session_key(message))
     assert backend.thread_ids_seen_in_callback == ["native_started_1"]
     assert session.native_session_id == "native_started_1"
     await runtime.shutdown()
@@ -1765,12 +1766,12 @@ async def test_runtime_group_thread_reply_reuses_top_level_thread_scope(tmp_path
         actionable=True,
     )
 
-    assert runtime.build_session_key(top_level) == "group:oc_group_1:thread:om_group_root:sender:ou_user"
-    assert runtime.build_session_key(thread_reply) == runtime.build_session_key(top_level)
+    assert runtime.session_scope.build_session_key(top_level) == "group:oc_group_1:thread:om_group_root:sender:ou_user"
+    assert runtime.session_scope.build_session_key(thread_reply) == runtime.session_scope.build_session_key(top_level)
 
     await runtime.dispatch_message(thread_reply)
 
-    session = store.load_session(runtime.build_session_key(top_level))
+    session = store.load_session(runtime.session_scope.build_session_key(top_level))
     assert [entry["content"] for entry in store.list_messages(session.session_id)] == [
         "group first task",
         "echo: group first task",
@@ -1865,7 +1866,7 @@ async def test_runtime_cwd_command_rejects_missing_path(tmp_path: Path) -> None:
 
     await runtime.dispatch_message(make_message("/cwd missing-dir", event_suffix="cwd_missing"))
 
-    session = store.load_session(runtime.build_session_key(make_message("x")))
+    session = store.load_session(runtime.session_scope.build_session_key(make_message("x")))
     assert session.cwd == str(config.main_workspace_dir)
     assert messenger.messages[-1] == "cwd 切换失败：path does not exist: missing-dir"
     await runtime.shutdown()
@@ -1944,13 +1945,13 @@ async def test_runtime_restart_process_uses_systemd_restart_when_service_managed
     def fake_execvpe(_file: str, _argv: list[str], _env: dict[str, str]) -> None:
         raise AssertionError("execvpe should not be called for systemd-managed restart")
 
-    monkeypatch.setattr("openrelay.runtime.orchestrator.asyncio.sleep", fake_sleep)
-    monkeypatch.setattr("openrelay.runtime.orchestrator.is_systemd_service_process", lambda env=None, pid=None: True)
-    monkeypatch.setattr(runtime, "_restart_systemd_service", fake_restart_systemd_service)
-    monkeypatch.setattr("openrelay.runtime.orchestrator.CodexBackend.shutdown_all", fake_shutdown_all)
-    monkeypatch.setattr("openrelay.runtime.orchestrator.os.execvpe", fake_execvpe)
+    monkeypatch.setattr("openrelay.runtime.restart.asyncio.sleep", fake_sleep)
+    monkeypatch.setattr("openrelay.runtime.restart.is_systemd_service_process", lambda env=None, pid=None: True)
+    monkeypatch.setattr(runtime.restart_controller, "_restart_systemd_service", fake_restart_systemd_service)
+    monkeypatch.setattr("openrelay.runtime.restart.CodexBackend.shutdown_all", fake_shutdown_all)
+    monkeypatch.setattr("openrelay.runtime.restart.os.execvpe", fake_execvpe)
 
-    await runtime._restart_process()
+    await runtime.restart_controller._restart_process()
 
     assert systemd_calls == ["openrelay.service"]
     assert shutdown_calls == []
@@ -1979,13 +1980,13 @@ async def test_runtime_restart_process_execs_and_shuts_down_backends(tmp_path: P
     async def fake_restart_systemd_service(_unit_name: str) -> None:
         raise AssertionError("systemd restart should not be used outside service-managed mode")
 
-    monkeypatch.setattr("openrelay.runtime.orchestrator.asyncio.sleep", fake_sleep)
-    monkeypatch.setattr("openrelay.runtime.orchestrator.is_systemd_service_process", lambda env=None, pid=None: False)
-    monkeypatch.setattr(runtime, "_restart_systemd_service", fake_restart_systemd_service)
-    monkeypatch.setattr("openrelay.runtime.orchestrator.os.execvpe", fake_execvpe)
-    monkeypatch.setattr("openrelay.runtime.orchestrator.CodexBackend.shutdown_all", fake_shutdown_all)
+    monkeypatch.setattr("openrelay.runtime.restart.asyncio.sleep", fake_sleep)
+    monkeypatch.setattr("openrelay.runtime.restart.is_systemd_service_process", lambda env=None, pid=None: False)
+    monkeypatch.setattr(runtime.restart_controller, "_restart_systemd_service", fake_restart_systemd_service)
+    monkeypatch.setattr("openrelay.runtime.restart.os.execvpe", fake_execvpe)
+    monkeypatch.setattr("openrelay.runtime.restart.CodexBackend.shutdown_all", fake_shutdown_all)
 
-    await runtime._restart_process()
+    await runtime.restart_controller._restart_process()
 
     assert shutdown_calls == ["shutdown"]
     assert exec_calls

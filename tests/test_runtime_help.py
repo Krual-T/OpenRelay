@@ -1,8 +1,9 @@
 from pathlib import Path
 
 from openrelay.core import AppConfig, BackendConfig, FeishuConfig
+from openrelay.presentation.session import SessionPresentation
 from openrelay.runtime import HelpRenderer
-from openrelay.session import SessionShortcutService, SessionUX, SessionWorkspaceService
+from openrelay.session import SessionShortcutService, SessionWorkspaceService
 from openrelay.storage import StateStore
 
 
@@ -35,7 +36,7 @@ def test_help_renderer_describes_empty_session(tmp_path: Path) -> None:
     prepare_dirs(config)
     store = StateStore(config)
     session = store.load_session("p2p:oc_1")
-    session_ux = SessionUX(config, store)
+    session_ux = SessionPresentation(config, store)
     workspace = SessionWorkspaceService(config)
     shortcuts = SessionShortcutService(config, store, workspace)
     renderer = HelpRenderer(config, store, session_ux, workspace, shortcuts)
@@ -61,7 +62,7 @@ def test_help_renderer_describes_active_session(tmp_path: Path) -> None:
     session.last_usage = {"input_tokens": 100, "cached_input_tokens": 50, "output_tokens": 20, "total_tokens": 170, "model_context_window": 1000}
     store.save_session(session)
     session = store.get_session(session.session_id)
-    session_ux = SessionUX(config, store)
+    session_ux = SessionPresentation(config, store)
     workspace = SessionWorkspaceService(config)
     shortcuts = SessionShortcutService(config, store, workspace)
     renderer = HelpRenderer(config, store, session_ux, workspace, shortcuts)

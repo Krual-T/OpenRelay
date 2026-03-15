@@ -3,8 +3,9 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
-from typing import Awaitable
+import sys
 
+from openrelay.backends import CodexBackend
 
 DEFAULT_SYSTEMD_SERVICE_UNIT = "openrelay.service"
 
@@ -32,11 +33,55 @@ class RuntimeRestartController:
         self.logger = logger
         self._restart_started = False
 
-    def schedule_restart(self, operation: Awaitable[None]) -> None:
+    def schedule_restart(self) -> None:
         if self._restart_started:
             return
         self._restart_started = True
-        asyncio.create_task(operation)
+        asyncio.create_task(self._restart_process())
 
     def mark_failed(self) -> None:
         self._restart_started = False
+
+    async def _restart_process(self) -> None:
+        await asyncio.sleep(0.4)
+        if is_systemd_service_process():
+            unit_name = get_systemd_service_unit()
+            try:
+                await self._restart_systemd_service(unit_name)
+                return
+            except Exception:
+                self.mark_failed()
+                self.logger.exception("failed to restart %s via systemd", unit_name)
+                raise
+        try:
+            await CodexBackend.shutdown_all()
+        except Exception:
+            self.logger.exception("failed shutting down backends before restart")
+        try:
+            os.execvpe(sys.executable, [sys.executable, "-m", "openrelay"], os.environ)
+        except Exception:
+            self.mark_failed()
+            self.logger.exception("failed to restart openrelay process")
+            raise
+
+    async def _restart_systemd_service(self, unit_name: str) -> None:
+        process = await asyncio.create_subprocess_exec(
+            "systemctl",
+            "--user",
+            "--no-block",
+            "restart",
+            unit_name,
+            stdin=asyncio.subprocess.DEVNULL,
+            stdout=asyncio.subprocess.DEVNULL,
+            stderr=asyncio.subprocess.PIPE,
+            env=dict(os.environ),
+        )
+        stderr = b""
+        if process.stderr is not None:
+            stderr = await process.stderr.read()
+        exit_code = await process.wait()
+        if exit_code == 0:
+            return
+        detail = stderr.decode("utf-8", errors="replace").strip()
+        message = detail or f"systemctl --user restart exited with code {exit_code}"
+        raise RuntimeError(message)
