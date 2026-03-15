@@ -884,7 +884,7 @@ async def test_runtime_panel_views_show_structured_results(tmp_path: Path) -> No
     session_commands = extract_card_commands(session_card)
     assert "面板 · 会话" in session_text
     assert "/resume latest" in session_commands
-    assert "/resume list --page 2 --sort active-first" in session_commands
+    assert "/resume --page 2 --sort active-first" in session_commands
     assert "/panel sessions --page 1 --sort updated-desc" in session_commands
     assert any(command.startswith("/resume s_") for command in session_commands)
 
@@ -1052,7 +1052,7 @@ async def test_runtime_cwd_command_updates_scope_in_place(tmp_path: Path) -> Non
         [
             "cwd 已切换到 docs。",
             "现在直接发消息，就会在这个目录进入 Codex。",
-            "当前 scope 已原地更新；如需切回旧 thread，请用 /resume list。",
+            "当前 scope 已原地更新；如需切回旧 thread，请用 /resume。",
         ]
     )
     await runtime.shutdown()
