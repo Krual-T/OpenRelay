@@ -356,7 +356,7 @@ class RuntimeOrchestrator:
         if command != "/resume":
             return False
         tokens = stripped.split(maxsplit=2)
-        return len(tokens) == 1 or tokens[1].lower() == "list"
+        return len(tokens) == 1
 
     def _schedule_restart(self) -> None:
         self.restart_controller.schedule_restart()

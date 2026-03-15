@@ -263,7 +263,7 @@ class RuntimeCommandRouter:
         if backend is None:
             await self.hooks.reply(message, "当前后端不支持 `/resume` 原生命令。", command_reply=True, command_name="/resume")
             return True
-        if not args.target or args.target.lower() == "list":
+        if not args.target:
             await self.hooks.send_session_list(message, session_key, session, args.page, args.sort_mode)
             return True
         target_thread_id = await self._resolve_resume_thread_id(session_key, session, backend, args.target, args.page)
@@ -428,6 +428,8 @@ class RuntimeCommandRouter:
 
     def _parse_resume_command_args(self, arg_text: str) -> ResumeCommandArgs:
         args = self._parse_paging_command_args(arg_text)
+        if args.target.lower() == "list":
+            raise ValueError("`list` 已移除；直接使用 /resume")
         return ResumeCommandArgs(target=args.target, page=args.page, sort_mode=args.sort_mode)
 
     def _parse_panel_command_args(self, arg_text: str) -> PanelCommandArgs:

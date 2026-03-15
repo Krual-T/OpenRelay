@@ -302,6 +302,18 @@ async def test_runtime_command_router_requires_explicit_resume_target_or_list(tm
 
 
 @pytest.mark.asyncio
+async def test_runtime_command_router_rejects_legacy_resume_list_alias(tmp_path: Path) -> None:
+    router, store, hooks = build_router(tmp_path)
+    session = store.load_session("p2p:oc_1")
+
+    await router.handle(make_message("/resume list", suffix="resume_legacy_list"), session.base_key, session)
+
+    assert hooks.session_list_calls == []
+    assert hooks.replies[-1]["text"] == "resume 参数无效：`list` 已移除；直接使用 /resume\n使用 /resume 打开 Codex 会话卡片，或 /resume [latest|<序号>|<thread_id>|<local_session_id>] 直接连接。"
+    store.close()
+
+
+@pytest.mark.asyncio
 async def test_runtime_command_router_parses_equals_style_paging_args(tmp_path: Path) -> None:
     router, store, hooks = build_router(tmp_path)
     session = store.load_session("p2p:oc_1")
