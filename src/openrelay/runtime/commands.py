@@ -183,15 +183,6 @@ class RuntimeCommandRouter:
             await self._handle_release_switch(message, session_key, session, target_channel, name, arg_text)
             return True
 
-        if name == "/new":
-            if not self._can_use_top_level_session_command(message):
-                await self.hooks.reply(message, "`/new` 只允许在私聊顶层使用；子 thread 会固定绑定当前 Codex 会话。", command_reply=True)
-                return True
-            next_session = self.session_mutations.create_named_session(self._top_level_thread_scope_key(message), session, arg_text)
-            label = f" ({next_session.label})" if next_session.label else ""
-            await self.hooks.reply(message, f"已新建会话 {next_session.session_id}{label}，原生 Codex 会话会在首条真实消息时创建。", command_reply=True)
-            return True
-
         if name == "/clear":
             next_session = self.session_mutations.clear_context(session_key, session)
             await self.hooks.reply(message, f"已清空当前上下文，新的会话是 {next_session.session_id}。", command_reply=True)
@@ -270,7 +261,10 @@ class RuntimeCommandRouter:
         if backend is None:
             await self.hooks.reply(message, "当前后端不支持 `/resume` 原生命令。", command_reply=True, command_name="/resume")
             return True
-        if not args.target or args.target.lower() == "list":
+        if not args.target:
+            await self.hooks.reply(message, RESUME_USAGE, command_reply=True, command_name="/resume")
+            return True
+        if args.target.lower() == "list":
             await self._reply_native_thread_list(message, session, backend, args.page)
             return True
         target_thread_id = await self._resolve_resume_thread_id(session_key, session, backend, args.target, args.page)

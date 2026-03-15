@@ -290,6 +290,17 @@ async def test_runtime_command_router_parses_resume_list_page_and_sort(tmp_path:
 
 
 @pytest.mark.asyncio
+async def test_runtime_command_router_requires_explicit_resume_target_or_list(tmp_path: Path) -> None:
+    router, store, hooks = build_router(tmp_path)
+    session = store.load_session("p2p:oc_1")
+
+    await router.handle(make_message("/resume", suffix="resume_empty"), session.base_key, session)
+
+    assert hooks.replies[-1]["text"] == "使用 /resume [list|latest|<序号>|<thread_id>|<local_session_id>] [--page N] [--sort updated-desc|active-first]。"
+    store.close()
+
+
+@pytest.mark.asyncio
 async def test_runtime_command_router_parses_equals_style_paging_args(tmp_path: Path) -> None:
     router, store, hooks = build_router(tmp_path)
     session = store.load_session("p2p:oc_1")
@@ -359,33 +370,6 @@ async def test_runtime_command_router_compact_current_native_thread(tmp_path: Pa
     await router.handle(make_message("/compact", suffix="compact"), session.base_key, session)
 
     assert hooks.replies[-1]["text"] == "已发起 Codex compact：thread_latest\ncompact_id=compact_1"
-    store.close()
-
-
-@pytest.mark.asyncio
-async def test_runtime_command_router_new_binds_current_top_level_thread_scope(tmp_path: Path) -> None:
-    router, store, hooks = build_router(tmp_path)
-    session = store.load_session("p2p:oc_1")
-
-    await router.handle(make_message("/new bugfix", suffix="new_scope"), session.base_key, session)
-
-    scoped = store.find_session("p2p:oc_1:thread:om_new_scope")
-    assert scoped is not None
-    assert scoped.session_id != session.session_id
-    assert hooks.replies[-1]["text"].startswith("已新建会话 ")
-    store.close()
-
-
-@pytest.mark.asyncio
-async def test_runtime_command_router_rejects_new_inside_thread(tmp_path: Path) -> None:
-    router, store, hooks = build_router(tmp_path)
-    session = store.load_session("p2p:oc_1")
-
-    handled = await router.handle(make_thread_message("/new bugfix", suffix="thread_new"), session.base_key, session)
-
-    assert handled is True
-    assert hooks.replies[-1]["text"] == "`/new` 只允许在私聊顶层使用；子 thread 会固定绑定当前 Codex 会话。"
-    assert store.find_session("p2p:oc_1:thread:om_thread_new") is None
     store.close()
 
 

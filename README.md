@@ -21,7 +21,7 @@
 
 - Feishu 支持 webhook 与 WebSocket 长连接两种接入方式
 - thread-first 回复：普通回复默认优先在线程里继续
-- 命令集尽量对齐：`/panel`、`/ping`、`/stop`、`/restart`、`/main`、`/stable`、`/develop`、`/new`、`/resume`、`/clear`、`/status`、`/cwd`、`/cd`、`/shortcut`、`/model`、`/sandbox`、`/tools`、`/help`
+- 命令集尽量对齐：`/panel`、`/ping`、`/stop`、`/restart`、`/main`、`/stable`、`/develop`、`/resume`、`/clear`、`/status`、`/cwd`、`/cd`、`/shortcut`、`/model`、`/sandbox`、`/tools`、`/help`
 - 会话支持 `main` / `develop` 工作区切换，并写入 `data/release-events.jsonl`
 - `/panel` 现在是飞书里的总入口：总览页下再分 `sessions / directories / commands / status` 四类结果面
 - `/panel`、`/resume list`、`/help` 这类导航型卡片在按钮切换时会优先原地更新，避免翻页和层级切换不断刷新消息
@@ -133,7 +133,6 @@ http://your-host:3000/feishu/webhook
 - `/restart` - 重启当前服务进程
 - `/main [reason]`、`/stable [reason]` - 切到 main 稳定工作区
 - `/develop [reason]` - 切到 develop 修复工作区
-- `/new [label]` - 新建隔离会话
 - `/resume [list|latest|thread_id|local_session_id]` - 查看 Codex thread 列表并绑定到当前作用域；回复里直接返回原生 thread 历史
 - `/compact [thread_id|local_session_id]` - 对当前或指定 Codex thread 发起 compact
 - `/clear` - 清空上下文但保留当前目录和配置
@@ -160,5 +159,5 @@ http://your-host:3000/feishu/webhook
 - 同一任务继续时，通常不用先发命令，直接补充消息即可。
 - 如果上一条回复还在生成，新的普通文本会进入下一轮 follow-up；连续补充会自动合并。
 - 如果你想立刻打断当前回复，发送 `/stop`；已确认收到的补充消息会在停止后继续处理。
-- 如果你其实已经切到新任务，不要继续堆在同一会话里，直接 `/new <label>`。
+- 如果你其实已经切到新任务，不要继续堆在同一会话里，直接回顶层发新消息。
 - 飞书侧这版不依赖“编辑上一条消息”来驱动 runtime；想修正内容时，直接补发一条，或 `/stop` 后重发。
