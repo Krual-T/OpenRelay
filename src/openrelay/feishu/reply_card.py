@@ -397,10 +397,20 @@ def _render_history_item(item: dict[str, Any], spinner_frame: int) -> list[str]:
     return lines
 
 
+def _should_render_history_item(item: dict[str, Any]) -> bool:
+    item_type = str(item.get("type") or "").strip()
+    if item_type != "status":
+        return True
+    title = normalize_inline(item.get("title"))
+    return title not in {"Starting Codex", "Connected session"}
+
+
 def _render_history_items(items: list[dict[str, Any]], spinner_frame: int) -> str:
     blocks: list[str] = []
     for item in items[-12:]:
         if not isinstance(item, dict):
+            continue
+        if not _should_render_history_item(item):
             continue
         lines = _render_history_item(item, spinner_frame)
         if lines:
