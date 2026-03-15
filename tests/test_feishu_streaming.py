@@ -44,17 +44,14 @@ def test_build_streaming_card_json_keeps_single_streaming_element_when_answer_st
 
     assert card["config"]["streaming_mode"] is True
     assert card["config"]["summary"]["content"] == DEFAULT_THINKING_TEXT
-    assert card["body"]["elements"][0]["tag"] == "collapsible_panel"
-    assert card["body"]["elements"][0]["header"]["title"]["content"] == "Execution Log"
-    assert "Explored" in card["body"]["elements"][0]["elements"][0]["content"]
-    assert card["body"]["elements"][1]["element_id"] == STREAMING_ELEMENT_ID
-    assert card["body"]["elements"][1]["content"] == ""
-    assert card["body"]["elements"][2]["element_id"] == "loading_icon"
+    assert card["body"]["elements"][0]["element_id"] == STREAMING_ELEMENT_ID
+    assert card["body"]["elements"][0]["content"] == ""
+    assert card["body"]["elements"][1]["element_id"] == "loading_icon"
 
 
 def test_build_streaming_content_prefers_partial_text_then_reasoning() -> None:
-    assert build_streaming_content({"partial_text": "# Title\ncontent"}) == "#### Title\ncontent"
-    assert build_streaming_content({"partial_text": "<think>先看代码</think>\n答案"}) == "答案"
+    assert build_streaming_content({"partial_text": "# Title\ncontent"}) == "---\n#### Title\ncontent"
+    assert build_streaming_content({"partial_text": "<think>先看代码</think>\n答案"}) == "💭 **Thinking...**\n\n先看代码\n\n---\n答案"
     reasoning_content = build_streaming_content(
         {
             "history_items": [
@@ -88,7 +85,9 @@ def test_build_streaming_content_returns_answer_only_after_answer_starts() -> No
         }
     )
 
-    assert content == "找到结果，准备整理。"
+    assert "🔵 **Explored**" in content
+    assert "---" in content
+    assert content.endswith("找到结果，准备整理。")
 
 
 def test_build_streaming_content_marks_failed_command_with_red_dot() -> None:
@@ -178,11 +177,10 @@ async def test_streaming_session_switches_to_answer_card_when_answer_starts(monk
     )
 
     assert len(calls) == 1
-    assert calls[0][0] == "update_json"
-    assert calls[0][1]["body"]["elements"][0]["tag"] == "collapsible_panel"
-    assert calls[0][1]["body"]["elements"][1]["element_id"] == STREAMING_ELEMENT_ID
-    assert session.state["current_content"] == "#### Answer\n找到结果。"
-    assert session.state["card_signature"][0] == "answer"
+    assert calls[0][0] == "update_content"
+    assert "#### Answer\n找到结果。" in str(calls[0][1])
+    assert session.state["current_content"].endswith("#### Answer\n找到结果。")
+    assert session.state["card_signature"][0] == "plain"
 
 
 @pytest.mark.asyncio
@@ -206,7 +204,7 @@ async def test_streaming_session_updates_answer_content_after_switch(monkeypatch
     session.state = {
         "card_id": "c1",
         "sequence": 2,
-        "current_content": "第一段",
+        "current_content": "---\n第一段",
         "card_signature": build_streaming_card_signature(live_state),
     }
     calls: list[tuple[str, object]] = []
@@ -223,9 +221,11 @@ async def test_streaming_session_updates_answer_content_after_switch(monkeypatch
     live_state["partial_text"] = "# Answer\n第二段"
     await session.update(live_state)
 
-    assert calls == [("update_content", "#### Answer\n第二段")]
-    assert session.state["current_content"] == "#### Answer\n第二段"
-    assert session.state["card_signature"][0] == "answer"
+    assert len(calls) == 1
+    assert calls[0][0] == "update_content"
+    assert "#### Answer\n第二段" in str(calls[0][1])
+    assert session.state["current_content"].endswith("#### Answer\n第二段")
+    assert session.state["card_signature"][0] == "plain"
 
 
 @pytest.mark.asyncio
@@ -256,19 +256,19 @@ async def test_streaming_session_throttles_updates_to_short_cardkit_interval(mon
     monkeypatch.setattr(session, "update_card_json", fake_update_card_json)
 
     await session.update({"partial_text": "第一段"})
-    assert len(applied_cards) == 1
-    assert applied_contents == []
-    assert session.state["current_content"] == "第一段"
+    assert applied_cards == []
+    assert applied_contents == ["---\n第一段"]
+    assert session.state["current_content"] == "---\n第一段"
     assert session.pending_content == ""
 
     clock["now"] = 10.05
     await session.update({"partial_text": "第二段"})
-    assert applied_contents == []
-    assert session.pending_content == "第二段"
+    assert applied_contents == ["---\n第一段"]
+    assert session.pending_content == "---\n第二段"
 
     clock["now"] = 10.2
     await session.update({"partial_text": "第二段"})
-    assert applied_contents == ["第二段"]
+    assert applied_contents == ["---\n第一段", "---\n第二段"]
     assert session.pending_content == ""
 
 
