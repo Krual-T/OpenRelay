@@ -1,6 +1,7 @@
 import pytest
 
 import openrelay.feishu.streaming as streaming_card_module
+from openrelay.feishu.reply_card import build_streaming_card_signature
 from openrelay.feishu import (
     DEFAULT_THINKING_TEXT,
     FeishuStreamingSession,
@@ -41,9 +42,14 @@ def test_build_streaming_card_json_keeps_single_streaming_element_when_answer_st
         }
     )
 
-    assert card["body"]["elements"][0]["element_id"] == STREAMING_ELEMENT_ID
-    assert card["body"]["elements"][0]["content"] == ""
-    assert card["body"]["elements"][1]["element_id"] == "loading_icon"
+    assert card["config"]["streaming_mode"] is True
+    assert card["config"]["summary"]["content"] == DEFAULT_THINKING_TEXT
+    assert card["body"]["elements"][0]["tag"] == "collapsible_panel"
+    assert card["body"]["elements"][0]["header"]["title"]["content"] == "Execution Log"
+    assert "Explored" in card["body"]["elements"][0]["elements"][0]["content"]
+    assert card["body"]["elements"][1]["element_id"] == STREAMING_ELEMENT_ID
+    assert card["body"]["elements"][1]["content"] == ""
+    assert card["body"]["elements"][2]["element_id"] == "loading_icon"
 
 
 def test_build_streaming_content_prefers_partial_text_then_reasoning() -> None:
@@ -134,7 +140,7 @@ def test_build_streaming_content_renders_web_search_as_blue_exploration() -> Non
 
 
 @pytest.mark.asyncio
-async def test_streaming_session_keeps_plain_streaming_card_when_answer_starts(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_streaming_session_switches_to_answer_card_when_answer_starts(monkeypatch: pytest.MonkeyPatch) -> None:
     session = FeishuStreamingSession(object())
     session.state = {
         "card_id": "c1",
@@ -172,40 +178,97 @@ async def test_streaming_session_keeps_plain_streaming_card_when_answer_starts(m
     )
 
     assert len(calls) == 1
-    assert calls[0] == ("update_content", "#### Answer\n找到结果。")
+    assert calls[0][0] == "update_json"
+    assert calls[0][1]["body"]["elements"][0]["tag"] == "collapsible_panel"
+    assert calls[0][1]["body"]["elements"][1]["element_id"] == STREAMING_ELEMENT_ID
     assert session.state["current_content"] == "#### Answer\n找到结果。"
-    assert session.state["card_signature"][0] == "plain"
+    assert session.state["card_signature"][0] == "answer"
+
+
+@pytest.mark.asyncio
+async def test_streaming_session_updates_answer_content_after_switch(monkeypatch: pytest.MonkeyPatch) -> None:
+    live_state = {
+        "history_items": [
+            {
+                "type": "command",
+                "state": "completed",
+                "title": "Explored codebase",
+                "mode": "exploration",
+                "command": "rg -n Voyager",
+                "exit_code": 0,
+                "output_preview": "Gemini Voyager",
+            }
+        ],
+        "started_at": "2026-03-11T00:00:00+00:00",
+        "partial_text": "# Answer\n第一段",
+    }
+    session = FeishuStreamingSession(object())
+    session.state = {
+        "card_id": "c1",
+        "sequence": 2,
+        "current_content": "第一段",
+        "card_signature": build_streaming_card_signature(live_state),
+    }
+    calls: list[tuple[str, object]] = []
+
+    async def fake_update_card_json(card_json: dict[str, object]) -> None:
+        calls.append(("update_json", card_json))
+
+    async def fake_update_card_content(text: str) -> None:
+        calls.append(("update_content", text))
+
+    monkeypatch.setattr(session, "update_card_json", fake_update_card_json)
+    monkeypatch.setattr(session, "update_card_content", fake_update_card_content)
+
+    live_state["partial_text"] = "# Answer\n第二段"
+    await session.update(live_state)
+
+    assert calls == [("update_content", "#### Answer\n第二段")]
+    assert session.state["current_content"] == "#### Answer\n第二段"
+    assert session.state["card_signature"][0] == "answer"
 
 
 @pytest.mark.asyncio
 async def test_streaming_session_throttles_updates_to_short_cardkit_interval(monkeypatch: pytest.MonkeyPatch) -> None:
     session = FeishuStreamingSession(object())
     session.state = {
+        "card_id": "c1",
+        "sequence": 1,
         "current_content": DEFAULT_THINKING_TEXT,
+        "card_signature": ("plain", ""),
     }
     applied_contents: list[str] = []
+    applied_cards: list[dict[str, object]] = []
 
     async def fake_update_card_content(text: str) -> None:
         applied_contents.append(text)
         session.state["current_content"] = text
         session.last_update_time = clock["now"] * 1000
 
+    async def fake_update_card_json(card_json: dict[str, object]) -> None:
+        applied_cards.append(card_json)
+        session.state["card_signature"] = build_streaming_card_signature({"partial_text": session.pending_content or "第一段"})
+        session.last_update_time = clock["now"] * 1000
+
     clock = {"now": 10.0}
     monkeypatch.setattr(streaming_card_module.time, "time", lambda: clock["now"])
     monkeypatch.setattr(session, "update_card_content", fake_update_card_content)
+    monkeypatch.setattr(session, "update_card_json", fake_update_card_json)
 
     await session.update({"partial_text": "第一段"})
-    assert applied_contents == ["第一段"]
+    assert len(applied_cards) == 1
+    assert applied_contents == []
+    assert session.state["current_content"] == "第一段"
     assert session.pending_content == ""
 
     clock["now"] = 10.05
     await session.update({"partial_text": "第二段"})
-    assert applied_contents == ["第一段"]
+    assert applied_contents == []
     assert session.pending_content == "第二段"
 
     clock["now"] = 10.2
     await session.update({"partial_text": "第二段"})
-    assert applied_contents == ["第一段", "第二段"]
+    assert applied_contents == ["第二段"]
     assert session.pending_content == ""
 
 

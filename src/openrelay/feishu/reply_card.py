@@ -498,6 +498,37 @@ def _build_streaming_loading_element() -> dict[str, Any]:
     }
 
 
+def _build_process_panel_element(panel_text: object, panel_title: object) -> dict[str, Any] | None:
+    content = str(panel_text or "").strip()
+    if not content:
+        return None
+    return {
+        "tag": "collapsible_panel",
+        "expanded": False,
+        "header": {
+            "title": {"tag": "markdown", "content": str(panel_title or PROCESS_LOG_PANEL_TITLE).strip()},
+            "vertical_align": "center",
+            "icon": {
+                "tag": "standard_icon",
+                "token": "down-small-ccm_outlined",
+                "size": "16px 16px",
+            },
+            "icon_position": "follow_text",
+            "icon_expanded_angle": -180,
+        },
+        "border": {"color": "grey", "corner_radius": "5px"},
+        "vertical_spacing": "8px",
+        "padding": "8px 8px 8px 8px",
+        "elements": [
+            {
+                "tag": "markdown",
+                "content": content,
+                "text_size": "notation",
+            }
+        ],
+    }
+
+
 def _streaming_answer_content(live_state: dict[str, Any] | None = None) -> str:
     live_state = live_state or {}
     partial_text = str(live_state.get("partial_text") or "").strip()
@@ -512,8 +543,23 @@ def _streaming_answer_content(live_state: dict[str, Any] | None = None) -> str:
     return ""
 
 
+def _streaming_process_text(live_state: dict[str, Any] | None = None) -> str:
+    return build_process_panel_text(live_state or {})
+
+
+def _streaming_process_signature(live_state: dict[str, Any] | None = None) -> str:
+    live_state = live_state or {}
+    history_items = live_state.get("history_items")
+    if not isinstance(history_items, list):
+        return ""
+    return repr(history_items[-12:])
+
+
 def build_streaming_card_signature(live_state: dict[str, Any] | None = None) -> tuple[str, str]:
-    return ("plain", "")
+    answer_content = _streaming_answer_content(live_state)
+    if not answer_content:
+        return ("plain", "")
+    return ("answer", _streaming_process_signature(live_state))
 
 
 def build_thinking_card_json() -> dict[str, Any]:
@@ -533,7 +579,24 @@ def build_thinking_card_json() -> dict[str, Any]:
 
 
 def build_streaming_card_json(live_state: dict[str, Any] | None = None) -> dict[str, Any]:
-    return build_thinking_card_json()
+    answer_content = _streaming_answer_content(live_state)
+    if not answer_content:
+        return build_thinking_card_json()
+
+    elements: list[dict[str, Any]] = []
+    process_panel = _build_process_panel_element(_streaming_process_text(live_state), PROCESS_LOG_PANEL_TITLE)
+    if process_panel is not None:
+        elements.append(process_panel)
+    elements.append(_build_streaming_markdown_element())
+    elements.append(_build_streaming_loading_element())
+    return {
+        "schema": "2.0",
+        "config": {
+            "streaming_mode": True,
+            "summary": {"content": DEFAULT_THINKING_TEXT},
+        },
+        "body": {"elements": elements},
+    }
 
 
 def build_streaming_content(live_state: dict[str, Any] | None = None) -> str:
@@ -564,34 +627,9 @@ def build_complete_card(
     final_answer = extracted_answer or raw_text
 
     elements: list[dict[str, Any]] = []
-    if final_panel_text:
-        elements.append(
-            {
-                "tag": "collapsible_panel",
-                "expanded": False,
-                "header": {
-                    "title": {"tag": "markdown", "content": str(panel_title or PROCESS_LOG_PANEL_TITLE).strip()},
-                    "vertical_align": "center",
-                    "icon": {
-                        "tag": "standard_icon",
-                        "token": "down-small-ccm_outlined",
-                        "size": "16px 16px",
-                    },
-                    "icon_position": "follow_text",
-                    "icon_expanded_angle": -180,
-                },
-                "border": {"color": "grey", "corner_radius": "5px"},
-                "vertical_spacing": "8px",
-                "padding": "8px 8px 8px 8px",
-                "elements": [
-                    {
-                        "tag": "markdown",
-                        "content": final_panel_text,
-                        "text_size": "notation",
-                    }
-                ],
-            }
-        )
+    process_panel = _build_process_panel_element(final_panel_text, panel_title)
+    if process_panel is not None:
+        elements.append(process_panel)
 
     elements.append({"tag": "markdown", "content": optimize_markdown_style(final_answer)})
 
