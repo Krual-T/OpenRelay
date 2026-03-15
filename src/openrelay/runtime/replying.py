@@ -26,7 +26,7 @@ class RuntimeReplyPolicy:
 
     def streaming_route(self, message: IncomingMessage) -> ReplyRoute:
         if self.is_top_level_session_start(message):
-            return ReplyRoute(reply_to_message_id="", root_id="", force_new_message=True)
+            return ReplyRoute(reply_to_message_id="", root_id=message.message_id, force_new_message=True)
         return self.default_route(message)
 
     def command_route(self, message: IncomingMessage, command_name: str) -> ReplyRoute:
