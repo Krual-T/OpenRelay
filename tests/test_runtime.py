@@ -1255,7 +1255,7 @@ async def test_runtime_streaming_update_does_not_block_backend_turn(tmp_path: Pa
 
 
 @pytest.mark.asyncio
-async def test_runtime_card_stream_rolls_over_to_new_top_level_card_before_timeout(tmp_path: Path) -> None:
+async def test_runtime_card_stream_rolls_over_to_new_card_in_same_thread_before_timeout(tmp_path: Path) -> None:
     config = make_config(tmp_path)
     config.feishu.stream_mode = "card"
     config.workspace_root.mkdir(parents=True, exist_ok=True)
@@ -1300,9 +1300,9 @@ async def test_runtime_card_stream_rolls_over_to_new_top_level_card_before_timeo
         {"receive_id": "oc_1", "reply_to_message_id": "om_stream_rollover", "root_id": "om_root_existing"}
     ]
     assert sessions[0].needs_rollover() is True
-    assert sessions[0].updates[-1]["freeze_notice"] == "此卡已停止流式更新，openrelay 已在顶层新卡继续返回。"
+    assert sessions[0].updates[-1]["freeze_notice"] == "此卡已停止流式更新，openrelay 已在当前 thread 的新卡继续返回。"
     assert sessions[1].start_calls == [
-        {"receive_id": "oc_1", "reply_to_message_id": "", "root_id": ""}
+        {"receive_id": "oc_1", "reply_to_message_id": "om_stream_rollover", "root_id": "om_root_existing"}
     ]
     assert sessions[1].closed is True
     assert sessions[1].final_card is not None
