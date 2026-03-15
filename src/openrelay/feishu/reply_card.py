@@ -249,6 +249,50 @@ def _describe_web_search_queries(item: dict[str, Any]) -> list[str]:
     return lines[:4]
 
 
+def _describe_file_changes(item: dict[str, Any]) -> list[str]:
+    lines: list[str] = []
+    changes = item.get("changes")
+    if not isinstance(changes, list):
+        return lines
+    for change in changes[:6]:
+        if not isinstance(change, dict):
+            continue
+        path = normalize_inline(change.get("path"))
+        if not path:
+            continue
+        kind = change.get("kind") if isinstance(change.get("kind"), dict) else {}
+        change_type = normalize_inline(kind.get("type"))
+        if change_type == "add":
+            lines.append(f"Add `{path}`")
+            continue
+        if change_type == "delete":
+            lines.append(f"Delete `{path}`")
+            continue
+        if change_type == "update":
+            moved_to = normalize_inline(kind.get("move_path"))
+            lines.append(f"Edit `{path}`" if not moved_to else f"Move `{path}` -> `{moved_to}`")
+            continue
+        lines.append(path)
+    return lines
+
+
+def _describe_collab_targets(item: dict[str, Any]) -> list[str]:
+    labels: list[str] = []
+    agents = item.get("agents")
+    if isinstance(agents, dict):
+        for key in agents:
+            normalized = normalize_inline(key)
+            if normalized and normalized not in labels:
+                labels.append(normalized)
+    receiver_thread_ids = item.get("receiver_thread_ids")
+    if isinstance(receiver_thread_ids, list):
+        for value in receiver_thread_ids:
+            normalized = normalize_inline(value)
+            if normalized and normalized not in labels:
+                labels.append(normalized)
+    return labels[:4]
+
+
 def _history_item_tone(item: dict[str, Any]) -> str:
     state = str(item.get("state") or "").strip().lower()
     if state == "running":
@@ -327,6 +371,23 @@ def _render_history_item(item: dict[str, Any], spinner_frame: int) -> list[str]:
     if item_type == "reasoning":
         reasoning_text = clean_reasoning_prefix(item.get("text"))
         detail_entries.extend([[line] for line in _split_detail_lines(reasoning_text)])
+        _append_tree_entries(lines, detail_entries)
+        return lines
+
+    if item_type == "file_change":
+        detail_entries.extend([[line] for line in _describe_file_changes(item)])
+        _append_tree_entries(lines, detail_entries)
+        return lines
+
+    if item_type == "collab":
+        targets = _describe_collab_targets(item)
+        if targets:
+            lines[0] = f"{lines[0]} `{targets[0]}`"
+            for target in targets[1:]:
+                detail_entries.append([f"Agent `{target}`"])
+        prompt = str(item.get("prompt") or "").strip()
+        if prompt:
+            detail_entries.extend([[line] for line in _split_detail_lines(prompt)])
         _append_tree_entries(lines, detail_entries)
         return lines
 

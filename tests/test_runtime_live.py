@@ -98,6 +98,49 @@ def test_build_process_panel_text_renders_web_search_items() -> None:
     assert "└ Search site:openai.com March 2026 OpenAI announcement" in text
 
 
+def test_build_process_panel_text_renders_file_change_items() -> None:
+    text = build_process_panel_text(
+        {
+            "history_items": [
+                {
+                    "type": "file_change",
+                    "state": "completed",
+                    "title": "Edited",
+                    "changes": [
+                        {"path": "src/openrelay/runtime/live.py", "kind": {"type": "update"}, "diff": "@@"},
+                        {"path": "tests/test_runtime_live.py", "kind": {"type": "add"}, "diff": "@@"},
+                    ],
+                }
+            ]
+        }
+    )
+
+    assert "• **Edited**" in text
+    assert "├ Edit `src/openrelay/runtime/live.py`" in text
+    assert "└ Add `tests/test_runtime_live.py`" in text
+
+
+def test_build_process_panel_text_renders_collab_items() -> None:
+    text = build_process_panel_text(
+        {
+            "history_items": [
+                {
+                    "type": "collab",
+                    "state": "running",
+                    "title": "Waiting for",
+                    "tool": "wait",
+                    "agents": {"agent-alpha": {"status": "running"}},
+                    "receiver_thread_ids": ["thread_agent_alpha"],
+                    "prompt": "Check runtime live rendering",
+                }
+            ]
+        }
+    )
+
+    assert "⚪ **Waiting for** `agent-alpha`" in text
+    assert "└ Check runtime live rendering" in text
+
+
 def test_apply_live_progress_accumulates_codex_style_history_items() -> None:
     state = {
         "history": [],
@@ -236,3 +279,54 @@ def test_apply_live_progress_tracks_pending_interaction_items() -> None:
     text = build_process_panel_text(state)
     assert "• **Command Approval Required**" in text
     assert "└ Allow once" in text
+
+
+def test_apply_live_progress_tracks_file_change_and_collab_items() -> None:
+    state = {
+        "history": [],
+        "history_items": [],
+        "commands": [],
+        "heading": "",
+        "status": "",
+        "current_command": "",
+        "last_command": None,
+        "last_reasoning": "",
+        "reasoning_text": "",
+        "reasoning_started_at": "",
+        "reasoning_elapsed_ms": 0,
+        "partial_text": "",
+        "spinner_frame": 0,
+        "started_at": "2026-03-11T00:00:00+00:00",
+    }
+
+    apply_live_progress(
+        state,
+        {
+            "type": "file_change.completed",
+            "file_change": {
+                "id": "fc1",
+                "status": "completed",
+                "changes": [{"path": "README.md", "kind": {"type": "add"}, "diff": "@@"}],
+            },
+        },
+    )
+    apply_live_progress(
+        state,
+        {
+            "type": "collab.completed",
+            "collab": {
+                "id": "ca1",
+                "tool": "sendInput",
+                "status": "completed",
+                "prompt": "Try a narrower search",
+                "receiverThreadIds": ["thread_agent_beta"],
+                "agentsStates": {"agent-beta": {"status": "completed"}},
+            },
+        },
+    )
+
+    items = state["history_items"]
+    assert items[0]["title"] == "Added"
+    assert items[0]["changes"][0]["path"] == "README.md"
+    assert items[1]["title"] == "Sent input to"
+    assert items[1]["receiver_thread_ids"] == ["thread_agent_beta"]
