@@ -33,6 +33,7 @@ from .reply_card import (
 DEFAULT_STREAM_UPDATE_THROTTLE_MS = 100
 DEFAULT_CARD_STREAMING_WINDOW_SECONDS = 540.0
 STREAMING_TIMEOUT_NOTICE = "流式显示已自动暂停，任务仍在继续。完成后会在此卡片更新最终结果。"
+STREAMING_ROLLOVER_NOTICE = "此卡已停止流式更新，openrelay 已在顶层新卡继续返回。"
 
 
 class FeishuStreamingSession:
@@ -137,6 +138,9 @@ class FeishuStreamingSession:
             await self.update_card_json(waiting_card)
             self.state["card_signature"] = ("frozen", "")
             self.state["current_content"] = ""
+
+    def needs_rollover(self) -> bool:
+        return self.state is not None and not self.closed and not self.streaming_mode_enabled
 
     async def update_card_content(self, text: str) -> None:
         if self.state is None:
