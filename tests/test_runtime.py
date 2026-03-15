@@ -1300,7 +1300,7 @@ async def test_runtime_card_stream_rolls_over_to_new_card_in_same_thread_before_
         {"receive_id": "oc_1", "reply_to_message_id": "om_stream_rollover", "root_id": "om_root_existing"}
     ]
     assert sessions[0].needs_rollover() is True
-    assert sessions[0].updates[-1]["freeze_notice"] == "此卡已停止流式更新，openrelay 已在当前 thread 的新卡继续返回。"
+    assert sessions[0].updates[-1]["freeze_notice"] == "此卡已停止流式更新，请继续查看当前 thread 中的新卡。"
     assert sessions[1].start_calls == [
         {"receive_id": "oc_1", "reply_to_message_id": "om_stream_rollover", "root_id": "om_root_existing"}
     ]

@@ -33,7 +33,7 @@ from .reply_card import (
 DEFAULT_STREAM_UPDATE_THROTTLE_MS = 100
 DEFAULT_CARD_STREAMING_WINDOW_SECONDS = 540.0
 STREAMING_TIMEOUT_NOTICE = "流式显示已自动暂停，任务仍在继续。完成后会在此卡片更新最终结果。"
-STREAMING_ROLLOVER_NOTICE = "此卡已停止流式更新，openrelay 已在当前 thread 的新卡继续返回。"
+STREAMING_ROLLOVER_NOTICE = "此卡已停止流式更新，请继续查看当前 thread 中的新卡。"
 
 
 class FeishuStreamingSession:
