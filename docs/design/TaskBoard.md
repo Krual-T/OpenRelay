@@ -1,6 +1,6 @@
 # Design Task Board
 
-更新时间：2026-03-10
+更新时间：2026-03-15
 
 这份文档不再只是记录“开放问题”，而是作为 `openrelay` 当前设计与实现任务的任务板。
 
@@ -11,6 +11,18 @@
 - Codex CLI 只能在满足关闭条件后自己勾选主复选框；详细规则见 `docs/design/task-board-protocol.md`。
 
 ## Ready
+
+### [ ] OR-TASK-012 Codex thread first 的运行时收敛
+- **优先级**：P1
+- **目标**：把 Feishu 壳层上的“会话身份”彻底收敛到 Codex native thread，移除本地 session 作为用户可见恢复入口的产品语义，并为顶层 shell 执行能力预留稳定主路径。
+- **当前关注**：`SessionRecord` 仍同时承担 scope 配置、thread 绑定和本地历史节点三种职责；配置命令仍通过派生新 session 表达状态变化；runtime 锁键和 Codex client key 仍依赖本地 `session_id`；未来若支持顶层 `ls` 这类 bash 执行，必须避免和普通文本主路径混淆。
+- **关闭条件**：
+  - [ ] 独立 design note 明确 `Codex thread 是唯一用户可见会话身份` 的目标模型，以及 scope state / thread cache / shell path 的职责边界。
+  - [ ] `/resume`、`/compact`、`/clear`、`/reset`、`/cwd`、`/model`、`/sandbox`、`/backend` 的目标语义收敛到一套自洽规则。
+  - [ ] 运行时状态模型收敛到“scope 运行态为主”，不再通过创建新本地 session 表达配置变化。
+  - [ ] 顶层 shell 执行路径采用显式语法，并在设计与实现上与 Codex 对话路径解耦。
+  - [ ] 文档说明迁移顺序、兼容边界和不建议保留的旧路径。
+- **建议产物**：`docs/design/codex-thread-first-runtime.md`；`src/openrelay/session/`、`src/openrelay/runtime/`、`src/openrelay/backends/codex.py` 的后续实现。
 
 ### [ ] OR-TASK-003 多机器人、多用户、多终端的支持方式
 - **优先级**：P3
