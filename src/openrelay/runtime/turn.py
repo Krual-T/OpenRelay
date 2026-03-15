@@ -223,6 +223,19 @@ class BackendTurnSession:
     async def _start_streaming_if_needed(self) -> None:
         if self.runtime.config.feishu.stream_mode != "card":
             return
+        if self.streaming is None:
+            self.streaming = self.runtime.streaming_session_factory(self.runtime.messenger)
+            route = self.runtime.streaming_route_for_message(self.message)
+            await self.streaming.start(
+                self.message.chat_id,
+                reply_to_message_id=route.reply_to_message_id,
+                root_id=route.root_id,
+            )
+            self.runtime.remember_outbound_aliases(
+                self.message,
+                self.runtime.build_session_key(self.message),
+                [self.streaming.message_alias_ids()],
+            )
         self.pending_streaming_states.append(copy.deepcopy(self.live_state))
         await self._update_streaming(self.pending_streaming_states.popleft())
         self.spinner_task = asyncio.create_task(self._spinner_loop())
@@ -260,8 +273,11 @@ class BackendTurnSession:
                     [self.streaming.message_alias_ids()],
                 )
             if not self.streaming.is_active():
+                self._stop_spinner_task()
                 return
             await self.streaming.update(snapshot)
+            if not self.streaming.is_active():
+                self._stop_spinner_task()
             self.last_live_text = live_text
         except Exception:
             has_started = self.streaming.has_started() if self.streaming is not None else False

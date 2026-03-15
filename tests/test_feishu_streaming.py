@@ -332,3 +332,61 @@ async def test_streaming_session_close_disables_streaming_before_final_card_upda
         ("settings", False),
         ("update", {"schema": "2.0", "config": {"streaming_mode": False}, "body": {"elements": []}}),
     ]
+
+
+@pytest.mark.asyncio
+async def test_streaming_session_freezes_before_platform_timeout(monkeypatch: pytest.MonkeyPatch) -> None:
+    session = FeishuStreamingSession(object())
+    session.state = {
+        "card_id": "c1",
+        "sequence": 1,
+        "current_content": "---\n第一段",
+        "card_signature": ("plain", ""),
+    }
+    session.started_at_ms = 1_000.0
+    session.card_streaming_window_seconds = 540.0
+    calls: list[tuple[str, object]] = []
+
+    async def fake_set_streaming_mode(enabled: bool) -> None:
+        calls.append(("settings", enabled))
+
+    async def fake_update_card_json(card_json: dict[str, object]) -> None:
+        calls.append(("update", card_json))
+
+    monkeypatch.setattr(streaming_card_module.time, "time", lambda: 541.0)
+    monkeypatch.setattr(session, "set_streaming_mode", fake_set_streaming_mode)
+    monkeypatch.setattr(session, "update_card_json", fake_update_card_json)
+
+    await session.update({"partial_text": "第二段"})
+
+    assert session.is_active() is False
+    assert calls[0] == ("settings", False)
+    assert calls[1][0] == "update"
+    assert "流式显示已自动暂停" in str(calls[1][1])
+
+
+@pytest.mark.asyncio
+async def test_streaming_session_close_updates_final_card_after_freeze(monkeypatch: pytest.MonkeyPatch) -> None:
+    session = FeishuStreamingSession(object())
+    session.state = {
+        "card_id": "c1",
+        "sequence": 1,
+        "current_content": DEFAULT_THINKING_TEXT,
+    }
+    session.streaming_mode_enabled = False
+    calls: list[tuple[str, object]] = []
+
+    async def fake_set_streaming_mode(enabled: bool) -> None:
+        calls.append(("settings", enabled))
+
+    async def fake_update_card_json(card_json: dict[str, object]) -> None:
+        calls.append(("update", card_json))
+
+    monkeypatch.setattr(session, "set_streaming_mode", fake_set_streaming_mode)
+    monkeypatch.setattr(session, "update_card_json", fake_update_card_json)
+
+    await session.close({"schema": "2.0", "config": {"streaming_mode": False}, "body": {"elements": []}})
+
+    assert calls == [
+        ("update", {"schema": "2.0", "config": {"streaming_mode": False}, "body": {"elements": []}}),
+    ]
