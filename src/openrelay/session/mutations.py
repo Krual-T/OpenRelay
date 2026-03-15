@@ -6,9 +6,7 @@ from pathlib import Path
 from openrelay.core import AppConfig, DirectoryShortcut, SessionRecord, get_release_workspace
 from openrelay.storage import StateStore
 
-from .shortcuts import SessionShortcutService
 from .ux import SessionUX
-from .workspace import SessionWorkspaceService
 
 
 @dataclass(slots=True)
@@ -16,15 +14,11 @@ class SessionMutationService:
     config: AppConfig
     store: StateStore
     session_ux: SessionUX
-    workspace: SessionWorkspaceService
-    shortcuts: SessionShortcutService
 
     def __init__(self, config: AppConfig, store: StateStore, session_ux: SessionUX) -> None:
         self.config = config
         self.store = store
         self.session_ux = session_ux
-        self.workspace = session_ux.workspace
-        self.shortcuts = session_ux.shortcuts
 
     def create_named_session(self, scope_key: str, current: SessionRecord, label: str) -> SessionRecord:
         return self.store.create_next_session(scope_key, current, label)
@@ -74,11 +68,5 @@ class SessionMutationService:
     def save_directory_shortcut(self, shortcut: DirectoryShortcut) -> DirectoryShortcut:
         return self.store.save_directory_shortcut(shortcut)
 
-    def list_directory_shortcuts(self, session: SessionRecord, limit: int = 100) -> list[dict[str, str]]:
-        return self.shortcuts.build_directory_shortcut_entries(session, limit=limit)
-
     def remove_directory_shortcut(self, name: str) -> bool:
         return self.store.remove_directory_shortcut(name)
-
-    def resolve_directory_shortcut(self, name: str, session: SessionRecord) -> Path | None:
-        return self.shortcuts.resolve_directory_shortcut(name, session)

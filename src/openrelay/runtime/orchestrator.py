@@ -90,6 +90,7 @@ class RuntimeOrchestrator:
             self.session_mutations,
             self.session_ux,
             self.session_workspace,
+            self.session_shortcuts,
             self.help_renderer,
             self.release_command_service,
             self.backends,

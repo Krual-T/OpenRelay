@@ -11,7 +11,7 @@ from openrelay.feishu import SentMessageRef, parse_card_action_event
 from openrelay.runtime import MERGED_FOLLOW_UP_INTRO
 from openrelay.core import BackendReply, IncomingMessage, SessionRecord
 from openrelay.runtime import RuntimeOrchestrator, DEFAULT_IMAGE_PROMPT, get_systemd_service_unit, is_systemd_service_process
-from openrelay.session import SessionUX
+from openrelay.session import SessionUX, SessionWorkspaceService
 from openrelay.storage import StateStore
 
 
@@ -1815,9 +1815,9 @@ def test_session_ux_resolve_cwd_expands_home_path(tmp_path: Path, monkeypatch: p
     target.mkdir(parents=True, exist_ok=True)
     store = StateStore(config)
     session = store.load_session("p2p:oc_1")
-    ux = SessionUX(config, store)
+    workspace = SessionWorkspaceService(config)
 
-    resolved = ux.resolve_cwd(session.cwd, "~/main/repo", session)
+    resolved = workspace.resolve_cwd(session.cwd, "~/main/repo", session)
 
     assert resolved == target.resolve()
     store.close()
@@ -1830,10 +1830,10 @@ def test_session_ux_resolve_cwd_rejects_missing_path(tmp_path: Path) -> None:
     config.develop_workspace_dir.mkdir(parents=True, exist_ok=True)
     store = StateStore(config)
     session = store.load_session("p2p:oc_1")
-    ux = SessionUX(config, store)
+    workspace = SessionWorkspaceService(config)
 
     with pytest.raises(ValueError, match=r"path does not exist: missing-dir"):
-        ux.resolve_cwd(session.cwd, "missing-dir", session)
+        workspace.resolve_cwd(session.cwd, "missing-dir", session)
     store.close()
 
 
@@ -1846,10 +1846,10 @@ def test_session_ux_resolve_cwd_rejects_file_path(tmp_path: Path) -> None:
     file_path.write_text("demo", encoding="utf-8")
     store = StateStore(config)
     session = store.load_session("p2p:oc_1")
-    ux = SessionUX(config, store)
+    workspace = SessionWorkspaceService(config)
 
     with pytest.raises(ValueError, match=r"not a directory: README\.md"):
-        ux.resolve_cwd(session.cwd, "README.md", session)
+        workspace.resolve_cwd(session.cwd, "README.md", session)
     store.close()
 
 

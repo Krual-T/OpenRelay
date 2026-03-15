@@ -1,13 +1,11 @@
 from __future__ import annotations
 
-from pathlib import Path
 from typing import Any
 
 from openrelay.core import AppConfig, SessionRecord, format_release_channel, infer_release_channel
 from openrelay.storage import StateStore
 
 from .browser import SESSION_SORT_UPDATED, SessionListEntry, SessionListPage
-from .shortcuts import SessionShortcutService
 from .workspace import SessionWorkspaceService
 
 
@@ -16,7 +14,6 @@ class SessionUX:
         self.config = config
         self.store = store
         self.workspace = SessionWorkspaceService(config)
-        self.shortcuts = SessionShortcutService(config, store, self.workspace)
 
     def shorten(self, text: str, length: int) -> str:
         value = " ".join((text or "").split())
@@ -46,18 +43,6 @@ class SessionUX:
     def format_cwd(self, cwd: str, session: SessionRecord | None = None, release_channel: str | None = None) -> str:
         return self.workspace.format_cwd(cwd, session, release_channel)
 
-    def resolve_cwd(self, current_cwd: str, relative_path: str, session: SessionRecord):
-        return self.workspace.resolve_cwd(current_cwd, relative_path, session)
-
-    def build_directory_shortcut_entries(self, session: SessionRecord, limit: int = 4) -> list[dict[str, str]]:
-        return self.shortcuts.build_directory_shortcut_entries(session, limit=limit)
-
-    def list_directory_shortcuts(self):
-        return self.shortcuts.list_directory_shortcuts()
-
-    def resolve_directory_shortcut(self, name: str, session: SessionRecord) -> Path | None:
-        return self.shortcuts.resolve_directory_shortcut(name, session)
-
     def build_session_title(self, label: str, session_id: str, first_user_message: str = "") -> str:
         return self.shorten(label or first_user_message or session_id or "未命名会话", 40) or "未命名会话"
 
@@ -77,7 +62,7 @@ class SessionUX:
         if entry.updated_at:
             parts.append(entry.updated_at[:16].replace("T", " "))
         if entry.cwd:
-            parts.append(f"目录 {self.format_cwd(entry.cwd, None, entry.release_channel or 'main')}")
+            parts.append(f"目录 {self.workspace.format_cwd(entry.cwd, None, entry.release_channel or 'main')}")
         if entry.message_count:
             parts.append(f"{entry.message_count} 条消息")
         if entry.native_session_id and entry.native_session_id != entry.session_id:
@@ -136,7 +121,7 @@ class SessionUX:
         lines = [
             f"已恢复会话：{self.build_session_title(session.label, session.session_id)}",
             f"session_id={session.session_id}",
-            f"cwd={self.format_cwd(session.cwd, session)}",
+            f"cwd={self.workspace.format_cwd(session.cwd, session)}",
         ]
         if entry and entry.native_session_id and entry.native_session_id != session.session_id:
             lines.append(f"backend_thread={entry.native_session_id}")

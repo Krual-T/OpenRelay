@@ -123,6 +123,7 @@ def build_router(tmp_path: Path) -> tuple[RuntimeCommandRouter, StateStore, Fake
         session_mutations,
         session_ux,
         workspace,
+        SessionShortcutService(config, store, workspace),
         HelpRenderer(config, store, session_ux, workspace, SessionShortcutService(config, store, workspace)),
         ReleaseCommandService(config, store, session_ux, session_mutations),
         {"codex": object(), "claude": object()},
