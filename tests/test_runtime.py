@@ -996,7 +996,7 @@ async def test_runtime_card_stream_mode_uses_streaming_session(tmp_path: Path) -
     assert sessions
     assert sessions[0].started is True
     assert sessions[0].start_calls == [
-        {"receive_id": "oc_1", "reply_to_message_id": "", "root_id": ""}
+        {"receive_id": "oc_1", "reply_to_message_id": "", "root_id": "om_stream"}
     ]
     assert sessions[0].closed is True
     assert sessions[0].final_card is not None
