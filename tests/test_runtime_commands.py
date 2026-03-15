@@ -270,7 +270,7 @@ async def test_runtime_command_router_switches_release_via_service(tmp_path: Pat
 
     switched = store.find_session(session.base_key)
     assert switched is not None
-    assert switched.session_id != session.session_id
+    assert switched.session_id == session.session_id
     assert switched.release_channel == "develop"
     assert hooks.cancel_calls == [(session.session_id, "/develop")]
     assert "已切到 develop 修复版本。" in str(hooks.replies[-1]["text"])
@@ -284,8 +284,8 @@ async def test_runtime_command_router_parses_resume_list_page_and_sort(tmp_path:
 
     await router.handle(make_message(f"/resume list --page 2 --sort {SESSION_SORT_ACTIVE}", suffix="resume_list"), session.base_key, session)
 
-    assert hooks.session_list_calls == []
-    assert "Codex 会话列表（第 2 页）：" in str(hooks.replies[-1]["text"])
+    assert hooks.session_list_calls == [(session.base_key, 2, SESSION_SORT_ACTIVE)]
+    assert hooks.replies == []
     store.close()
 
 
@@ -296,7 +296,8 @@ async def test_runtime_command_router_requires_explicit_resume_target_or_list(tm
 
     await router.handle(make_message("/resume", suffix="resume_empty"), session.base_key, session)
 
-    assert hooks.replies[-1]["text"] == "使用 /resume [list|latest|<序号>|<thread_id>|<local_session_id>] [--page N] [--sort updated-desc|active-first]。"
+    assert hooks.session_list_calls == [(session.base_key, 1, "updated-desc")]
+    assert hooks.replies == []
     store.close()
 
 
@@ -308,8 +309,8 @@ async def test_runtime_command_router_parses_equals_style_paging_args(tmp_path: 
     await router.handle(make_message("/resume list --page=3 --sort=updated-desc", suffix="resume_equals"), session.base_key, session)
     await router.handle(make_message("/panel --page=2 --sort=active-first", suffix="panel_equals"), session.base_key, session)
 
-    assert hooks.session_list_calls == []
-    assert "Codex 会话列表（第 3 页）：" in str(hooks.replies[0]["text"])
+    assert hooks.session_list_calls == [(session.base_key, 3, "updated-desc")]
+    assert hooks.replies == []
     assert hooks.panel_calls == [("om_panel_equals", session.base_key, "sessions", 2, "active-first")]
     store.close()
 
@@ -336,10 +337,10 @@ async def test_runtime_command_router_resume_latest_binds_native_thread_and_retu
 
     rebound = store.find_session(session.base_key)
     assert rebound is not None
-    assert rebound.session_id != session.session_id
+    assert rebound.session_id == session.session_id
     assert rebound.native_session_id == "thread_latest"
     assert "thread_id=thread_latest" in str(hooks.replies[-1]["text"])
-    assert "最近历史：" in str(hooks.replies[-1]["text"])
+    assert "已在当前 thread 中 connected；接下来直接继续发消息即可。" in str(hooks.replies[-1]["text"])
     store.close()
 
 
@@ -354,7 +355,7 @@ async def test_runtime_command_router_resume_local_session_id_maps_to_native_thr
 
     rebound = store.find_session(original.base_key)
     assert rebound is not None
-    assert rebound.session_id != original.session_id
+    assert rebound.session_id == original.session_id
     assert rebound.native_session_id == "thread_older"
     assert "thread_id=thread_older" in str(hooks.replies[-1]["text"])
     store.close()

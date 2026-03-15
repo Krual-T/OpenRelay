@@ -387,6 +387,17 @@ class StateStore:
         self.connection.commit()
         return self.get_session(session.session_id)
 
+    def save_scope_session(self, scope_key: str, session: SessionRecord) -> SessionRecord:
+        requested_key = scope_key.strip()
+        saved = self.save_session(session)
+        if requested_key and requested_key != saved.base_key:
+            self.bind_scope(requested_key, saved.session_id)
+        return saved
+
+    def clear_session_messages(self, session_id: str) -> None:
+        self.connection.execute("DELETE FROM messages WHERE session_id = ?", (session_id,))
+        self.connection.commit()
+
     def append_message(self, session_id: str, role: str, content: str) -> None:
         self.connection.execute(
             "INSERT INTO messages(session_id, role, content, created_at) VALUES(?, ?, ?, ?)",

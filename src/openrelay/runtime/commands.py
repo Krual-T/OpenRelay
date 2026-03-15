@@ -186,8 +186,8 @@ class RuntimeCommandRouter:
             return True
 
         if name == "/clear":
-            next_session = self.session_mutations.clear_context(session_key, session)
-            await self.hooks.reply(message, f"已清空当前上下文，新的会话是 {next_session.session_id}。", command_reply=True)
+            self.session_mutations.clear_context(session_key, session)
+            await self.hooks.reply(message, "已清空当前上下文；当前 scope 保留原目录和配置。", command_reply=True)
             return True
 
         if name == "/model":
@@ -199,7 +199,7 @@ class RuntimeCommandRouter:
                 session,
                 "" if arg_text.lower() in {"default", "reset", "clear"} else arg_text,
             )
-            await self.hooks.reply(message, f"model 已切换到 {self.session_presentation.effective_model(next_session)}，新的原生会话会在首条真实消息时创建。", command_reply=True)
+            await self.hooks.reply(message, f"model 已切换到 {self.session_presentation.effective_model(next_session)}；当前 scope 会从下一条真实消息开始使用新 thread。", command_reply=True)
             return True
 
         if name in {"/sandbox", "/mode"}:
@@ -214,7 +214,7 @@ class RuntimeCommandRouter:
                 await self.hooks.reply(message, "danger-full-access 只允许管理员切换。", command_reply=True)
                 return True
             next_session = self.session_mutations.switch_sandbox(session_key, session, mode)
-            await self.hooks.reply(message, f"sandbox 已切换到 {next_session.safety_mode}，新的原生会话会在首条真实消息时创建。", command_reply=True)
+            await self.hooks.reply(message, f"sandbox 已切换到 {next_session.safety_mode}；当前 scope 会从下一条真实消息开始使用新 thread。", command_reply=True)
             return True
 
         if name == "/resume":
@@ -388,7 +388,7 @@ class RuntimeCommandRouter:
     def _format_native_resume_success(self, session: SessionRecord, thread: NativeThreadDetails) -> str:
         title = thread.name or thread.preview or thread.thread_id
         lines = [
-            f"已绑定 Codex 会话：{title}",
+            f"已连接 Codex 会话：{title}",
             f"thread_id={thread.thread_id}",
             f"cwd={self._format_full_cwd(thread.cwd or session.cwd)}",
         ]
@@ -399,7 +399,7 @@ class RuntimeCommandRouter:
             lines.append(f"status={thread.status}")
         if thread.preview:
             lines.extend(["", f"预览：{self.session_presentation.shorten(thread.preview, 120)}"])
-        lines.extend(["", "接下来请直接在这个 thread 里继续发送消息。"])
+        lines.extend(["", "已在当前 thread 中 connected；接下来直接继续发消息即可。"])
         return "\n".join(lines)
 
     def _format_user_facing_time(self, value: str) -> str:
@@ -534,7 +534,6 @@ class RuntimeCommandRouter:
                     None,
                     [
                         "已强制切到 main 稳定版本。" if target_channel == "main" else "已切到 develop 修复版本。",
-                        f"session_id={result.session.session_id}",
                         f"channel={format_release_channel(target_channel)}",
                         f"cwd={self.session_presentation.format_cwd(result.session.cwd, result.session)}",
                         f"sandbox={result.session.safety_mode}",
@@ -554,7 +553,7 @@ class RuntimeCommandRouter:
                 "\n".join([
                     f"cwd={self.workspace.format_cwd(session.cwd, session)}",
                     "切换目录：/cwd <path> 或 /cd <path>",
-                    "切目录时会创建一个新的空会话；旧会话历史仍可通过 /resume 找回。",
+                    "切目录会直接修改当前 scope；下一条真实消息会在新目录绑定新的 backend thread。",
                 ]),
                 command_reply=True,
                 command_name=command_name,
@@ -571,7 +570,7 @@ class RuntimeCommandRouter:
             "\n".join([
                 f"cwd 已切换到 {self.workspace.format_cwd(next_session.cwd, next_session)}。",
                 "现在直接发消息，就会在这个目录进入 Codex。",
-                "已创建新的空会话；原会话历史还在，想回来可以 /resume list。",
+                "当前 scope 已原地更新；如需切回旧 thread，请用 /resume list。",
             ]),
             command_reply=True,
             command_name=command_name,
@@ -588,7 +587,7 @@ class RuntimeCommandRouter:
             await self.hooks.reply(message, f"backend 仅支持：{', '.join(available)}", command_reply=True)
             return True
         next_session = self.session_mutations.switch_backend(session_key, session, backend)
-        await self.hooks.reply(message, f"backend 已切换到 {backend}，新的原生会话将在下一条真实消息时创建。", command_reply=True)
+        await self.hooks.reply(message, f"backend 已切换到 {backend}；当前 scope 会从下一条真实消息开始使用新 thread。", command_reply=True)
         return True
 
     async def _handle_shortcut(self, message: IncomingMessage, session_key: str, session: SessionRecord, arg_text: str) -> bool:

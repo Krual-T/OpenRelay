@@ -54,6 +54,7 @@ FEISHU_VERIFY_TOKEN=
 FEISHU_ENCRYPT_KEY=
 FEISHU_BOT_OPEN_ID=ou_xxx
 FEISHU_STREAM_MODE=card
+FEISHU_CARD_STREAMING_WINDOW_SECONDS=540
 FEISHU_GROUP_REPLY_ALL=false
 FEISHU_GROUP_SESSION_SCOPE=sender
 FEISHU_ALLOWED_OPEN_IDS=
@@ -74,6 +75,7 @@ DIRECTORY_SHORTCUTS=[{"name":"docs","path":"docs","channels":"main"},{"name":"ap
 
 - `FEISHU_VERIFY_TOKEN` 现在是可选的；如果飞书后台配置了 token，建议填上
 - `FEISHU_ENCRYPT_KEY` 用于飞书事件加密；只有你在开放平台开启了加密推送时才需要配置
+- `FEISHU_CARD_STREAMING_WINDOW_SECONDS` 默认 `540` 秒；`card` 模式会在到达这个窗口前主动结束 CardKit 流式更新，避免平台约 10 分钟的 streaming 超时把界面卡死
 - `WORKSPACE_DIR` 是默认工作区；`MAIN_WORKSPACE_DIR` 和 `DEVELOP_WORKSPACE_DIR` 对应 `/main` 与 `/develop`
 - `MODEL_BACKEND` 当前内置只支持 `codex-cli`，但 runtime 已按 CLI 适配器抽象设计
 - `CODEX_SQLITE_HOME` 默认会落到 `DATA_DIR/codex-sqlite`，把 `codex app-server` 的 SQLite state / log 与你交互式 `~/.codex` 隔离，避免共享同一份不断增长的 state 库
@@ -131,16 +133,16 @@ http://your-host:3000/feishu/webhook
 - `/ping` - 连通性检查
 - `/stop` - 停止当前回复
 - `/restart` - 重启当前服务进程
-- `/main [reason]`、`/stable [reason]` - 切到 main 稳定工作区
-- `/develop [reason]` - 切到 develop 修复工作区
+- `/main [reason]`、`/stable [reason]` - 原地切到 main 稳定工作区，并解绑当前 thread
+- `/develop [reason]` - 原地切到 develop 修复工作区，并解绑当前 thread
 - `/resume [list|latest|thread_id|local_session_id]` - 查看 Codex thread 列表并绑定到当前作用域；回复里直接返回原生 thread 历史
 - `/compact [thread_id|local_session_id]` - 对当前或指定 Codex thread 发起 compact
-- `/clear` - 清空上下文但保留当前目录和配置
+- `/clear` - 清空当前 scope 的 thread 绑定和本地上下文，但保留目录与配置
 - `/status` - 查看当前会话状态
-- `/cwd [path]`、`/cd [path]` - 查看或切换当前目录
+- `/cwd [path]`、`/cd [path]` - 查看或原地切换当前目录；下一条真实消息会在新目录绑定新 thread
 - `/shortcut list|add|remove|cd` - 在飞书里维护常用目录快捷入口，并复用 `/cwd` 快速切换
-- `/model [name|default]` - 查看或切换模型覆盖值
-- `/sandbox [read-only|workspace-write|danger-full-access]` - 查看或切换执行模式
+- `/model [name|default]` - 查看或原地切换模型覆盖值；下一条真实消息开始生效
+- `/sandbox [read-only|workspace-write|danger-full-access]` - 查看或原地切换执行模式；下一条真实消息开始生效
 - `/tools`、`/help` - 查看当前会话阶段、优先操作建议、常用流程和命令速查
 
 推荐路径是：先 `/panel`，再点进 `sessions / directories / commands / status` 对应结果面；其中会话结果负责“找回哪条会话”，目录结果负责“进哪个目录”，命令结果负责“高频动作直达”，状态结果负责“先判断现场”。这些按钮导航、翻页和返回总览会优先停留在同一张卡内完成。
