@@ -100,6 +100,31 @@ def _collect_text_fragments(value: Any) -> list[str]:
     return parts
 
 
+def _normalize_event_item_type(item_type: object) -> str:
+    normalized = str(item_type or "").strip()
+    if not normalized:
+        return ""
+    return normalized[:1].lower() + normalized[1:]
+
+
+def _normalize_event_item(item: dict[str, Any]) -> dict[str, Any]:
+    normalized = dict(item)
+    normalized["type"] = _normalize_event_item_type(item.get("type"))
+    if "summary_text" in normalized and "summary" not in normalized:
+        normalized["summary"] = normalized.get("summary_text")
+    if "raw_content" in normalized and "content" not in normalized:
+        normalized["content"] = normalized.get("raw_content")
+    if "item_id" in normalized and "id" not in normalized:
+        normalized["id"] = normalized.get("item_id")
+    if "output_preview" in normalized and "outputPreview" not in normalized:
+        normalized["outputPreview"] = normalized.get("output_preview")
+    if "aggregated_output" in normalized and "aggregatedOutput" not in normalized:
+        normalized["aggregatedOutput"] = normalized.get("aggregated_output")
+    if "exit_code" in normalized and "exitCode" not in normalized:
+        normalized["exitCode"] = normalized.get("exit_code")
+    return normalized
+
+
 def _extract_input_text(items: Any) -> str:
     if not isinstance(items, list):
         return ""
@@ -240,6 +265,36 @@ class CodexTurn:
             return True
         return not self.turn_id or self.turn_id == turn_id
 
+    def _message_identity(self, params: dict[str, Any]) -> tuple[str, str]:
+        msg = params.get("msg") if isinstance(params.get("msg"), dict) else {}
+        thread = params.get("thread") if isinstance(params.get("thread"), dict) else {}
+        turn = params.get("turn") if isinstance(params.get("turn"), dict) else {}
+        thread_id = str(
+            params.get("threadId")
+            or thread.get("id")
+            or params.get("conversationId")
+            or msg.get("thread_id")
+            or msg.get("threadId")
+            or ""
+        )
+        turn_id = str(
+            params.get("turnId")
+            or turn.get("id")
+            or msg.get("turn_id")
+            or msg.get("turnId")
+            or params.get("id")
+            or ""
+        )
+        return thread_id, turn_id
+
+    def _extract_event_item(self, params: dict[str, Any]) -> dict[str, Any]:
+        item = params.get("item") if isinstance(params.get("item"), dict) else {}
+        if item:
+            return item
+        msg = params.get("msg") if isinstance(params.get("msg"), dict) else {}
+        event_item = msg.get("item") if isinstance(msg.get("item"), dict) else {}
+        return _normalize_event_item(event_item)
+
     async def interrupt(self, client: "CodexAppServerClient", reason: str = "interrupted by user") -> None:
         self.interrupted = True
         self.interrupt_message = reason
@@ -300,34 +355,43 @@ class CodexTurn:
 
     async def _handle_turn_started(self, client: "CodexAppServerClient", params: dict[str, Any]) -> None:
         turn = params.get("turn") if isinstance(params.get("turn"), dict) else {}
+        if not turn:
+            msg = params.get("msg") if isinstance(params.get("msg"), dict) else {}
+            turn = msg.get("turn") if isinstance(msg.get("turn"), dict) else {}
         await self.set_turn_id(client, str(turn.get("id") or self.turn_id))
 
     async def _handle_agent_message_delta(self, params: dict[str, Any]) -> None:
-        item_id = str(params.get("itemId") or "")
-        text = f"{self.agent_text_by_id.get(item_id, '')}{params.get('delta') or ''}"
+        msg = params.get("msg") if isinstance(params.get("msg"), dict) else {}
+        item_id = str(params.get("itemId") or msg.get("item_id") or msg.get("itemId") or "")
+        delta = str(params.get("delta") or msg.get("delta") or "")
+        text = f"{self.agent_text_by_id.get(item_id, '')}{delta}"
         self.agent_text_by_id[item_id] = text
         await self._emit_partial_text(text)
 
     async def _handle_reasoning_text_delta(self, params: dict[str, Any]) -> None:
-        item_id = str(params.get("itemId") or "")
-        content_index = int(params.get("contentIndex") or 0)
+        msg = params.get("msg") if isinstance(params.get("msg"), dict) else {}
+        item_id = str(params.get("itemId") or msg.get("item_id") or msg.get("itemId") or "")
+        content_index = int(params.get("contentIndex") or msg.get("content_index") or msg.get("contentIndex") or 0)
         reasoning = self._reasoning_state(item_id)
-        reasoning.append_content(content_index, str(params.get("delta") or ""))
+        reasoning.append_content(content_index, str(params.get("delta") or msg.get("delta") or ""))
         await self._emit_progress({"type": "reasoning.delta", "text": self._combined_reasoning_text()})
 
     async def _handle_reasoning_summary_delta(self, params: dict[str, Any]) -> None:
-        item_id = str(params.get("itemId") or "")
-        summary_index = int(params.get("summaryIndex") or 0)
+        msg = params.get("msg") if isinstance(params.get("msg"), dict) else {}
+        item_id = str(params.get("itemId") or msg.get("item_id") or msg.get("itemId") or "")
+        summary_index = int(params.get("summaryIndex") or msg.get("summary_index") or msg.get("summaryIndex") or 0)
         reasoning = self._reasoning_state(item_id)
-        reasoning.append_summary(summary_index, str(params.get("delta") or ""))
+        reasoning.append_summary(summary_index, str(params.get("delta") or msg.get("delta") or ""))
         await self._emit_progress({"type": "reasoning.delta", "text": self._combined_reasoning_text()})
 
     async def _handle_command_output_delta(self, params: dict[str, Any]) -> None:
-        item_id = str(params.get("itemId") or "")
-        self.command_output_by_id[item_id] = f"{self.command_output_by_id.get(item_id, '')}{params.get('delta') or ''}"
+        msg = params.get("msg") if isinstance(params.get("msg"), dict) else {}
+        item_id = str(params.get("itemId") or msg.get("item_id") or msg.get("itemId") or "")
+        delta = str(params.get("delta") or msg.get("delta") or "")
+        self.command_output_by_id[item_id] = f"{self.command_output_by_id.get(item_id, '')}{delta}"
 
     async def _handle_item_started(self, params: dict[str, Any]) -> None:
-        item = params.get("item") if isinstance(params.get("item"), dict) else {}
+        item = self._extract_event_item(params)
         item_type = item.get("type")
         if item_type == "reasoning":
             self._reasoning_state(str(item.get("id") or ""))
@@ -354,7 +418,7 @@ class CodexTurn:
             await self._emit_progress({"type": "collab.started", "collab": self._extract_collab_tool_call(item)})
 
     async def _handle_item_completed(self, params: dict[str, Any]) -> None:
-        item = params.get("item") if isinstance(params.get("item"), dict) else {}
+        item = self._extract_event_item(params)
         item_type = item.get("type")
         if item_type == "agentMessage":
             item_id = str(item.get("id") or "")
@@ -411,6 +475,22 @@ class CodexTurn:
 
     async def _handle_token_usage_updated(self, params: dict[str, Any]) -> None:
         token_usage = params.get("tokenUsage") if isinstance(params.get("tokenUsage"), dict) else {}
+        if not token_usage:
+            msg = params.get("msg") if isinstance(params.get("msg"), dict) else {}
+            info = msg.get("info") if isinstance(msg.get("info"), dict) else {}
+            usage = info.get("last_token_usage") if isinstance(info.get("last_token_usage"), dict) else {}
+            if not usage:
+                usage = info.get("total_token_usage") if isinstance(info.get("total_token_usage"), dict) else {}
+            if usage:
+                self.usage = {
+                    "input_tokens": usage.get("input_tokens"),
+                    "cached_input_tokens": usage.get("cached_input_tokens"),
+                    "output_tokens": usage.get("output_tokens"),
+                    "reasoning_output_tokens": usage.get("reasoning_output_tokens"),
+                    "total_tokens": usage.get("total_tokens"),
+                    "model_context_window": info.get("model_context_window"),
+                }
+                return
         last = (
             token_usage.get("last")
             if isinstance(token_usage.get("last"), dict)
@@ -437,6 +517,15 @@ class CodexTurn:
 
     async def _handle_turn_completed(self, params: dict[str, Any]) -> None:
         turn = params.get("turn") if isinstance(params.get("turn"), dict) else {}
+        if not turn:
+            msg = params.get("msg") if isinstance(params.get("msg"), dict) else {}
+            turn = {
+                "status": msg.get("status") or "completed",
+                "error": msg.get("error"),
+            }
+            last_agent_message = str(msg.get("last_agent_message") or msg.get("lastAgentMessage") or "").strip()
+            if last_agent_message and not self.final_text:
+                self.final_text = last_agent_message
         status = str(turn.get("status") or "")
         self.done = True
         await self._emit_progress({"type": "turn.completed", "usage": self.usage})
@@ -460,27 +549,36 @@ class CodexTurn:
     async def handle_notification(self, client: "CodexAppServerClient", method: str, params: dict[str, Any]) -> None:
         if self.done:
             return
-        thread = params.get("thread") if isinstance(params.get("thread"), dict) else {}
-        turn = params.get("turn") if isinstance(params.get("turn"), dict) else {}
-        thread_id = str(params.get("threadId") or thread.get("id") or "")
-        turn_id = str(params.get("turnId") or turn.get("id") or "")
+        thread_id, turn_id = self._message_identity(params)
         if not self.matches(thread_id, turn_id):
             return
 
         if method == "turn/started":
             await self._handle_turn_started(client, params)
             return
+        if method == "thread/started":
+            return
         if method == "item/agentMessage/delta":
+            await self._handle_agent_message_delta(params)
+            return
+        if method == "codex/event/agent_message_content_delta":
             await self._handle_agent_message_delta(params)
             return
         if method == "item/reasoning/textDelta":
             await self._handle_reasoning_text_delta(params)
             return
+        if method == "codex/event/reasoning_content_delta":
+            await self._handle_reasoning_text_delta(params)
+            return
         if method == "item/reasoning/summaryTextDelta":
             await self._handle_reasoning_summary_delta(params)
             return
+        if method == "codex/event/reasoning_summary_text_delta":
+            await self._handle_reasoning_summary_delta(params)
+            return
         if method == "item/reasoning/summaryPartAdded":
-            self._reasoning_state(str(params.get("itemId") or ""))
+            msg = params.get("msg") if isinstance(params.get("msg"), dict) else {}
+            self._reasoning_state(str(params.get("itemId") or msg.get("item_id") or ""))
             return
         if method == "item/plan/delta":
             item_id = str(params.get("itemId") or "")
@@ -489,6 +587,9 @@ class CodexTurn:
             await self._emit_progress({"type": "plan.delta", "text": text})
             return
         if method == "item/commandExecution/outputDelta":
+            await self._handle_command_output_delta(params)
+            return
+        if method == "codex/event/command_output_delta":
             await self._handle_command_output_delta(params)
             return
         if method == "item/commandExecution/terminalInteraction":
@@ -504,8 +605,10 @@ class CodexTurn:
             )
             return
         if method == "item/fileChange/outputDelta":
-            item_id = str(params.get("itemId") or "")
-            self.file_change_output_by_id[item_id] = f"{self.file_change_output_by_id.get(item_id, '')}{params.get('delta') or ''}"
+            msg = params.get("msg") if isinstance(params.get("msg"), dict) else {}
+            item_id = str(params.get("itemId") or msg.get("item_id") or "")
+            delta = str(params.get("delta") or msg.get("delta") or "")
+            self.file_change_output_by_id[item_id] = f"{self.file_change_output_by_id.get(item_id, '')}{delta}"
             return
         if method == "turn/plan/updated":
             await self._emit_progress(
@@ -539,16 +642,28 @@ class CodexTurn:
         if method == "item/started":
             await self._handle_item_started(params)
             return
+        if method == "codex/event/item_started":
+            await self._handle_item_started(params)
+            return
         if method == "item/completed":
             await self._handle_item_completed(params)
             return
+        if method == "codex/event/item_completed":
+            await self._handle_item_completed(params)
+            return
         if method == "thread/tokenUsage/updated":
+            await self._handle_token_usage_updated(params)
+            return
+        if method == "codex/event/token_count":
             await self._handle_token_usage_updated(params)
             return
         if method == "error":
             await self._handle_error(params)
             return
         if method == "turn/completed":
+            await self._handle_turn_completed(params)
+            return
+        if method == "codex/event/task_complete":
             await self._handle_turn_completed(params)
 
     async def handle_server_request(
