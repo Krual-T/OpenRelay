@@ -196,6 +196,61 @@ def test_apply_live_progress_accumulates_codex_style_history_items() -> None:
     assert items[2]["command"] == "rg -n runtime_live src/openrelay"
 
 
+def test_apply_live_progress_interleaves_summary_with_execution_timeline() -> None:
+    state = {
+        "history": [],
+        "history_items": [],
+        "commands": [],
+        "heading": "",
+        "status": "",
+        "current_command": "",
+        "last_command": None,
+        "last_reasoning": "",
+        "reasoning_text": "",
+        "reasoning_started_at": "",
+        "reasoning_elapsed_ms": 0,
+        "partial_text": "",
+        "committed_partial_text": "",
+        "spinner_frame": 0,
+        "started_at": "2026-03-11T00:00:00+00:00",
+    }
+
+    apply_live_progress(
+        state,
+        {
+            "type": "command.completed",
+            "command": {
+                "id": "c1",
+                "command": "rg -n runtime_live src/openrelay",
+                "exitCode": 0,
+                "outputPreview": "src/openrelay/runtime_live.py:1",
+            },
+        },
+    )
+    apply_live_progress(state, {"type": "assistant.partial", "text": "第一段总结"})
+    apply_live_progress(
+        state,
+        {
+            "type": "command.completed",
+            "command": {
+                "id": "c2",
+                "command": "sed -n '1,10p' src/openrelay/runtime/live.py",
+                "exitCode": 0,
+                "outputPreview": "from __future__ import annotations",
+            },
+        },
+    )
+    apply_live_progress(state, {"type": "assistant.partial", "text": "第一段总结\n第二段总结"})
+
+    items = state["history_items"]
+    assert items[0]["type"] == "command"
+    assert items[1]["type"] == "summary"
+    assert items[1]["text"] == "第一段总结"
+    assert items[2]["type"] == "command"
+    assert items[3]["type"] == "summary"
+    assert items[3]["text"] == "第二段总结"
+
+
 def test_apply_live_progress_tracks_web_search_items() -> None:
     state = {
         "history": [],
