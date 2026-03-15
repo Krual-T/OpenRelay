@@ -191,9 +191,17 @@ class FakeStreamingSession:
         self.updates = []
         self.final_card = None
         self._message_id = "om_stream_card"
+        self.start_calls = []
 
     async def start(self, receive_id: str, *, reply_to_message_id: str = "", root_id: str = "") -> None:
         self.started = True
+        self.start_calls.append(
+            {
+                "receive_id": receive_id,
+                "reply_to_message_id": reply_to_message_id,
+                "root_id": root_id,
+            }
+        )
 
     async def update(self, live_state: dict) -> None:
         self.updates.append(dict(live_state))
@@ -987,6 +995,9 @@ async def test_runtime_card_stream_mode_uses_streaming_session(tmp_path: Path) -
 
     assert sessions
     assert sessions[0].started is True
+    assert sessions[0].start_calls == [
+        {"receive_id": "oc_1", "reply_to_message_id": "", "root_id": ""}
+    ]
     assert sessions[0].closed is True
     assert sessions[0].final_card is not None
     assert sessions[0].final_card["schema"] == "2.0"
@@ -995,6 +1006,53 @@ async def test_runtime_card_stream_mode_uses_streaming_session(tmp_path: Path) -
     assert sessions[0].final_card["body"]["elements"][-1]["content"] == "echo: hello stream"
     assert typing.added == ["om_stream"]
     assert typing.removed
+    await runtime.shutdown()
+
+
+@pytest.mark.asyncio
+async def test_runtime_card_stream_mode_keeps_existing_thread_route_for_follow_up(tmp_path: Path) -> None:
+    config = make_config(tmp_path)
+    config.feishu.stream_mode = "card"
+    config.workspace_root.mkdir(parents=True, exist_ok=True)
+    config.main_workspace_dir.mkdir(parents=True, exist_ok=True)
+    config.develop_workspace_dir.mkdir(parents=True, exist_ok=True)
+    store = StateStore(config)
+    messenger = FakeMessenger()
+    typing = FakeTypingManager()
+    sessions: list[FakeStreamingSession] = []
+
+    def factory(current_messenger):
+        session = FakeStreamingSession(current_messenger)
+        sessions.append(session)
+        return session
+
+    runtime = RuntimeOrchestrator(
+        config,
+        store,
+        messenger,
+        backends={"codex": FakeBackend()},
+        streaming_session_factory=factory,
+        typing_manager=typing,
+    )
+
+    await runtime.dispatch_message(
+        IncomingMessage(
+            event_id="evt_stream_follow_up",
+            message_id="om_stream_follow_up",
+            chat_id="oc_1",
+            chat_type="p2p",
+            sender_open_id="ou_user",
+            root_id="om_root_existing",
+            thread_id="omt_existing",
+            text="continue thread",
+            actionable=True,
+        )
+    )
+
+    assert sessions
+    assert sessions[0].start_calls == [
+        {"receive_id": "oc_1", "reply_to_message_id": "om_stream_follow_up", "root_id": "om_root_existing"}
+    ]
     await runtime.shutdown()
 
 

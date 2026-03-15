@@ -24,6 +24,11 @@ class RuntimeReplyPolicy:
             root_id=self.root_id_for_message(message),
         )
 
+    def streaming_route(self, message: IncomingMessage) -> ReplyRoute:
+        if self.is_top_level_session_start(message):
+            return ReplyRoute(reply_to_message_id="", root_id="", force_new_message=True)
+        return self.default_route(message)
+
     def command_route(self, message: IncomingMessage, command_name: str) -> ReplyRoute:
         return ReplyRoute(
             reply_to_message_id=self.command_reply_target(message),
@@ -67,3 +72,6 @@ class RuntimeReplyPolicy:
 
     def is_top_level_p2p_command(self, message: IncomingMessage) -> bool:
         return message.chat_type == "p2p" and not message.root_id and not message.thread_id
+
+    def is_top_level_session_start(self, message: IncomingMessage) -> bool:
+        return not self.is_card_action_message(message) and not message.root_id and not message.thread_id and not str(message.text or "").strip().startswith("/")
