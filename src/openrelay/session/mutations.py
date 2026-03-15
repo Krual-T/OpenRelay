@@ -64,6 +64,22 @@ class SessionMutationService:
         self.store.clear_sessions(scope_key)
         return self.store.load_session(scope_key)
 
+    def bind_native_thread(
+        self,
+        scope_key: str,
+        current: SessionRecord,
+        thread_id: str,
+        *,
+        cwd: str | None = None,
+        label: str = "",
+    ) -> SessionRecord:
+        next_session = self.store.create_next_session(scope_key, current, label or current.label)
+        next_session.native_session_id = thread_id.strip()
+        if cwd:
+            next_session.cwd = cwd
+        next_session.release_channel = ""
+        return self.store.save_session(next_session)
+
     def save_directory_shortcut(self, shortcut: DirectoryShortcut) -> DirectoryShortcut:
         return self.store.save_directory_shortcut(shortcut)
 

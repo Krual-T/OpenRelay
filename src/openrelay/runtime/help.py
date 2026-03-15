@@ -180,7 +180,7 @@ class HelpRenderer:
         return [
             "- 直接再发一条真实消息，系统会基于当前本地上下文重新接上执行。",
             "- 如果现在其实是新任务，先 /new <label> 隔离上下文。",
-            "- 如果你要回到更早的某次对话，先 /resume list 再恢复。",
+            "- 如果你要回到更早的某次 Codex 对话，先 /resume list 再恢复对应 thread。",
         ]
 
     def build_prompt_examples(self, session: SessionRecord, message_count: int) -> list[str]:
@@ -219,9 +219,9 @@ class HelpRenderer:
             "- 同一任务继续干：通常不用命令，直接发消息。",
             "- 当前回复还在跑时，继续发消息会进入下一轮；连续补充会自动合并。",
             "- 私聊顶层直接发新消息：默认会开新的 Codex 会话；想回旧会话时再用 /resume。",
-            "- 开新任务或切话题：/new <label>；回旧 backend session：/resume list、/resume latest。",
+            "- 开新任务或切话题：/new <label>；查看或恢复旧 Codex thread：/resume list、/resume latest。",
             "- `/new` 和 `/resume` 只允许在私聊顶层使用；子 thread 会固定绑定当前 Codex 会话。",
-            "- `/resume` 只恢复本地 session_id，不直接暴露原生 thread 历史。",
+            "- `/resume` 直接读取并绑定 Codex 原生 thread 历史；`/compact` 会对当前 thread 发起 compact。",
             "- 换执行位置：/cwd <path> 切目录；/main 回稳定工作区；/develop 进修复工作区。",
             "- 快捷目录：/shortcut add <name> <path> [all|main|develop]、/shortcut list、/shortcut cd <name>。",
             "- 看现场：/status 看会话、目录、最近上下文；/usage 看 token 和 context_usage。",

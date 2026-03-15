@@ -6,7 +6,7 @@ from pathlib import Path
 import pytest
 
 from openrelay.backends.base import BackendContext
-from openrelay.backends.codex import CodexAppServerClient, CodexTurn
+from openrelay.backends.codex import CodexAppServerClient, CodexThreadDetails, CodexThreadMessage, CodexThreadSummary, CodexTurn
 from openrelay.core import SessionRecord, utc_now
 
 
@@ -298,6 +298,98 @@ async def test_codex_ensure_thread_reports_started_thread_immediately(tmp_path: 
 
     assert thread_id == "thread_fresh"
     assert started == ["thread_fresh"]
+
+
+@pytest.mark.asyncio
+async def test_codex_list_threads_normalizes_response(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    client = CodexAppServerClient(
+        codex_path="codex",
+        workspace_root=tmp_path,
+        sqlite_home=tmp_path / "codex-state",
+        model="gpt-test",
+        safety_mode="danger-full-access",
+    )
+
+    async def fake_request(method: str, params: dict[str, object], **_kwargs: object) -> dict[str, object]:
+        assert method == "thread/list"
+        assert params == {"limit": 3}
+        return {
+            "data": [
+                {
+                    "id": "thread_1",
+                    "preview": "Fix failing tests",
+                    "cwd": str(tmp_path),
+                    "updatedAt": "2026-03-15T10:00:00Z",
+                    "status": "idle",
+                    "name": "tests",
+                }
+            ],
+            "nextCursor": "cursor_2",
+        }
+
+    monkeypatch.setattr(client, "request", fake_request)
+
+    threads, next_cursor = await client.list_threads(limit=3)
+
+    assert threads == [
+        CodexThreadSummary(
+            thread_id="thread_1",
+            preview="Fix failing tests",
+            cwd=str(tmp_path),
+            updated_at="2026-03-15T10:00:00Z",
+            status="idle",
+            name="tests",
+        )
+    ]
+    assert next_cursor == "cursor_2"
+
+
+@pytest.mark.asyncio
+async def test_codex_read_thread_extracts_user_and_assistant_messages(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    client = CodexAppServerClient(
+        codex_path="codex",
+        workspace_root=tmp_path,
+        sqlite_home=tmp_path / "codex-state",
+        model="gpt-test",
+        safety_mode="danger-full-access",
+    )
+
+    async def fake_request(method: str, params: dict[str, object], **_kwargs: object) -> dict[str, object]:
+        assert method == "thread/read"
+        assert params == {"threadId": "thread_1", "includeTurns": True}
+        return {
+            "thread": {
+                "id": "thread_1",
+                "preview": "Fix failing tests",
+                "cwd": str(tmp_path),
+                "updatedAt": "2026-03-15T10:00:00Z",
+                "status": "idle",
+                "name": "tests",
+                "turns": [
+                    {
+                        "input": [{"type": "text", "text": "Please fix the tests"}],
+                        "items": [{"type": "agentMessage", "text": "I fixed the tests"}],
+                    }
+                ],
+            }
+        }
+
+    monkeypatch.setattr(client, "request", fake_request)
+
+    thread = await client.read_thread("thread_1", include_turns=True)
+
+    assert thread == CodexThreadDetails(
+        thread_id="thread_1",
+        preview="Fix failing tests",
+        cwd=str(tmp_path),
+        updated_at="2026-03-15T10:00:00Z",
+        status="idle",
+        name="tests",
+        messages=(
+            CodexThreadMessage(role="user", text="Please fix the tests"),
+            CodexThreadMessage(role="assistant", text="I fixed the tests"),
+        ),
+    )
 
 
 def test_codex_process_env_overrides_sqlite_home(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

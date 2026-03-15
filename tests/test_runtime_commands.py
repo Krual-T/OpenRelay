@@ -3,6 +3,7 @@ from pathlib import Path
 
 import pytest
 
+from openrelay.backends import BackendContext
 from openrelay.core import AppConfig, BackendConfig, FeishuConfig, IncomingMessage
 from openrelay.presentation.runtime_status import RuntimeStatusPresenter
 from openrelay.presentation.session import SessionPresentation
@@ -18,6 +19,77 @@ from openrelay.session import (
     SessionWorkspaceService,
 )
 from openrelay.storage import StateStore
+
+
+class FakeNativeThread:
+    def __init__(
+        self,
+        thread_id: str,
+        *,
+        preview: str = "",
+        cwd: str = "",
+        updated_at: str = "",
+        status: str = "",
+        name: str = "",
+        messages: tuple[object, ...] = (),
+    ) -> None:
+        self.thread_id = thread_id
+        self.preview = preview
+        self.cwd = cwd
+        self.updated_at = updated_at
+        self.status = status
+        self.name = name
+        self.messages = messages
+
+
+class FakeNativeMessage:
+    def __init__(self, role: str, text: str) -> None:
+        self.role = role
+        self.text = text
+
+
+class FakeNativeBackend:
+    def __init__(self, cwd: str) -> None:
+        self.cwd = cwd
+        self.list_calls: list[int] = []
+        self.read_calls: list[str] = []
+        self.compact_calls: list[str] = []
+        self.threads = []
+        for index in range(1, 16):
+            thread_id = "thread_latest" if index == 1 else "thread_older" if index == 2 else f"thread_{index}"
+            self.threads.append(
+                FakeNativeThread(
+                    thread_id,
+                    preview=f"Codex task {index}",
+                    cwd=cwd,
+                    updated_at=f"2026-03-{16 - min(index, 9):02d}T10:00:00Z",
+                    status="idle",
+                    name=f"task {index}",
+                    messages=(
+                        FakeNativeMessage("user", f"user message {index}"),
+                        FakeNativeMessage("assistant", f"assistant message {index}"),
+                    ),
+                )
+            )
+
+    async def list_threads(self, session, context: BackendContext, limit: int = 20):
+        assert context.workspace_root
+        self.list_calls.append(limit)
+        return (self.threads[:limit], "")
+
+    async def read_thread(self, session, context: BackendContext, thread_id: str, *, include_turns: bool = True):
+        assert context.workspace_root
+        assert include_turns is True
+        self.read_calls.append(thread_id)
+        for thread in self.threads:
+            if thread.thread_id == thread_id:
+                return thread
+        raise AssertionError(f"unknown thread: {thread_id}")
+
+    async def compact_thread(self, session, context: BackendContext, thread_id: str):
+        assert context.workspace_root
+        self.compact_calls.append(thread_id)
+        return {"compactId": "compact_1"}
 
 
 class FakeHooks:
@@ -120,6 +192,7 @@ def build_router(tmp_path: Path) -> tuple[RuntimeCommandRouter, StateStore, Fake
     session_mutations = SessionMutationService(config, store, session_ux)
     session_scope = SessionScopeResolver(config, store, logging.getLogger("test.runtime.commands"))
     hooks = FakeHooks()
+    native_backend = FakeNativeBackend(str(config.main_workspace_dir))
     router = RuntimeCommandRouter(
         config,
         store,
@@ -132,7 +205,7 @@ def build_router(tmp_path: Path) -> tuple[RuntimeCommandRouter, StateStore, Fake
         HelpRenderer(config, store, session_ux, workspace, SessionShortcutService(config, store, workspace)),
         ReleaseCommandService(config, store, session_ux, session_mutations),
         RuntimeStatusPresenter(config, store, session_ux),
-        {"codex": object(), "claude": object()},
+        {"codex": native_backend, "claude": object()},
         RuntimeCommandHooks(
             reply=hooks.reply,
             send_help=hooks.send_help,
@@ -211,7 +284,8 @@ async def test_runtime_command_router_parses_resume_list_page_and_sort(tmp_path:
 
     await router.handle(make_message(f"/resume list --page 2 --sort {SESSION_SORT_ACTIVE}", suffix="resume_list"), session.base_key, session)
 
-    assert hooks.session_list_calls == [(session.base_key, 2, SESSION_SORT_ACTIVE)]
+    assert hooks.session_list_calls == []
+    assert "Codex 会话列表（第 2 页）：" in str(hooks.replies[-1]["text"])
     store.close()
 
 
@@ -223,7 +297,8 @@ async def test_runtime_command_router_parses_equals_style_paging_args(tmp_path: 
     await router.handle(make_message("/resume list --page=3 --sort=updated-desc", suffix="resume_equals"), session.base_key, session)
     await router.handle(make_message("/panel --page=2 --sort=active-first", suffix="panel_equals"), session.base_key, session)
 
-    assert hooks.session_list_calls == [(session.base_key, 3, "updated-desc")]
+    assert hooks.session_list_calls == []
+    assert "Codex 会话列表（第 3 页）：" in str(hooks.replies[0]["text"])
     assert hooks.panel_calls == [("om_panel_equals", session.base_key, "sessions", 2, "active-first")]
     store.close()
 
@@ -238,6 +313,52 @@ async def test_runtime_command_router_rejects_resume_inside_thread(tmp_path: Pat
     assert handled is True
     assert hooks.session_list_calls == []
     assert hooks.replies[-1]["text"] == "`/resume` 只允许在私聊顶层使用；子 thread 会固定绑定当前 Codex 会话。"
+    store.close()
+
+
+@pytest.mark.asyncio
+async def test_runtime_command_router_resume_latest_binds_native_thread_and_returns_history(tmp_path: Path) -> None:
+    router, store, hooks = build_router(tmp_path)
+    session = store.load_session("p2p:oc_1")
+
+    await router.handle(make_message("/resume latest", suffix="resume_latest"), session.base_key, session)
+
+    rebound = store.find_session(session.base_key)
+    assert rebound is not None
+    assert rebound.session_id != session.session_id
+    assert rebound.native_session_id == "thread_latest"
+    assert "thread_id=thread_latest" in str(hooks.replies[-1]["text"])
+    assert "最近历史：" in str(hooks.replies[-1]["text"])
+    store.close()
+
+
+@pytest.mark.asyncio
+async def test_runtime_command_router_resume_local_session_id_maps_to_native_thread(tmp_path: Path) -> None:
+    router, store, hooks = build_router(tmp_path)
+    original = store.load_session("p2p:oc_1")
+    original.native_session_id = "thread_older"
+    store.save_session(original)
+
+    await router.handle(make_message(f"/resume {original.session_id}", suffix="resume_local"), original.base_key, original)
+
+    rebound = store.find_session(original.base_key)
+    assert rebound is not None
+    assert rebound.session_id != original.session_id
+    assert rebound.native_session_id == "thread_older"
+    assert "thread_id=thread_older" in str(hooks.replies[-1]["text"])
+    store.close()
+
+
+@pytest.mark.asyncio
+async def test_runtime_command_router_compact_current_native_thread(tmp_path: Path) -> None:
+    router, store, hooks = build_router(tmp_path)
+    session = store.load_session("p2p:oc_1")
+    session.native_session_id = "thread_latest"
+    store.save_session(session)
+
+    await router.handle(make_message("/compact", suffix="compact"), session.base_key, session)
+
+    assert hooks.replies[-1]["text"] == "已发起 Codex compact：thread_latest\ncompact_id=compact_1"
     store.close()
 
 

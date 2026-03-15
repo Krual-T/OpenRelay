@@ -27,7 +27,7 @@
 - `/panel`、`/resume list`、`/help` 这类导航型卡片在按钮切换时会优先原地更新，避免翻页和层级切换不断刷新消息
 - `/panel` 的会话结果继续复用 `/resume` 主路径，目录结果继续复用 `/cwd` 主路径，避免再长出第二套执行语义
 - `/panel` 仍会按 `main / develop` 作用域显示常用目录快捷按钮，点击后直接复用 `/cwd` 切换
-- `/resume` 现在只恢复本地 backend session；thread 只作为会话绑定，不再直接暴露成恢复目标
+- `/resume` 现在直接读取并绑定 Codex 原生 thread；本地 session 只保留为当前作用域的轻量绑定壳
 - `FEISHU_STREAM_MODE=card` 时会显示 `openrelay` 的运行中状态卡片与 typing
 - `card` 模式现在直接按飞书官方 OpenClaw 风格走 CardKit：流式阶段更新单个 markdown element，最终态在同一张卡里收口正文，并把 reasoning 放进默认折叠的 `collapsible_panel`
 - 当前回复还没结束时，继续发消息会自动排到下一轮；连续补充会合并成一轮 follow-up
@@ -134,7 +134,8 @@ http://your-host:3000/feishu/webhook
 - `/main [reason]`、`/stable [reason]` - 切到 main 稳定工作区
 - `/develop [reason]` - 切到 develop 修复工作区
 - `/new [label]` - 新建隔离会话
-- `/resume [list|latest|session_id]` - 恢复本地 backend session；不再直接导入或暴露原生 Codex thread 历史
+- `/resume [list|latest|thread_id|local_session_id]` - 查看 Codex thread 列表并绑定到当前作用域；回复里直接返回原生 thread 历史
+- `/compact [thread_id|local_session_id]` - 对当前或指定 Codex thread 发起 compact
 - `/clear` - 清空上下文但保留当前目录和配置
 - `/status` - 查看当前会话状态
 - `/cwd [path]`、`/cd [path]` - 查看或切换当前目录
