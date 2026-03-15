@@ -413,6 +413,73 @@ async def test_codex_reasoning_prefers_summary_text_over_raw_content(tmp_path: P
 
 
 @pytest.mark.asyncio
+async def test_codex_turn_emits_file_change_and_collab_progress(tmp_path: Path) -> None:
+    _ = tmp_path
+    progress_events: list[dict[str, object]] = []
+
+    async def on_progress(event: dict[str, object]) -> None:
+        progress_events.append(event)
+
+    turn = CodexTurn(thread_id="thread_1", on_progress=on_progress)
+
+    await turn.handle_notification(
+        object(),
+        "item/started",
+        {
+            "threadId": "thread_1",
+            "turnId": "turn_1",
+            "item": {
+                "id": "fc1",
+                "type": "fileChange",
+                "status": "inProgress",
+                "changes": [{"path": "README.md", "kind": {"type": "add"}, "diff": "@@"}],
+            },
+        },
+    )
+    await turn.handle_notification(
+        object(),
+        "item/completed",
+        {
+            "threadId": "thread_1",
+            "turnId": "turn_1",
+            "item": {
+                "id": "ca1",
+                "type": "collabAgentToolCall",
+                "tool": "wait",
+                "status": "completed",
+                "prompt": "Wait for agent-alpha",
+                "senderThreadId": "thread_1",
+                "receiverThreadIds": ["thread_agent_alpha"],
+                "agentsStates": {"agent-alpha": {"status": "completed"}},
+            },
+        },
+    )
+
+    assert progress_events == [
+        {
+            "type": "file_change.started",
+            "file_change": {
+                "id": "fc1",
+                "status": "inProgress",
+                "changes": [{"path": "README.md", "kind": {"type": "add"}, "diff": "@@"}],
+            },
+        },
+        {
+            "type": "collab.completed",
+            "collab": {
+                "id": "ca1",
+                "tool": "wait",
+                "status": "completed",
+                "prompt": "Wait for agent-alpha",
+                "senderThreadId": "thread_1",
+                "receiverThreadIds": ["thread_agent_alpha"],
+                "agentsStates": {"agent-alpha": {"status": "completed"}},
+            },
+        },
+    ]
+
+
+@pytest.mark.asyncio
 async def test_codex_server_request_routes_to_matching_turn_callback(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

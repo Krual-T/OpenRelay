@@ -175,6 +175,122 @@ def _complete_reasoning_item(state: LiveReplyState, text: object = "") -> None:
     item["title"] = duration_label if duration_label and duration_label != "Thought" else "Thought"
 
 
+def _file_change_kind(change: dict[str, Any]) -> str:
+    kind = change.get("kind")
+    if not isinstance(kind, dict):
+        return ""
+    return str(kind.get("type") or "").strip()
+
+
+def _summarize_file_change_title(changes: list[dict[str, Any]], *, completed: bool) -> str:
+    kinds = {_file_change_kind(change) for change in changes if isinstance(change, dict)}
+    kinds.discard("")
+    if kinds == {"add"}:
+        return "Added" if completed else "Adding"
+    if kinds == {"update"}:
+        return "Edited" if completed else "Editing"
+    if kinds == {"delete"}:
+        return "Deleted" if completed else "Deleting"
+    return "Updated files" if completed else "Updating files"
+
+
+def _resolve_file_change_item(state: LiveReplyState, file_change: dict[str, Any]) -> dict[str, Any]:
+    change_id = str(file_change.get("id") or "").strip()
+    item = _find_history_item(
+        state,
+        lambda entry: entry.get("type") == "file_change"
+        and ((change_id and str(entry.get("file_change_id") or "") == change_id) or (not change_id and entry.get("state") == "running")),
+    )
+    changes = [change for change in (file_change.get("changes") or []) if isinstance(change, dict)]
+    title = _summarize_file_change_title(changes, completed=False)
+    if item is None:
+        item = _append_history_item(
+            state,
+            {
+                "type": "file_change",
+                "state": "running",
+                "title": title,
+                "file_change_id": change_id,
+                "changes": changes,
+            },
+        )
+    else:
+        item["title"] = title
+        item["changes"] = changes or list(item.get("changes") or [])
+    return item
+
+
+def _complete_file_change_item(state: LiveReplyState, file_change: dict[str, Any]) -> None:
+    item = _resolve_file_change_item(state, file_change)
+    changes = [change for change in (file_change.get("changes") or []) if isinstance(change, dict)]
+    item["state"] = str(file_change.get("status") or "completed").strip() or "completed"
+    item["title"] = _summarize_file_change_title(changes or list(item.get("changes") or []), completed=True)
+    if changes:
+        item["changes"] = changes
+
+
+def _collab_tool_title(tool: object, *, completed: bool) -> str:
+    normalized = str(tool or "").strip()
+    if normalized == "spawnAgent":
+        return "Spawned" if completed else "Spawning"
+    if normalized == "sendInput":
+        return "Sent input to" if completed else "Sending input to"
+    if normalized == "resumeAgent":
+        return "Resumed" if completed else "Resuming"
+    if normalized == "wait":
+        return "Finished waiting for" if completed else "Waiting for"
+    if normalized == "closeAgent":
+        return "Closed" if completed else "Closing"
+    return "Updated agent" if completed else "Updating agent"
+
+
+def _collab_tool_state(status: object) -> str:
+    normalized = str(status or "").strip()
+    if normalized == "inProgress":
+        return "running"
+    if normalized == "failed":
+        return "failed"
+    return "completed"
+
+
+def _resolve_collab_item(state: LiveReplyState, collab: dict[str, Any]) -> dict[str, Any]:
+    collab_id = str(collab.get("id") or "").strip()
+    item = _find_history_item(
+        state,
+        lambda entry: entry.get("type") == "collab"
+        and ((collab_id and str(entry.get("collab_id") or "") == collab_id) or (not collab_id and entry.get("state") == "running")),
+    )
+    tool = str(collab.get("tool") or "").strip()
+    if item is None:
+        item = _append_history_item(
+            state,
+            {
+                "type": "collab",
+                "state": _collab_tool_state(collab.get("status")),
+                "title": _collab_tool_title(tool, completed=False),
+                "collab_id": collab_id,
+                "tool": tool,
+                "agents": collab.get("agentsStates") if isinstance(collab.get("agentsStates"), dict) else {},
+                "receiver_thread_ids": list(collab.get("receiverThreadIds") or []),
+                "prompt": str(collab.get("prompt") or "").strip(),
+            },
+        )
+    else:
+        item["tool"] = tool or str(item.get("tool") or "")
+        item["agents"] = collab.get("agentsStates") if isinstance(collab.get("agentsStates"), dict) else item.get("agents", {})
+        item["receiver_thread_ids"] = list(collab.get("receiverThreadIds") or item.get("receiver_thread_ids") or [])
+        prompt = str(collab.get("prompt") or "").strip()
+        if prompt:
+            item["prompt"] = prompt
+    return item
+
+
+def _complete_collab_item(state: LiveReplyState, collab: dict[str, Any]) -> None:
+    item = _resolve_collab_item(state, collab)
+    item["state"] = _collab_tool_state(collab.get("status"))
+    item["title"] = _collab_tool_title(item.get("tool"), completed=item["state"] != "running")
+
+
 def _resolve_command_item(state: LiveReplyState, command: dict[str, Any]) -> dict[str, Any]:
     command_id = str(command.get("id") or "").strip()
     command_text = str(command.get("command") or "").strip()
@@ -444,6 +560,44 @@ def apply_live_progress(state: LiveReplyState, event: dict[str, Any] | None) -> 
             commands.append(command)
             state["commands"] = commands[-8:]
         _complete_command_item(state, command)
+        push_live_history(state, state["status"])
+        return
+    if event_type == "file_change.started":
+        file_change = event.get("file_change") if isinstance(event.get("file_change"), dict) else {}
+        finalize_reasoning_timing(state)
+        _complete_reasoning_item(state)
+        state["heading"] = "Updating files"
+        state["status"] = _summarize_file_change_title(
+            [change for change in (file_change.get("changes") or []) if isinstance(change, dict)],
+            completed=False,
+        )
+        _resolve_file_change_item(state, file_change)
+        push_live_history(state, state["status"])
+        return
+    if event_type == "file_change.completed":
+        file_change = event.get("file_change") if isinstance(event.get("file_change"), dict) else {}
+        state["heading"] = "Updated files"
+        state["status"] = _summarize_file_change_title(
+            [change for change in (file_change.get("changes") or []) if isinstance(change, dict)],
+            completed=True,
+        )
+        _complete_file_change_item(state, file_change)
+        push_live_history(state, state["status"])
+        return
+    if event_type == "collab.started":
+        collab = event.get("collab") if isinstance(event.get("collab"), dict) else {}
+        finalize_reasoning_timing(state)
+        _complete_reasoning_item(state)
+        state["heading"] = "Coordinating agents"
+        state["status"] = _collab_tool_title(collab.get("tool"), completed=False)
+        _resolve_collab_item(state, collab)
+        push_live_history(state, state["status"])
+        return
+    if event_type == "collab.completed":
+        collab = event.get("collab") if isinstance(event.get("collab"), dict) else {}
+        state["heading"] = "Coordinating agents"
+        state["status"] = _collab_tool_title(collab.get("tool"), completed=_collab_tool_state(collab.get("status")) != "running")
+        _complete_collab_item(state, collab)
         push_live_history(state, state["status"])
         return
     if event_type == "reasoning.completed":

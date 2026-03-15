@@ -160,6 +160,25 @@ class CodexTurn:
             "action": item.get("action") if isinstance(item.get("action"), dict) else {},
         }
 
+    def _extract_file_change(self, item: dict[str, Any]) -> dict[str, Any]:
+        changes = item.get("changes") if isinstance(item.get("changes"), list) else []
+        return {
+            "id": str(item.get("id") or ""),
+            "status": str(item.get("status") or ""),
+            "changes": [change for change in changes if isinstance(change, dict)],
+        }
+
+    def _extract_collab_tool_call(self, item: dict[str, Any]) -> dict[str, Any]:
+        return {
+            "id": str(item.get("id") or ""),
+            "tool": str(item.get("tool") or ""),
+            "status": str(item.get("status") or ""),
+            "prompt": str(item.get("prompt") or ""),
+            "senderThreadId": str(item.get("senderThreadId") or ""),
+            "receiverThreadIds": list(item.get("receiverThreadIds") or []),
+            "agentsStates": item.get("agentsStates") if isinstance(item.get("agentsStates"), dict) else {},
+        }
+
     async def _handle_turn_started(self, client: "CodexAppServerClient", params: dict[str, Any]) -> None:
         turn = params.get("turn") if isinstance(params.get("turn"), dict) else {}
         await self.set_turn_id(client, str(turn.get("id") or self.turn_id))
@@ -208,6 +227,12 @@ class CodexTurn:
             }
             self.command_by_id[item_id] = command
             await self._emit_progress({"type": "command.started", "command": command})
+            return
+        if item_type == "fileChange":
+            await self._emit_progress({"type": "file_change.started", "file_change": self._extract_file_change(item)})
+            return
+        if item_type == "collabAgentToolCall":
+            await self._emit_progress({"type": "collab.started", "collab": self._extract_collab_tool_call(item)})
 
     async def _handle_item_completed(self, params: dict[str, Any]) -> None:
         item = params.get("item") if isinstance(params.get("item"), dict) else {}
@@ -251,6 +276,12 @@ class CodexTurn:
             }
             self.command_by_id[item_id] = command
             await self._emit_progress({"type": "command.completed", "command": command})
+            return
+        if item_type == "fileChange":
+            await self._emit_progress({"type": "file_change.completed", "file_change": self._extract_file_change(item)})
+            return
+        if item_type == "collabAgentToolCall":
+            await self._emit_progress({"type": "collab.completed", "collab": self._extract_collab_tool_call(item)})
             return
         if item_type == "plan":
             item_id = str(item.get("id") or "")
