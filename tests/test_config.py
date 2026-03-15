@@ -69,6 +69,17 @@ def test_load_config_disables_codex_request_timeout_when_unset_or_non_positive(
     assert configured_config.backend.codex_request_timeout_seconds == 45.0
 
 
+def test_load_config_uses_safe_default_card_streaming_window(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
+    apply_required_env(monkeypatch)
+
+    default_config = load_config(tmp_path)
+    assert default_config.feishu.card_streaming_window_seconds == 540.0
+
+    monkeypatch.setenv("FEISHU_CARD_STREAMING_WINDOW_SECONDS", "480")
+    configured_config = load_config(tmp_path)
+    assert configured_config.feishu.card_streaming_window_seconds == 480.0
+
+
 def test_load_config_defaults_codex_sqlite_home_under_data_dir(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
     apply_required_env(monkeypatch)
 

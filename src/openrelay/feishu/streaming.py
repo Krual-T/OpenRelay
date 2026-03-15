@@ -22,6 +22,8 @@ from .parsing import _read_text
 from .reply_card import (
     DEFAULT_THINKING_TEXT,
     STREAMING_ELEMENT_ID,
+    build_complete_card,
+    build_process_panel_text,
     build_streaming_card_json,
     build_streaming_card_signature,
     build_streaming_content,
@@ -29,6 +31,8 @@ from .reply_card import (
 )
 
 DEFAULT_STREAM_UPDATE_THROTTLE_MS = 100
+DEFAULT_CARD_STREAMING_WINDOW_SECONDS = 540.0
+STREAMING_TIMEOUT_NOTICE = "流式显示已自动暂停，任务仍在继续。完成后会在此卡片更新最终结果。"
 
 
 class FeishuStreamingSession:
@@ -42,6 +46,14 @@ class FeishuStreamingSession:
         self.update_throttle_ms = DEFAULT_STREAM_UPDATE_THROTTLE_MS
         self._lock = asyncio.Lock()
         self._pending_flush_task: asyncio.Task[None] | None = None
+        self.streaming_mode_enabled = True
+        self.started_at_ms = 0.0
+        config = getattr(messenger, "config", None)
+        feishu_config = getattr(config, "feishu", None)
+        self.card_streaming_window_seconds = float(
+            getattr(feishu_config, "card_streaming_window_seconds", DEFAULT_CARD_STREAMING_WINDOW_SECONDS)
+            or DEFAULT_CARD_STREAMING_WINDOW_SECONDS
+        )
 
     def next_sequence(self) -> int:
         if self.state is None:
@@ -74,6 +86,8 @@ class FeishuStreamingSession:
                     "current_content": "",
                     "card_signature": ("plain", ""),
                 }
+                self.started_at_ms = time.time() * 1000
+                self.streaming_mode_enabled = True
                 return
             except Exception:
                 pass
@@ -87,8 +101,42 @@ class FeishuStreamingSession:
             "current_content": "",
             "card_signature": ("plain", ""),
         }
+        self.started_at_ms = time.time() * 1000
+        self.streaming_mode_enabled = True
         if self.log is not None:
             self.log(f"streaming card started: {card_id}")
+
+    def _streaming_window_elapsed(self, now_ms: float | None = None) -> bool:
+        if self.started_at_ms <= 0:
+            return False
+        if self.card_streaming_window_seconds <= 0:
+            return False
+        current_ms = now_ms if now_ms is not None else time.time() * 1000
+        return current_ms - self.started_at_ms >= self.card_streaming_window_seconds * 1000
+
+    async def _disable_streaming_mode(self) -> None:
+        if self.state is None or not self.streaming_mode_enabled:
+            return
+        await self.set_streaming_mode(False)
+        self.streaming_mode_enabled = False
+
+    async def freeze(self, live_state: dict[str, Any], *, notice_text: str = STREAMING_TIMEOUT_NOTICE) -> None:
+        if self.state is None or self.closed or not self.streaming_mode_enabled:
+            return
+        self._cancel_pending_flush_task()
+        async with self._lock:
+            if self.state is None or self.closed or not self.streaming_mode_enabled:
+                return
+            await self.flush_pending_content()
+            await self._disable_streaming_mode()
+            waiting_card = build_complete_card(
+                notice_text,
+                panel_text=build_process_panel_text(live_state),
+                panel_title="运行中状态",
+            )
+            await self.update_card_json(waiting_card)
+            self.state["card_signature"] = ("frozen", "")
+            self.state["current_content"] = ""
 
     async def update_card_content(self, text: str) -> None:
         if self.state is None:
@@ -162,6 +210,11 @@ class FeishuStreamingSession:
     async def update(self, live_state: dict[str, Any]) -> None:
         if self.state is None or self.closed:
             return
+        if self.streaming_mode_enabled and self._streaming_window_elapsed():
+            await self.freeze(live_state)
+            return
+        if not self.streaming_mode_enabled:
+            return
         next_content = build_streaming_content(live_state)
         next_signature = build_streaming_card_signature(live_state)
         current_signature = self.state.get("card_signature") or ("plain", "")
@@ -208,10 +261,10 @@ class FeishuStreamingSession:
                 return
             await self.flush_pending_content()
             if final_card is not None:
-                await self.set_streaming_mode(False)
+                await self._disable_streaming_mode()
                 await self.update_card_json(final_card)
                 return
-            await self.set_streaming_mode(False)
+            await self._disable_streaming_mode()
 
     def message_id(self) -> str:
         if self.state is None:
@@ -232,4 +285,4 @@ class FeishuStreamingSession:
         return self.state is not None
 
     def is_active(self) -> bool:
-        return self.state is not None and not self.closed
+        return self.state is not None and not self.closed and self.streaming_mode_enabled

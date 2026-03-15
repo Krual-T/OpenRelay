@@ -25,6 +25,7 @@ class FeishuConfig:
     bot_open_id: str = ""
     connection_mode: str = "webhook"
     stream_mode: str = "off"
+    card_streaming_window_seconds: float = 540.0
     group_reply_all: bool = False
     group_session_scope: str = "sender"
     allowed_open_ids: set[str] = field(default_factory=set)
@@ -244,6 +245,7 @@ def load_config(cwd: str | Path | None = None) -> AppConfig:
             bot_open_id=read_first("FEISHU_BOT_OPEN_ID", default=""),
             connection_mode=read_first("FEISHU_CONNECTION_MODE", default="websocket").lower(),
             stream_mode=read_first("FEISHU_STREAM_MODE", default="card").lower(),
+            card_streaming_window_seconds=read_optional_float("FEISHU_CARD_STREAMING_WINDOW_SECONDS", default=540.0) or 540.0,
             group_reply_all=read_bool("FEISHU_GROUP_REPLY_ALL", False),
             group_session_scope=group_scope,
             allowed_open_ids=read_csv("FEISHU_ALLOWED_OPEN_IDS"),
