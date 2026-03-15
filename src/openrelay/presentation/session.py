@@ -18,6 +18,12 @@ def build_resume_list_command(target: str = "list", *, page: int = 1, sort_mode:
     return " ".join(parts)
 
 
+def build_resume_card_command(*, page: int = 1) -> str:
+    if page <= 1:
+        return "/resume"
+    return f"/resume --page {max(page, 1)}"
+
+
 def _session_text(entry: dict[str, Any]) -> str:
     title = str(entry.get("title") or entry.get("label") or entry.get("session_id") or "未命名会话")
     lines = [f"**{entry.get('index', '-')}. {title}**{' · 当前' if entry.get('active') else ''}"]
@@ -92,6 +98,70 @@ def build_session_list_card(info: dict[str, Any]) -> dict[str, Any]:
     elements.append({"tag": "action", "actions": [build_button("恢复上一条", build_resume_list_command("latest", page=page, sort_mode=sort_mode), "default", action_context), build_button("面板", "/panel", "default", action_context), build_button("帮助", "/help", "default", action_context)]})
 
     return build_card_shell("openrelay sessions", elements, tone="info")
+
+
+def build_native_thread_list_card(info: dict[str, Any]) -> dict[str, Any]:
+    threads = list(info.get("threads") or [])
+    action_context = info.get("action_context") if isinstance(info.get("action_context"), dict) else {}
+    page = int(info.get("page") or 1)
+    has_previous = bool(info.get("has_previous"))
+    has_next = bool(info.get("has_next"))
+    current_thread_id = str(info.get("current_thread_id") or "").strip() or "pending"
+
+    elements: list[dict[str, Any]] = [
+        *build_status_hero(
+            "Codex 会话",
+            tone="info",
+            summary="先点一条会话卡片，再在同一个顶层 thread 里继续对话。",
+            facts=[
+                ("当前绑定", f"`{current_thread_id}`"),
+                ("页码", f"第 `{page}` 页"),
+            ],
+            notes=["点击某条会话后，会直接发送 `/resume <thread_id>` 并把当前 thread 绑定到它"],
+        ),
+        divider_block(),
+    ]
+
+    if threads:
+        for entry in threads:
+            elements.append(build_section_block("会话条目", [_session_text(entry)], emoji="🧵"))
+            elements.append(
+                {
+                    "tag": "action",
+                    "actions": [
+                        build_button(
+                            "连接此会话",
+                            f"/resume {str(entry.get('thread_id') or entry.get('resume_token') or '').strip()}",
+                            "primary" if entry.get("active") else "default",
+                            action_context,
+                        )
+                    ],
+                }
+            )
+    else:
+        elements.append(build_section_block("会话条目", ["> 当前没有可连接的 Codex 会话。"], emoji="🧵"))
+
+    controls: list[dict[str, Any]] = []
+    if has_previous:
+        controls.append(build_button("上一页", build_resume_card_command(page=page - 1), "default", action_context))
+    if has_next:
+        controls.append(build_button("下一页", build_resume_card_command(page=page + 1), "primary", action_context))
+    if controls:
+        elements.append({"tag": "action", "actions": controls})
+    footer_note = build_note_bar(["连接成功后，后续在这个 thread 里的消息都会继续走对应的 Codex 原生会话。"])
+    if footer_note is not None:
+        elements.append(footer_note)
+    elements.append(
+        {
+            "tag": "action",
+            "actions": [
+                build_button("恢复上一条", "/resume latest", "default", action_context),
+                build_button("面板", "/panel", "default", action_context),
+                build_button("帮助", "/help", "default", action_context),
+            ],
+        }
+    )
+    return build_card_shell("openrelay resume", elements, tone="info")
 
 
 class SessionPresentation:

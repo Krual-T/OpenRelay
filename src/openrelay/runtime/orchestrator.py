@@ -90,6 +90,7 @@ class RuntimeOrchestrator:
         self.panel_service = RuntimePanelService(
             config,
             messenger,
+            self.backends,
             self.backend_descriptors,
             self.session_browser,
             self.session_presentation,
