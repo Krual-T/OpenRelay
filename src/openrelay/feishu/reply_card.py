@@ -7,7 +7,7 @@ from typing import Any
 
 STREAMING_ELEMENT_ID = "streaming_content"
 LOADING_ELEMENT_ID = "loading_icon"
-DEFAULT_THINKING_TEXT = "In Progress"
+DEFAULT_THINKING_TEXT = "Executing"
 PROCESS_LOG_PANEL_TITLE = "Execution Log"
 LOADING_ICON_IMAGE_KEY = "img_v3_02vb_496bec09-4b43-4773-ad6b-0cdd103cd2bg"
 REASONING_PREFIX = "Reasoning:\n"
