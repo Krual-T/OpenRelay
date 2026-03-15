@@ -89,6 +89,50 @@ def _append_status_item(state: LiveReplyState, title: str, detail: str = "") -> 
     )
 
 
+def _find_summary_item(state: LiveReplyState) -> dict[str, Any] | None:
+    return _find_history_item(state, lambda entry: entry.get("type") == "summary" and entry.get("state") == "running")
+
+
+def _complete_summary_item(state: LiveReplyState) -> None:
+    item = _find_summary_item(state)
+    if item is None:
+        return
+    item["state"] = "completed"
+    partial_text = str(state.get("partial_text") or "")
+    if partial_text:
+        state["committed_partial_text"] = partial_text
+
+
+def _summary_segment_text(state: LiveReplyState, full_text: object) -> str:
+    current_text = str(full_text or "")
+    committed_text = str(state.get("committed_partial_text") or "")
+    if committed_text and current_text.startswith(committed_text):
+        return current_text[len(committed_text) :].strip()
+    return current_text.strip()
+
+
+def _update_summary_item(state: LiveReplyState, full_text: object) -> None:
+    current_text = str(full_text or "").strip()
+    if not current_text:
+        return
+    segment_text = _summary_segment_text(state, current_text)
+    if not segment_text:
+        return
+    item = _find_summary_item(state)
+    if item is None:
+        item = _append_history_item(
+            state,
+            {
+                "type": "summary",
+                "state": "running",
+                "text": segment_text,
+            },
+        )
+    else:
+        item["text"] = segment_text
+    state["partial_text"] = current_text
+
+
 def _classify_command_mode(command_text: object) -> str:
     normalized = _normalize_inline(command_text).lower()
     if not normalized:
@@ -479,6 +523,8 @@ def apply_live_progress(state: LiveReplyState, event: dict[str, Any] | None) -> 
     if not event:
         return
     event_type = event.get("type")
+    if event_type != "assistant.partial":
+        _complete_summary_item(state)
     if event_type == "run.started":
         state["heading"] = "Starting Codex"
         state["status"] = "Preparing reply"
@@ -499,7 +545,7 @@ def apply_live_progress(state: LiveReplyState, event: dict[str, Any] | None) -> 
         state["heading"] = "Generating reply"
         state["status"] = "Streaming output"
         if isinstance(event.get("text"), str):
-            state["partial_text"] = event["text"]
+            _update_summary_item(state, event["text"])
         push_live_history(state, state["status"])
         return
     if event_type == "reasoning.started":

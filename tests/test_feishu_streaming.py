@@ -90,6 +90,40 @@ def test_build_streaming_content_returns_answer_only_after_answer_starts() -> No
     assert content.endswith("找到结果，准备整理。")
 
 
+def test_build_streaming_content_interleaves_summary_blocks_with_history_items() -> None:
+    content = build_streaming_content(
+        {
+            "history_items": [
+                {
+                    "type": "command",
+                    "state": "completed",
+                    "title": "Explored codebase",
+                    "mode": "exploration",
+                    "command": "rg -n Voyager",
+                    "exit_code": 0,
+                    "output_preview": "Gemini Voyager",
+                },
+                {"type": "summary", "state": "completed", "text": "第一段总结"},
+                {
+                    "type": "command",
+                    "state": "completed",
+                    "title": "Ran shell command",
+                    "mode": "command",
+                    "command": "sed -n '1,10p' src/openrelay/runtime/live.py",
+                    "exit_code": 0,
+                    "output_preview": "from __future__ import annotations",
+                },
+                {"type": "summary", "state": "running", "text": "第二段总结"},
+            ]
+        }
+    )
+
+    assert "🔵 **Explored**" in content
+    assert "---\n第一段总结" in content
+    assert "🟢 **Ran** `sed -n '1,10p' src/openrelay/runtime/live.py`" in content
+    assert "---\n第二段总结" in content
+
+
 def test_build_streaming_content_marks_failed_command_with_red_dot() -> None:
     content = build_streaming_content(
         {

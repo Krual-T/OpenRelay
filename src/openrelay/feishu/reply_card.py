@@ -337,7 +337,20 @@ def _history_item_bullet(item: dict[str, Any], spinner_frame: int) -> str:
 def _render_history_item(item: dict[str, Any], spinner_frame: int) -> list[str]:
     item_type = str(item.get("type") or "").strip()
     title = _normalize_history_title(item)
-    if not item_type or not title:
+    if not item_type:
+        return []
+
+    if item_type == "summary":
+        summary_text = str(item.get("text") or "").strip()
+        if not summary_text:
+            return []
+        _partial_reasoning, partial_answer = split_reasoning_text(summary_text)
+        rendered_summary = optimize_markdown_style(partial_answer or strip_reasoning_tags(summary_text)).strip()
+        if not rendered_summary:
+            return []
+        return ["---", rendered_summary]
+
+    if not title:
         return []
 
     bullet = _history_item_bullet(item, spinner_frame)
@@ -541,9 +554,15 @@ def _build_process_panel_element(panel_text: object, panel_title: object) -> dic
 
 def _streaming_inline_content(live_state: dict[str, Any] | None = None) -> str:
     live_state = live_state or {}
-    process_text = build_process_panel_text(live_state)
+    history_items = live_state.get("history_items") if isinstance(live_state.get("history_items"), list) else []
+    rendered_history = _render_history_items(history_items, int(live_state.get("spinner_frame") or 0))
+    process_text = rendered_history
+    worked_for = _format_worked_for(live_state.get("started_at") or live_state.get("startedAt"))
+    if rendered_history and worked_for:
+        process_text = f"{rendered_history}\n\n- Worked for {worked_for}"
     partial_text = str(live_state.get("partial_text") or "").strip()
-    if not partial_text:
+    has_summary_item = any(isinstance(item, dict) and str(item.get("type") or "").strip() == "summary" for item in history_items)
+    if not partial_text or has_summary_item:
         return process_text
 
     partial_reasoning, partial_answer = split_reasoning_text(partial_text)
