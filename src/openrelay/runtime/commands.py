@@ -11,6 +11,7 @@ from openrelay.core import (
     IncomingMessage,
     SessionRecord,
     format_release_channel,
+    get_session_workspace_root,
 )
 from openrelay.presentation.runtime_status import RuntimeStatusPresenter
 from openrelay.presentation.session import SessionPresentation
@@ -32,7 +33,7 @@ from .help import HelpRenderer
 
 ADMIN_ONLY_COMMANDS = {"/restart"}
 PANEL_USAGE = "使用 /panel [sessions|directories|commands|status] [--page N] [--sort updated-desc|active-first]。"
-RESUME_USAGE = "使用 /resume [list|latest|<序号>|<session_id>] [--page N] [--sort updated-desc|active-first]。"
+RESUME_USAGE = "使用 /resume [list|latest|<序号>|<thread_id>|<local_session_id>] [--page N] [--sort updated-desc|active-first]。"
 SHORTCUT_USAGE = (
     "使用 /shortcut list | /shortcut add <name> <path> [all|main|develop] | "
     "/shortcut remove <name> | /shortcut cd <name>。"
@@ -83,6 +84,33 @@ class PagingCommandArgs:
     target: str
     page: int
     sort_mode: SessionSortMode
+
+
+@dataclass(slots=True)
+class NativeThreadSummary:
+    thread_id: str
+    preview: str
+    cwd: str
+    updated_at: str
+    status: str
+    name: str
+
+
+@dataclass(slots=True)
+class NativeThreadMessage:
+    role: str
+    text: str
+
+
+@dataclass(slots=True)
+class NativeThreadDetails:
+    thread_id: str
+    preview: str
+    cwd: str
+    updated_at: str
+    status: str
+    name: str
+    messages: tuple[NativeThreadMessage, ...]
 
 
 class RuntimeCommandRouter:
@@ -199,6 +227,9 @@ class RuntimeCommandRouter:
         if name == "/resume":
             return await self._handle_resume(message, session_key, session, arg_text)
 
+        if name == "/compact":
+            return await self._handle_compact(message, session_key, session, arg_text)
+
         if name == "/reset":
             self.session_mutations.reset_scope(session_key)
             await self.hooks.reply(message, "会话已重置。", command_reply=True)
@@ -235,17 +266,46 @@ class RuntimeCommandRouter:
             return True
 
         scope_key = self._top_level_thread_scope_key(message)
+        backend = self._native_thread_backend(session)
+        if backend is None:
+            await self.hooks.reply(message, "当前后端不支持 `/resume` 原生命令。", command_reply=True, command_name="/resume")
+            return True
         if not args.target or args.target.lower() == "list":
-            await self.hooks.send_session_list(message, session_key, session, args.page, args.sort_mode)
+            await self._reply_native_thread_list(message, session, backend, args.page)
             return True
+        target_thread_id = await self._resolve_resume_thread_id(session_key, session, backend, args.target, args.page)
+        if not target_thread_id:
+            await self.hooks.reply(message, "没有找到可恢复的 Codex 会话。先发 `/resume list` 看可用 thread。", command_reply=True, command_name="/resume")
+            return True
+        thread = await self._read_native_thread(session, backend, target_thread_id)
+        resumed_session = self.session_mutations.bind_native_thread(
+            scope_key,
+            session,
+            thread.thread_id,
+            cwd=thread.cwd or session.cwd,
+            label=thread.name or session.label,
+        )
+        await self.hooks.reply(message, self._format_native_resume_success(resumed_session, thread), command_reply=True)
+        return True
 
-        merged_sessions = self.session_browser.list_entries(scope_key, session, limit=max(50, args.page * DEFAULT_SESSION_LIST_PAGE_SIZE + 1), sort_mode=args.sort_mode)
-        resumed = self.session_browser.resume(scope_key, session, args.target, merged_sessions)
-        if resumed is None:
-            fallback_page = self.session_browser.list_page(session_key, session, page=args.page, page_size=DEFAULT_SESSION_LIST_PAGE_SIZE, sort_mode=args.sort_mode)
-            await self.hooks.reply(message, f"恢复失败。\n\n{self.session_presentation.format_session_list_page(fallback_page)}", command_reply=True)
+    async def _handle_compact(self, message: IncomingMessage, session_key: str, session: SessionRecord, arg_text: str) -> bool:
+        backend = self._native_thread_backend(session)
+        if backend is None:
+            await self.hooks.reply(message, "当前后端不支持 `/compact` 原生命令。", command_reply=True, command_name="/compact")
             return True
-        await self.hooks.reply(message, self.session_presentation.format_resume_success(resumed.session, entry=resumed.entry), command_reply=True)
+        target = arg_text.strip()
+        thread_id = session.native_session_id
+        if target:
+            thread_id = await self._resolve_resume_thread_id(session_key, session, backend, target, page=1)
+        if not thread_id:
+            await self.hooks.reply(message, "当前没有可 compact 的 Codex thread。先恢复一个 thread，或先发一条真实消息创建 thread。", command_reply=True, command_name="/compact")
+            return True
+        result = await self._compact_native_thread(session, backend, thread_id)
+        compact_id = str(result.get("compactId") or result.get("id") or "").strip()
+        lines = [f"已发起 Codex compact：{thread_id}"]
+        if compact_id:
+            lines.append(f"compact_id={compact_id}")
+        await self.hooks.reply(message, "\n".join(lines), command_reply=True, command_name="/compact")
         return True
 
     def _can_use_top_level_session_command(self, message: IncomingMessage) -> bool:
@@ -253,6 +313,131 @@ class RuntimeCommandRouter:
 
     def _top_level_thread_scope_key(self, message: IncomingMessage) -> str:
         return self.session_scope.top_level_thread_scope_key(message)
+
+    def _native_thread_backend(self, session: SessionRecord) -> object | None:
+        backend = self.backends.get(session.backend)
+        if backend is None:
+            return None
+        required = ("list_threads", "read_thread", "compact_thread")
+        if all(callable(getattr(backend, name, None)) for name in required):
+            return backend
+        return None
+
+    def _build_native_backend_context(self, session: SessionRecord):
+        from openrelay.backends import BackendContext
+
+        return BackendContext(workspace_root=get_session_workspace_root(self.config, session))
+
+    async def _list_native_threads(self, session: SessionRecord, backend: object, limit: int) -> list[NativeThreadSummary]:
+        rows, _next_cursor = await getattr(backend, "list_threads")(session, self._build_native_backend_context(session), limit)
+        threads: list[NativeThreadSummary] = []
+        for row in rows:
+            threads.append(
+                NativeThreadSummary(
+                    thread_id=str(getattr(row, "thread_id", "") or ""),
+                    preview=str(getattr(row, "preview", "") or ""),
+                    cwd=str(getattr(row, "cwd", "") or ""),
+                    updated_at=str(getattr(row, "updated_at", "") or ""),
+                    status=str(getattr(row, "status", "") or ""),
+                    name=str(getattr(row, "name", "") or ""),
+                )
+            )
+        return threads
+
+    async def _read_native_thread(self, session: SessionRecord, backend: object, thread_id: str) -> NativeThreadDetails:
+        thread = await getattr(backend, "read_thread")(session, self._build_native_backend_context(session), thread_id, include_turns=True)
+        messages = tuple(
+            NativeThreadMessage(role=str(getattr(item, "role", "") or ""), text=str(getattr(item, "text", "") or ""))
+            for item in tuple(getattr(thread, "messages", ()) or ())
+            if str(getattr(item, "text", "") or "").strip()
+        )
+        return NativeThreadDetails(
+            thread_id=str(getattr(thread, "thread_id", "") or ""),
+            preview=str(getattr(thread, "preview", "") or ""),
+            cwd=str(getattr(thread, "cwd", "") or ""),
+            updated_at=str(getattr(thread, "updated_at", "") or ""),
+            status=str(getattr(thread, "status", "") or ""),
+            name=str(getattr(thread, "name", "") or ""),
+            messages=messages,
+        )
+
+    async def _compact_native_thread(self, session: SessionRecord, backend: object, thread_id: str) -> dict[str, object]:
+        result = await getattr(backend, "compact_thread")(session, self._build_native_backend_context(session), thread_id)
+        return result if isinstance(result, dict) else {}
+
+    async def _reply_native_thread_list(self, message: IncomingMessage, session: SessionRecord, backend: object, page: int) -> None:
+        limit = max(DEFAULT_SESSION_LIST_PAGE_SIZE * max(page, 1), DEFAULT_SESSION_LIST_PAGE_SIZE)
+        threads = await self._list_native_threads(session, backend, limit)
+        start = (max(page, 1) - 1) * DEFAULT_SESSION_LIST_PAGE_SIZE
+        page_threads = threads[start:start + DEFAULT_SESSION_LIST_PAGE_SIZE]
+        if not page_threads:
+            await self.hooks.reply(message, "当前没有可恢复的 Codex 会话。", command_reply=True, command_name="/resume")
+            return
+        lines = [f"Codex 会话列表（第 {max(page, 1)} 页）："]
+        for index, thread in enumerate(page_threads, start=start + 1):
+            title = thread.name or thread.preview or thread.thread_id
+            lines.append(f"{index}. {self.session_presentation.shorten(title, 56)}")
+            meta: list[str] = [f"id={thread.thread_id}"]
+            if thread.updated_at:
+                meta.append(thread.updated_at[:16].replace('T', ' '))
+            if thread.status:
+                meta.append(f"status={thread.status}")
+            if thread.cwd:
+                meta.append(f"cwd={self.workspace.format_cwd(thread.cwd, session)}")
+            lines.append(f"   {' · '.join(meta)}")
+            if thread.preview:
+                lines.append(f"   预览：{self.session_presentation.shorten(thread.preview, 96)}")
+        lines.extend(["", "使用 /resume <编号|thread_id|local_session_id|latest> 继续该 Codex 会话。"])
+        await self.hooks.reply(message, "\n".join(lines), command_reply=True, command_name="/resume")
+
+    async def _resolve_resume_thread_id(
+        self,
+        session_key: str,
+        session: SessionRecord,
+        backend: object,
+        target: str,
+        page: int,
+    ) -> str:
+        normalized = target.strip()
+        if not normalized:
+            return ""
+        threads = await self._list_native_threads(session, backend, max(DEFAULT_SESSION_LIST_PAGE_SIZE * max(page, 1), 20))
+        lowered = normalized.lower()
+        if lowered in {"latest", "prev", "previous"}:
+            return threads[0].thread_id if threads else ""
+        if normalized.isdigit():
+            index = int(normalized) - 1
+            if 0 <= index < len(threads):
+                return threads[index].thread_id
+        for thread in threads:
+            if normalized == thread.thread_id:
+                return thread.thread_id
+        local_match = self.session_browser.find_local_session(session_key, normalized)
+        if local_match is not None:
+            return local_match.native_session_id or ""
+        return ""
+
+    def _format_native_resume_success(self, session: SessionRecord, thread: NativeThreadDetails) -> str:
+        lines = [
+            f"已绑定 Codex 会话：{thread.name or thread.thread_id}",
+            f"session_id={session.session_id}",
+            f"thread_id={thread.thread_id}",
+            f"cwd={self.workspace.format_cwd(thread.cwd or session.cwd, session)}",
+        ]
+        if thread.updated_at:
+            lines.append(f"updated_at={thread.updated_at}")
+        if thread.status:
+            lines.append(f"status={thread.status}")
+        history = list(thread.messages)[-6:]
+        if history:
+            lines.extend(["", "最近历史："])
+            for item in history:
+                role = "用户" if item.role == "user" else "助手"
+                lines.append(f"- {role}：{self.session_presentation.shorten(item.text, 120)}")
+        elif thread.preview:
+            lines.extend(["", f"预览：{self.session_presentation.shorten(thread.preview, 120)}"])
+        lines.extend(["", "继续发送消息即可沿用这个 Codex thread。"])
+        return "\n".join(lines)
 
     def _parse_resume_command_args(self, arg_text: str) -> ResumeCommandArgs:
         args = self._parse_paging_command_args(arg_text)

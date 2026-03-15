@@ -26,6 +26,33 @@ class InterruptedError(RuntimeError):
     pass
 
 
+@dataclass(slots=True)
+class CodexThreadSummary:
+    thread_id: str
+    preview: str = ""
+    cwd: str = ""
+    updated_at: str = ""
+    status: str = ""
+    name: str = ""
+
+
+@dataclass(slots=True)
+class CodexThreadMessage:
+    role: str
+    text: str
+
+
+@dataclass(slots=True)
+class CodexThreadDetails:
+    thread_id: str
+    preview: str = ""
+    cwd: str = ""
+    updated_at: str = ""
+    status: str = ""
+    name: str = ""
+    messages: tuple[CodexThreadMessage, ...] = ()
+
+
 def build_cancel_reset_reason(method: str) -> str:
     return f"Codex app-server request {method} cancelled by /stop before response"
 
@@ -43,6 +70,98 @@ def combine_indexed_text(parts_by_index: dict[int, str]) -> str:
         if text:
             parts.append(text)
     return "\n\n".join(parts).strip()
+
+
+def _normalize_thread_summary(payload: dict[str, Any]) -> CodexThreadSummary:
+    return CodexThreadSummary(
+        thread_id=str(payload.get("id") or ""),
+        preview=str(payload.get("preview") or "").strip(),
+        cwd=str(payload.get("cwd") or "").strip(),
+        updated_at=str(payload.get("updatedAt") or "").strip(),
+        status=str(payload.get("status") or "").strip(),
+        name=str(payload.get("name") or "").strip(),
+    )
+
+
+def _collect_text_fragments(value: Any) -> list[str]:
+    if isinstance(value, str):
+        text = value.strip()
+        return [text] if text else []
+    if isinstance(value, list):
+        parts: list[str] = []
+        for item in value:
+            parts.extend(_collect_text_fragments(item))
+        return parts
+    if not isinstance(value, dict):
+        return []
+    parts: list[str] = []
+    for key in ("text", "content", "summary"):
+        parts.extend(_collect_text_fragments(value.get(key)))
+    return parts
+
+
+def _extract_input_text(items: Any) -> str:
+    if not isinstance(items, list):
+        return ""
+    parts: list[str] = []
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        item_type = str(item.get("type") or "")
+        if item_type in {"text", "inputText"}:
+            parts.extend(_collect_text_fragments(item.get("text") or item.get("content")))
+            continue
+        if item_type == "localImage":
+            path = str(item.get("path") or "").strip()
+            if path:
+                parts.append(f"[image] {path}")
+    return "\n".join(part for part in parts if part).strip()
+
+
+def _extract_assistant_text(items: Any) -> str:
+    if not isinstance(items, list):
+        return ""
+    parts: list[str] = []
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        item_type = str(item.get("type") or "")
+        if item_type in {"agentMessage", "message"}:
+            parts.extend(_collect_text_fragments(item.get("text") or item.get("content")))
+            continue
+        if item_type == "reasoning":
+            parts.extend(_collect_text_fragments(item.get("summary")))
+            if not parts:
+                parts.extend(_collect_text_fragments(item.get("content")))
+            continue
+        if item_type == "plan":
+            parts.extend(_collect_text_fragments(item.get("text") or item.get("content")))
+    return "\n".join(part for part in parts if part).strip()
+
+
+def _normalize_thread_details(payload: dict[str, Any]) -> CodexThreadDetails:
+    summary = _normalize_thread_summary(payload)
+    messages: list[CodexThreadMessage] = []
+    turns = payload.get("turns")
+    if isinstance(turns, list):
+        for turn in turns:
+            if not isinstance(turn, dict):
+                continue
+            user_text = _extract_input_text(turn.get("input"))
+            if user_text:
+                messages.append(CodexThreadMessage(role="user", text=user_text))
+            assistant_text = _extract_assistant_text(turn.get("items"))
+            if assistant_text:
+                messages.append(CodexThreadMessage(role="assistant", text=assistant_text))
+    return CodexThreadDetails(
+        thread_id=summary.thread_id,
+        preview=summary.preview,
+        cwd=summary.cwd,
+        updated_at=summary.updated_at,
+        status=summary.status,
+        name=summary.name,
+        messages=tuple(messages),
+    )
 
 
 @dataclass(slots=True)
@@ -884,6 +1003,22 @@ class CodexAppServerClient:
             await context.on_progress({"type": "thread.started", "threadId": thread_id})
         return thread_id
 
+    async def list_threads(self, limit: int = 20) -> tuple[list[CodexThreadSummary], str]:
+        result = await self.request("thread/list", {"limit": max(limit, 1)})
+        rows = result.get("data") if isinstance(result, dict) else []
+        if not isinstance(rows, list):
+            rows = []
+        return ([_normalize_thread_summary(item) for item in rows if isinstance(item, dict)], str(result.get("nextCursor") or ""))
+
+    async def read_thread(self, thread_id: str, *, include_turns: bool = True) -> CodexThreadDetails:
+        result = await self.request("thread/read", {"threadId": thread_id, "includeTurns": include_turns})
+        thread = result.get("thread") if isinstance(result, dict) and isinstance(result.get("thread"), dict) else {}
+        return _normalize_thread_details(thread)
+
+    async def compact_thread(self, thread_id: str) -> dict[str, Any]:
+        result = await self.request("thread/compact/start", {"threadId": thread_id})
+        return result if isinstance(result, dict) else {}
+
     async def run_turn(self, session: SessionRecord, prompt: str, context: BackendContext) -> BackendReply:
         if context.on_progress is not None:
             await context.on_progress({"type": "run.started"})
@@ -1001,6 +1136,25 @@ class CodexBackend(Backend):
     async def run(self, session: SessionRecord, prompt: str, context: BackendContext) -> BackendReply:
         client = self._get_client(session, context)
         return await client.run_turn(session, prompt, context)
+
+    async def list_threads(self, session: SessionRecord, context: BackendContext, limit: int = 20) -> tuple[list[CodexThreadSummary], str]:
+        client = self._get_client(session, context)
+        return await client.list_threads(limit=limit)
+
+    async def read_thread(
+        self,
+        session: SessionRecord,
+        context: BackendContext,
+        thread_id: str,
+        *,
+        include_turns: bool = True,
+    ) -> CodexThreadDetails:
+        client = self._get_client(session, context)
+        return await client.read_thread(thread_id, include_turns=include_turns)
+
+    async def compact_thread(self, session: SessionRecord, context: BackendContext, thread_id: str) -> dict[str, Any]:
+        client = self._get_client(session, context)
+        return await client.compact_thread(thread_id)
 
     @classmethod
     async def shutdown_all(cls) -> None:
