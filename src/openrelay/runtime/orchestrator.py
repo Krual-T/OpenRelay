@@ -1,9 +1,6 @@
 from __future__ import annotations
 
-import asyncio
 import logging
-import os
-import sys
 from typing import Any
 from typing import Callable
 
@@ -14,6 +11,9 @@ from openrelay.core import (
     SessionRecord,
 )
 from openrelay.feishu import FeishuMessenger, FeishuStreamingSession, FeishuTypingManager
+from openrelay.presentation.panel import RuntimePanelPresenter
+from openrelay.presentation.runtime_status import RuntimeStatusPresenter
+from openrelay.presentation.session import SessionPresentation
 from openrelay.release import ReleaseCommandService
 from openrelay.session import (
     SessionBrowser,
@@ -21,7 +21,6 @@ from openrelay.session import (
     SessionMutationService,
     SessionScopeResolver,
     SessionShortcutService,
-    SessionUX,
     SessionWorkspaceService,
 )
 from openrelay.storage import StateStore
@@ -63,40 +62,52 @@ class RuntimeOrchestrator:
         self.streaming_session_factory = streaming_session_factory or (lambda current_messenger: FeishuStreamingSession(current_messenger))
         self.typing_manager = typing_manager or FeishuTypingManager(messenger)
         self.session_browser = SessionBrowser(config, store)
-        self.session_ux = SessionUX(config, store)
+        self.session_presentation = SessionPresentation(config, store)
         self.session_workspace = SessionWorkspaceService(config)
         self.session_shortcuts = SessionShortcutService(config, store, self.session_workspace)
-        self.session_mutations = SessionMutationService(config, store, self.session_ux)
+        self.session_mutations = SessionMutationService(config, store, self.session_presentation)
         self.session_scope = SessionScopeResolver(config, store, LOGGER)
         self.reply_policy = RuntimeReplyPolicy(config, self.session_scope)
         self.session_lifecycle = SessionLifecycleResolver(config, store)
-        self.release_command_service = ReleaseCommandService(config, store, self.session_ux, self.session_mutations)
-        self.help_renderer = HelpRenderer(config, store, self.session_ux, self.session_workspace, self.session_shortcuts)
+        self.release_command_service = ReleaseCommandService(config, store, self.session_presentation, self.session_mutations)
+        self.help_renderer = HelpRenderer(config, store, self.session_presentation, self.session_workspace, self.session_shortcuts)
+        self.status_presenter = RuntimeStatusPresenter(config, store, self.session_presentation)
+        self.panel_presenter = RuntimePanelPresenter(
+            config,
+            self.backend_descriptors,
+            self.session_browser,
+            self.session_presentation,
+            self.session_workspace,
+            self.session_shortcuts,
+        )
         self.panel_service = RuntimePanelService(
             config,
             messenger,
             self.backend_descriptors,
             self.session_browser,
-            self.session_ux,
+            self.session_presentation,
             self.session_workspace,
             self.session_shortcuts,
             self.reply_policy,
             self._reply_command_fallback,
+            self.panel_presenter,
         )
         self.command_router = RuntimeCommandRouter(
             config,
             store,
             self.session_browser,
+            self.session_scope,
             self.session_mutations,
-            self.session_ux,
+            self.session_presentation,
             self.session_workspace,
             self.session_shortcuts,
             self.help_renderer,
             self.release_command_service,
+            self.status_presenter,
             self.backends,
             RuntimeCommandHooks(
                 reply=self._reply,
-                send_help=self._send_help,
+                send_help=self._send_help_via_renderer,
                 send_panel=self.panel_service.send_panel,
                 send_session_list=self.panel_service.send_session_list,
                 stop=self._handle_stop,
@@ -112,35 +123,6 @@ class RuntimeOrchestrator:
         await CodexBackend.shutdown_all()
         await self.messenger.close()
         self.store.close()
-
-    def _compose_session_key(self, message: IncomingMessage, *, thread_id: str = "") -> str:
-        return self.session_scope.compose_key(message, thread_id=thread_id)
-
-    def _thread_session_key_candidates(self, message: IncomingMessage) -> list[str]:
-        return self.session_scope.thread_candidates(message)
-
-    def _is_command_message(self, message: IncomingMessage) -> bool:
-        return self.session_scope.is_command_message(message)
-
-    def _is_top_level_message(self, message: IncomingMessage) -> bool:
-        return self.session_scope.is_top_level_message(message)
-
-    def _is_top_level_control_command(self, message: IncomingMessage) -> bool:
-        return self.session_scope.is_top_level_control_command(message)
-
-    def build_session_key(self, message: IncomingMessage) -> str:
-        return self.session_scope.build_session_key(message)
-
-    def _remember_thread_session_alias(self, message: IncomingMessage, session_key: str) -> None:
-        self.session_scope.remember_inbound_aliases(message, session_key)
-
-    def _remember_outbound_aliases(
-        self,
-        message: IncomingMessage,
-        session_key: str,
-        alias_groups: tuple[tuple[str, ...], ...] | list[tuple[str, ...]],
-    ) -> None:
-        self.session_scope.remember_outbound_aliases(message, session_key, alias_groups)
 
     def is_allowed_user(self, sender_open_id: str) -> bool:
         if sender_open_id in self.config.feishu.admin_open_ids:
@@ -158,9 +140,9 @@ class RuntimeOrchestrator:
     def _load_session_for_message(self, message: IncomingMessage, session_key: str) -> SessionRecord:
         return self.session_lifecycle.load_for_message(
             session_key,
-            is_top_level_control_command=self._is_top_level_control_command(message),
-            is_top_level_message=self._is_top_level_message(message),
-            control_key=self._compose_session_key(message),
+            is_top_level_control_command=self.session_scope.is_top_level_control_command(message),
+            is_top_level_message=self.session_scope.is_top_level_message(message),
+            control_key=self.session_scope.compose_key(message),
         )
 
     def _resolve_stop_execution_key(self, message: IncomingMessage, session_key: str, session: SessionRecord) -> str:
@@ -195,8 +177,8 @@ class RuntimeOrchestrator:
                 await self._reply(message, "你没有权限使用 openrelay。", command_reply=True)
                 return
 
-            session_key = self.build_session_key(message)
-            self._remember_thread_session_alias(message, session_key)
+            session_key = self.session_scope.build_session_key(message)
+            self.session_scope.remember_inbound_aliases(message, session_key)
             session = self._load_session_for_message(message, session_key)
             LOGGER.info(
                 "dispatch resolved session event_id=%s message_id=%s session_key=%s session_id=%s native_session_id=%s root_id=%s thread_id=%s parent_id=%s",
@@ -209,11 +191,7 @@ class RuntimeOrchestrator:
                 message.thread_id,
                 message.parent_id,
             )
-            execution_key = self._build_execution_key(
-                session_key,
-                session,
-                force_session_scope=self._is_top_level_control_command(message),
-            )
+            execution_key = self._build_execution_key(session_key, session, force_session_scope=self.session_scope.is_top_level_control_command(message))
             if self._is_stop_command(message.text):
                 await self._handle_stop(message, self._resolve_stop_execution_key(message, session_key, session))
                 return
@@ -243,8 +221,8 @@ class RuntimeOrchestrator:
 
     async def _handle_single_serialized_input(self, pending_input: ExecutionInput, execution_key: str) -> None:
         message = pending_input.to_message() if isinstance(pending_input, QueuedFollowUp) else pending_input
-        session_key = self.build_session_key(message)
-        self._remember_thread_session_alias(message, session_key)
+        session_key = self.session_scope.build_session_key(message)
+        self.session_scope.remember_inbound_aliases(message, session_key)
         session = self._load_session_for_message(message, session_key)
         LOGGER.info(
             "serialized input resolved session event_id=%s message_id=%s session_key=%s session_id=%s native_session_id=%s",
@@ -293,28 +271,25 @@ class RuntimeOrchestrator:
         await active.cancel(f"interrupted by {command_name}")
         return True
 
-    def _build_card_action_context(self, message: IncomingMessage, session_key: str) -> dict[str, str]:
-        return self.reply_policy.build_card_action_context(message, session_key)
-
     def _build_turn_runtime_context(self) -> TurnRuntimeContext:
         return TurnRuntimeContext(
             config=self.config,
             store=self.store,
             messenger=self.messenger,
             typing_manager=self.typing_manager,
-            session_ux=self.session_ux,
+            session_ux=self.session_presentation,
             streaming_session_factory=self.streaming_session_factory,
             execution_coordinator=self.execution_coordinator,
-            build_card_action_context=self._build_card_action_context,
+            build_card_action_context=self.reply_policy.build_card_action_context,
             root_id_for_message=self.reply_policy.root_id_for_message,
             is_card_action_message=self.reply_policy.is_card_action_message,
-            build_session_key=self.build_session_key,
-            remember_outbound_aliases=self._remember_outbound_aliases,
+            build_session_key=self.session_scope.build_session_key,
+            remember_outbound_aliases=self.session_scope.remember_outbound_aliases,
             reply_final=self._reply_final,
         )
 
-    async def _send_help(self, message: IncomingMessage, session_key: str, session: SessionRecord) -> None:
-        card = self.help_renderer.build_card(session, self.available_backend_names(), self._build_card_action_context(message, session_key))
+    async def _send_help_via_renderer(self, message: IncomingMessage, session_key: str, session: SessionRecord) -> None:
+        card = self.help_renderer.build_card(session, self.available_backend_names(), self.reply_policy.build_card_action_context(message, session_key))
         try:
             await self.messenger.send_interactive_card(
                 message.chat_id,
@@ -368,8 +343,8 @@ class RuntimeOrchestrator:
             root_id=route.root_id,
             force_new_message=route.force_new_message,
         )
-        session_key = self.build_session_key(message)
-        self._remember_outbound_aliases(message, session_key, [sent_message.alias_ids() for sent_message in sent_messages])
+        session_key = self.session_scope.build_session_key(message)
+        self.session_scope.remember_outbound_aliases(message, session_key, [sent_message.alias_ids() for sent_message in sent_messages])
 
     def _is_stop_command(self, text: str) -> bool:
         return text.strip().lower().startswith("/stop")
@@ -387,48 +362,4 @@ class RuntimeOrchestrator:
         return len(tokens) == 1 or tokens[1].lower() == "list"
 
     def _schedule_restart(self) -> None:
-        self.restart_controller.schedule_restart(self._restart_process())
-
-    async def _restart_process(self) -> None:
-        await asyncio.sleep(0.4)
-        if is_systemd_service_process():
-            unit_name = get_systemd_service_unit()
-            try:
-                await self._restart_systemd_service(unit_name)
-                return
-            except Exception:
-                self.restart_controller.mark_failed()
-                LOGGER.exception("failed to restart %s via systemd", unit_name)
-                raise
-        try:
-            await CodexBackend.shutdown_all()
-        except Exception:
-            LOGGER.exception("failed shutting down backends before restart")
-        try:
-            os.execvpe(sys.executable, [sys.executable, "-m", "openrelay"], os.environ)
-        except Exception:
-            self.restart_controller.mark_failed()
-            LOGGER.exception("failed to restart openrelay process")
-            raise
-
-    async def _restart_systemd_service(self, unit_name: str) -> None:
-        process = await asyncio.create_subprocess_exec(
-            "systemctl",
-            "--user",
-            "--no-block",
-            "restart",
-            unit_name,
-            stdin=asyncio.subprocess.DEVNULL,
-            stdout=asyncio.subprocess.DEVNULL,
-            stderr=asyncio.subprocess.PIPE,
-            env=dict(os.environ),
-        )
-        stderr = b""
-        if process.stderr is not None:
-            stderr = await process.stderr.read()
-        exit_code = await process.wait()
-        if exit_code == 0:
-            return
-        detail = stderr.decode("utf-8", errors="replace").strip()
-        message = detail or f"systemctl --user restart exited with code {exit_code}"
-        raise RuntimeError(message)
+        self.restart_controller.schedule_restart()

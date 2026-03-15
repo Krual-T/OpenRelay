@@ -1,8 +1,11 @@
+import logging
 from pathlib import Path
 
 import pytest
 
 from openrelay.core import AppConfig, BackendConfig, FeishuConfig, IncomingMessage
+from openrelay.presentation.runtime_status import RuntimeStatusPresenter
+from openrelay.presentation.session import SessionPresentation
 from openrelay.release import ReleaseCommandService
 from openrelay.runtime import HelpRenderer
 from openrelay.runtime import RuntimeCommandHooks, RuntimeCommandRouter
@@ -10,8 +13,8 @@ from openrelay.session import (
     SESSION_SORT_ACTIVE,
     SessionBrowser,
     SessionMutationService,
+    SessionScopeResolver,
     SessionShortcutService,
-    SessionUX,
     SessionWorkspaceService,
 )
 from openrelay.storage import StateStore
@@ -111,21 +114,24 @@ def build_router(tmp_path: Path) -> tuple[RuntimeCommandRouter, StateStore, Fake
     config = make_config(tmp_path)
     prepare_dirs(config)
     store = StateStore(config)
-    session_ux = SessionUX(config, store)
+    session_ux = SessionPresentation(config, store)
     workspace = SessionWorkspaceService(config)
     browser = SessionBrowser(config, store)
     session_mutations = SessionMutationService(config, store, session_ux)
+    session_scope = SessionScopeResolver(config, store, logging.getLogger("test.runtime.commands"))
     hooks = FakeHooks()
     router = RuntimeCommandRouter(
         config,
         store,
         browser,
+        session_scope,
         session_mutations,
         session_ux,
         workspace,
         SessionShortcutService(config, store, workspace),
         HelpRenderer(config, store, session_ux, workspace, SessionShortcutService(config, store, workspace)),
         ReleaseCommandService(config, store, session_ux, session_mutations),
+        RuntimeStatusPresenter(config, store, session_ux),
         {"codex": object(), "claude": object()},
         RuntimeCommandHooks(
             reply=hooks.reply,

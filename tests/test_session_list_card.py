@@ -1,4 +1,4 @@
-from openrelay.session import build_session_list_card
+from openrelay.presentation.session import build_session_list_card
 
 
 

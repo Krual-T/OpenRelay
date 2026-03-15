@@ -140,8 +140,14 @@ class SessionScopeResolver:
     def is_top_level_message(self, message: IncomingMessage) -> bool:
         return not message.root_id and not message.thread_id
 
+    def is_top_level_p2p_command(self, message: IncomingMessage) -> bool:
+        return message.chat_type == "p2p" and self.is_top_level_message(message)
+
     def is_top_level_control_command(self, message: IncomingMessage) -> bool:
         return self.is_top_level_message(message) and self.is_command_message(message)
+
+    def top_level_thread_scope_key(self, message: IncomingMessage) -> str:
+        return self.compose_key(message, thread_id=message.message_id)
 
     def is_card_action_message(self, message: IncomingMessage) -> bool:
         return message.event_id.startswith("card-action-")
