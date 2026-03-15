@@ -23,6 +23,7 @@ from openrelay.session import (
     DEFAULT_SESSION_LIST_SORT,
     SessionBrowser,
     SessionMutationService,
+    SessionShortcutService,
     SessionSortMode,
     SessionUX,
     SessionWorkspaceService,
@@ -96,6 +97,7 @@ class RuntimeCommandRouter:
         session_mutations: SessionMutationService,
         session_ux: SessionUX,
         workspace: SessionWorkspaceService,
+        shortcuts: SessionShortcutService,
         help_renderer: HelpRenderer,
         release_commands: ReleaseCommandService,
         backends: dict[str, object],
@@ -107,6 +109,7 @@ class RuntimeCommandRouter:
         self.session_mutations = session_mutations
         self.session_ux = session_ux
         self.workspace = workspace
+        self.shortcuts = shortcuts
         self.help_renderer = help_renderer
         self.release_commands = release_commands
         self.backends = backends
@@ -426,8 +429,8 @@ class RuntimeCommandRouter:
         action = tokens[0].lower() if tokens else "list"
 
         if action in {"list", "ls"}:
-            shortcuts = self.session_mutations.list_directory_shortcuts(session, limit=100)
-            if not shortcuts:
+            shortcut_entries = self.shortcuts.build_directory_shortcut_entries(session, limit=100)
+            if not shortcut_entries:
                 await self.hooks.reply(
                     message,
                     "当前没有可用的快捷目录。\n\n先用 `/shortcut add <name> <path>` 新增一个，或直接 `/cwd <path>`。",
@@ -436,7 +439,7 @@ class RuntimeCommandRouter:
                 )
                 return True
             lines = ["快捷目录："]
-            for entry in shortcuts:
+            for entry in shortcut_entries:
                 lines.append(f"- {entry['label']} -> {entry['display_path']} [{entry['channels']}]")
             lines.extend(["", "快速切换：/shortcut cd <name>"])
             await self.hooks.reply(message, "\n".join(lines), command_reply=True, command_name="/shortcut")
@@ -481,7 +484,7 @@ class RuntimeCommandRouter:
             if not name:
                 await self.hooks.reply(message, f"shortcut 参数无效：缺少名称\n{SHORTCUT_USAGE}", command_reply=True, command_name="/shortcut")
                 return True
-            target = self.session_mutations.resolve_directory_shortcut(name, session)
+            target = self.shortcuts.resolve_directory_shortcut(name, session)
             if target is None:
                 await self.hooks.reply(
                     message,

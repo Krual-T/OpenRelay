@@ -24,18 +24,12 @@ class RuntimeReplyPolicy:
             root_id=self.root_id_for_message(message),
         )
 
-    def default_reply_route(self, message: IncomingMessage) -> ReplyRoute:
-        return self.default_route(message)
-
     def command_route(self, message: IncomingMessage, command_name: str) -> ReplyRoute:
         return ReplyRoute(
             reply_to_message_id=self.command_reply_target(message),
             root_id=self.root_id_for_message(message),
             force_new_message=self.should_force_new_message_for_command(message, command_name),
         )
-
-    def command_reply_route(self, message: IncomingMessage, command_name: str) -> ReplyRoute:
-        return self.command_route(message, command_name)
 
     def command_reply_target(self, message: IncomingMessage) -> str:
         return message.reply_to_message_id or ("" if self.is_card_action_message(message) else message.message_id)
