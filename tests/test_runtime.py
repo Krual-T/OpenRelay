@@ -172,6 +172,52 @@ class FakeBackend(Backend):
         return BackendReply(text=f"echo: {prompt}", native_session_id="native_1", metadata={"usage": {"input_tokens": 100, "cached_input_tokens": 50, "output_tokens": 20, "total_tokens": 170, "model_context_window": 1000}})
 
 
+class NativeCommandBackend(FakeBackend):
+    async def list_threads(self, session: SessionRecord, context: BackendContext, limit: int = 20):
+        _ = session, context
+        rows = []
+        for index in range(1, limit + 1):
+            thread_id = "native_old" if index == 1 else f"native_{index - 2}" if index <= 8 else f"native_extra_{index}"
+            rows.append(
+                type(
+                    "ThreadSummary",
+                    (),
+                    {
+                        "thread_id": thread_id,
+                        "preview": f"preview {index}",
+                        "cwd": str(context.workspace_root),
+                        "updated_at": f"2026-03-{min(index, 28):02d}T10:00:00Z",
+                        "status": "idle",
+                        "name": f"thread {index}",
+                    },
+                )()
+            )
+        return rows, ""
+
+    async def read_thread(self, session: SessionRecord, context: BackendContext, thread_id: str, *, include_turns: bool = True):
+        _ = session, context, include_turns
+        return type(
+            "ThreadDetails",
+            (),
+            {
+                "thread_id": thread_id,
+                "preview": f"preview for {thread_id}",
+                "cwd": str(context.workspace_root),
+                "updated_at": "2026-03-15T10:00:00Z",
+                "status": "idle",
+                "name": f"name {thread_id}",
+                "messages": (
+                    type("Msg", (), {"role": "user", "text": f"user {thread_id}"})(),
+                    type("Msg", (), {"role": "assistant", "text": f"assistant {thread_id}"})(),
+                ),
+            },
+        )()
+
+    async def compact_thread(self, session: SessionRecord, context: BackendContext, thread_id: str):
+        _ = session, context, thread_id
+        return {"compactId": "compact_1"}
+
+
 class SequentialNativeBackend(Backend):
     name = "fake"
 
@@ -549,7 +595,7 @@ async def test_runtime_panel_command_sends_card(tmp_path: Path) -> None:
     config.develop_workspace_dir.mkdir(parents=True, exist_ok=True)
     store = StateStore(config)
     messenger = FakeMessenger()
-    runtime = RuntimeOrchestrator(config, store, messenger, backends={"codex": FakeBackend()})
+    runtime = RuntimeOrchestrator(config, store, messenger, backends={"codex": NativeCommandBackend()})
 
     await runtime.dispatch_message(make_message("/panel"))
     assert messenger.cards
@@ -572,7 +618,7 @@ async def test_runtime_panel_command_falls_back_to_text_when_card_send_fails(tmp
     config.develop_workspace_dir.mkdir(parents=True, exist_ok=True)
     store = StateStore(config)
     messenger = FailingCardMessenger()
-    runtime = RuntimeOrchestrator(config, store, messenger, backends={"codex": FakeBackend()})
+    runtime = RuntimeOrchestrator(config, store, messenger, backends={"codex": NativeCommandBackend()})
 
     await runtime.dispatch_message(make_message("/panel", event_suffix="panel_fallback"))
 
@@ -601,7 +647,7 @@ async def test_runtime_panel_shortcuts_switch_cwd_from_button(tmp_path: Path) ->
     )
     store = StateStore(config)
     messenger = FakeMessenger()
-    runtime = RuntimeOrchestrator(config, store, messenger, backends={"codex": FakeBackend()})
+    runtime = RuntimeOrchestrator(config, store, messenger, backends={"codex": NativeCommandBackend()})
 
     await runtime.dispatch_message(make_message("/panel", event_suffix="panel_shortcuts_main"))
 
@@ -648,7 +694,7 @@ async def test_runtime_resume_list_sends_paginated_sortable_card(tmp_path: Path)
     config.develop_workspace_dir.mkdir(parents=True, exist_ok=True)
     store = StateStore(config)
     messenger = FakeMessenger()
-    runtime = RuntimeOrchestrator(config, store, messenger, backends={"codex": FakeBackend()})
+    runtime = RuntimeOrchestrator(config, store, messenger, backends={"codex": NativeCommandBackend()})
 
     older = store.load_session("p2p:oc_1")
     older.label = "older"
@@ -661,21 +707,16 @@ async def test_runtime_resume_list_sends_paginated_sortable_card(tmp_path: Path)
 
     await runtime.dispatch_message(make_message("/resume list", event_suffix="resume_list"))
 
-    assert messenger.cards
-    commands = extract_card_commands(messenger.cards[-1])
-    assert any(command.startswith("/resume s_") for command in commands)
-    assert "/resume list --page 2 --sort updated-desc" in commands
-    assert "/resume list --page 1 --sort active-first" in commands
+    assert messenger.messages
+    assert "Codex 会话列表（第 1 页）：" in messenger.messages[-1]
+    assert "id=native_old" in messenger.messages[-1]
 
     await runtime.dispatch_message(make_message("/resume list --page 2 --sort active-first", event_suffix="resume_page2"))
-    latest_card = messenger.cards[-1]
-    header_text = extract_card_text(latest_card)
-    assert "第 `2` 页" in header_text
-    assert "当前会话优先" in header_text
+    assert "Codex 会话列表（第 2 页）：" in messenger.messages[-1]
 
     await runtime.dispatch_message(make_message(f"/resume {older.session_id}", event_suffix="resume_old"))
-    assert messenger.messages[-1].startswith("已恢复会话：older")
-    assert f"session_id={older.session_id}" in messenger.messages[-1]
+    assert messenger.messages[-1].startswith("已绑定 Codex 会话：name native_old")
+    assert "thread_id=native_old" in messenger.messages[-1]
     await runtime.shutdown()
 
 
@@ -721,45 +762,6 @@ async def test_runtime_panel_navigation_updates_same_card_for_card_actions(tmp_p
 
     assert messenger.card_calls[-1]["update_message_id"] == "om_panel_nav"
     assert "面板 · 总览" in extract_card_text(messenger.cards[-1])
-    await runtime.shutdown()
-
-
-@pytest.mark.asyncio
-async def test_runtime_resume_list_navigation_updates_same_card_for_card_actions(tmp_path: Path) -> None:
-    config = make_config(tmp_path)
-    config.workspace_root.mkdir(parents=True, exist_ok=True)
-    config.main_workspace_dir.mkdir(parents=True, exist_ok=True)
-    config.develop_workspace_dir.mkdir(parents=True, exist_ok=True)
-    store = StateStore(config)
-    messenger = FakeMessenger()
-    runtime = RuntimeOrchestrator(config, store, messenger, backends={"codex": FakeBackend()})
-
-    older = store.load_session("p2p:oc_1")
-    older.label = "older"
-    older.native_session_id = "native_old"
-    store.save_session(older)
-    for index in range(6):
-        next_session = store.create_next_session(older.base_key, older, f"session-{index}")
-        next_session.native_session_id = f"native_{index}"
-        store.save_session(next_session)
-
-    await runtime.dispatch_message(make_message("/resume list", event_suffix="resume_nav_root"))
-    first_card = messenger.cards[-1]
-
-    next_page = parse_card_action_event(
-        {
-            "token": "tok_resume_next",
-            "operator": {"open_id": "ou_user"},
-            "action": {"value": find_card_action_value(first_card, "/resume list --page 2 --sort updated-desc")},
-            "context": {"open_chat_id": "oc_1", "open_message_id": "om_resume_nav"},
-        }
-    )
-    assert next_page.message is not None
-
-    await runtime.dispatch_message(next_page.message)
-
-    assert messenger.card_calls[-1]["update_message_id"] == "om_resume_nav"
-    assert "第 `2` 页" in extract_card_text(messenger.cards[-1])
     await runtime.shutdown()
 
 
@@ -843,7 +845,7 @@ async def test_runtime_panel_views_show_structured_results(tmp_path: Path) -> No
     assert "面板 · 命令" in commands_text
     assert "/resume latest" in commands_commands
     assert "/panel directories" in commands_commands
-    assert "/new" in commands_commands
+    assert "/help" in commands_commands
 
     await runtime.dispatch_message(make_message("/panel status", event_suffix="panel_status"))
     status_card = messenger.cards[-1]
@@ -888,7 +890,6 @@ async def test_runtime_help_command_shows_actionable_guidance(tmp_path: Path) ->
     assert "/status" in empty_commands
     assert "/usage" in empty_commands
     assert "/resume list" in empty_commands
-    assert "/new" in empty_commands
     assert "/cwd" in empty_commands
     assert "/main" in empty_commands
     assert "/develop" in empty_commands
@@ -1143,6 +1144,9 @@ async def test_runtime_stop_interrupts_active_run(tmp_path: Path) -> None:
     store = StateStore(config)
     messenger = FakeMessenger()
     backend = InterruptibleBackend()
+    backend.list_threads = NativeCommandBackend().list_threads  # type: ignore[attr-defined]
+    backend.read_thread = NativeCommandBackend().read_thread  # type: ignore[attr-defined]
+    backend.compact_thread = NativeCommandBackend().compact_thread  # type: ignore[attr-defined]
     runtime = RuntimeOrchestrator(config, store, messenger, backends={"codex": backend})
 
     run_task = asyncio.create_task(runtime.dispatch_message(make_message("long running", event_suffix="run")))
@@ -1848,6 +1852,10 @@ async def test_runtime_top_level_resume_list_is_not_blocked_by_active_thread_run
     store = StateStore(config)
     messenger = FakeMessenger()
     backend = InterruptibleBackend()
+    native_helper = NativeCommandBackend()
+    backend.list_threads = native_helper.list_threads  # type: ignore[attr-defined]
+    backend.read_thread = native_helper.read_thread  # type: ignore[attr-defined]
+    backend.compact_thread = native_helper.compact_thread  # type: ignore[attr-defined]
     runtime = RuntimeOrchestrator(config, store, messenger, backends={"codex": backend})
 
     run_task = asyncio.create_task(runtime.dispatch_message(make_message("long running", event_suffix="resume_lock_run")))
@@ -1855,8 +1863,8 @@ async def test_runtime_top_level_resume_list_is_not_blocked_by_active_thread_run
 
     await runtime.dispatch_message(make_message("/resume list", event_suffix="resume_lock_list"))
 
-    assert messenger.cards
-    assert "会话列表" in extract_card_text(messenger.cards[-1])
+    assert messenger.messages
+    assert "Codex 会话列表（第 1 页）：" in messenger.messages[-1]
     assert all("已收到补充" not in message for message in messenger.messages)
 
     await runtime.dispatch_message(make_message("/stop", event_suffix="resume_lock_stop"))

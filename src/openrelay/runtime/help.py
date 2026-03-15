@@ -139,9 +139,9 @@ class HelpRenderer:
         if usage_ratio is None:
             return None
         if usage_ratio >= 0.85:
-            return "- 上下文提醒：当前上下文已经接近窗口上限；如果要开新任务，优先 /new，别继续混在这个会话里。"
+            return "- 上下文提醒：当前上下文已经接近窗口上限；如果要开新任务，直接在顶层发新消息，别继续混在这个会话里。"
         if usage_ratio >= 0.65:
-            return "- 上下文提醒：当前上下文已经不短；如果话题要明显切换，建议先 /new 隔离。"
+            return "- 上下文提醒：当前上下文已经不短；如果话题要明显切换，建议直接在顶层开新消息。"
         return None
 
     def context_usage_ratio(self, session: SessionRecord) -> float | None:
@@ -161,7 +161,7 @@ class HelpRenderer:
         if message_count == 0 and session.native_session_id:
             return [
                 "- 想延续当前 backend session：直接发消息，不需要先补命令。",
-                "- 想改成新任务：先 /new <label>，再发新需求，避免旧上下文干扰。",
+                "- 想改成新任务：直接回顶层发新消息，避免旧上下文干扰。",
                 "- 想先确认目录、模型、通道和最近上下文，发 /status。",
             ]
         if message_count == 0:
@@ -175,11 +175,11 @@ class HelpRenderer:
                 "- 如果还是同一件事，直接追加信息：目标、报错、文件路径、验收标准。",
                 "- 当前回复还没结束时，继续发消息会自动排到下一轮；连续补充会合并处理。",
                 "- 如果你想让它立刻推进，直接说“继续，先做下一步并汇报改动”。",
-                "- 如果任务已经变了，先 /new <label>，不要把新需求继续塞进当前会话。",
+                "- 如果任务已经变了，回顶层直接发新消息，不要把新需求继续塞进当前会话。",
             ]
         return [
             "- 直接再发一条真实消息，系统会基于当前本地上下文重新接上执行。",
-            "- 如果现在其实是新任务，先 /new <label> 隔离上下文。",
+            "- 如果现在其实是新任务，回顶层直接发新消息。",
             "- 如果你要回到更早的某次 Codex 对话，先 /resume list 再恢复对应 thread。",
         ]
 
@@ -189,7 +189,7 @@ class HelpRenderer:
                 '- “继续刚才那个任务，先回顾当前进度，再直接往下做。”',
                 '- “不要开新话题，基于当前会话继续修这个问题：<描述>。”',
                 '- “先告诉我你准备怎么继续，然后直接开始。”',
-                '- “如果你判断这已经是新任务，提醒我先 /new，再继续。”',
+                '- “如果你判断这已经是新任务，提醒我回顶层再开一条消息。”',
             ]
         if message_count == 0:
             return [
@@ -219,8 +219,8 @@ class HelpRenderer:
             "- 同一任务继续干：通常不用命令，直接发消息。",
             "- 当前回复还在跑时，继续发消息会进入下一轮；连续补充会自动合并。",
             "- 私聊顶层直接发新消息：默认会开新的 Codex 会话；想回旧会话时再用 /resume。",
-            "- 开新任务或切话题：/new <label>；查看或恢复旧 Codex thread：/resume list、/resume latest。",
-            "- `/new` 和 `/resume` 只允许在私聊顶层使用；子 thread 会固定绑定当前 Codex 会话。",
+            "- 开新任务或切话题：直接回顶层发新消息；查看或恢复旧 Codex thread：/resume list、/resume latest。",
+            "- `/resume` 只允许在私聊顶层使用；子 thread 会固定绑定当前 Codex 会话。",
             "- `/resume` 直接读取并绑定 Codex 原生 thread 历史；`/compact` 会对当前 thread 发起 compact。",
             "- 换执行位置：/cwd <path> 切目录；/main 回稳定工作区；/develop 进修复工作区。",
             "- 快捷目录：/shortcut add <name> <path> [all|main|develop]、/shortcut list、/shortcut cd <name>。",
@@ -238,7 +238,7 @@ class HelpRenderer:
     def build_command_button_groups(self, available_backends: list[str], action_context: dict[str, str]) -> list[list[dict[str, Any]]]:
         groups: list[list[tuple[str, str, str]]] = [
             [("状态", "/status", "primary"), ("用量", "/usage", "default"), ("面板", "/panel", "default")],
-            [("新会话", "/new", "primary"), ("会话列表", "/resume list", "default"), ("清空上下文", "/clear", "default")],
+            [("会话列表", "/resume list", "primary"), ("清空上下文", "/clear", "default")],
             [("当前目录", "/cwd", "default"), ("切到 main", "/main", "default"), ("切到 develop", "/develop", "default")],
             [("模型", "/model", "default"), ("Sandbox", "/sandbox", "default"), ("停止", "/stop", "default")],
         ]

@@ -189,7 +189,7 @@ def _build_home_card(info: dict[str, Any]) -> dict[str, Any]:
     elements: list[dict[str, Any]] = [*_build_header_elements(info, PANEL_HOME), divider_block()]
     _append_view_nav(elements, PANEL_HOME, action_context)
     elements.append(_markdown("**进入哪一类结果**\n> 这四个入口分别收敛会话、目录、命令和状态结果；下面的预览和结果页使用同一套项目语义。"))
-    elements.append(_action_row([build_button("恢复上一条", "/resume latest", "primary", action_context), build_button("新会话", "/new", "default", action_context), build_button("当前状态", "/panel status", "default", action_context)]))
+    elements.append(_action_row([build_button("恢复上一条", "/resume latest", "primary", action_context), build_button("会话列表", "/resume list", "default", action_context), build_button("当前状态", "/panel status", "default", action_context)]))
     elements.append(_markdown("**最近会话**\n> 想继续旧任务时，优先先看这里；如果不够，再切到完整会话结果页。"))
     _append_session_items(elements, sessions, action_context)
     elements.append(_action_row([build_button("全部会话", "/panel sessions", "default", action_context), build_button("命令式列表", "/resume list", "default", action_context), build_button("帮助", "/help", "default", action_context)]))
@@ -373,7 +373,7 @@ class RuntimePanelPresenter:
             {"title": "浏览目录结果", "meta": "目录 · 快捷入口", "preview": "优先点快捷目录；没有合适入口时再手写 /cwd。", "command": "/panel directories", "action_label": "看目录"},
             {"title": "管理快捷目录", "meta": "目录 · 新增 / 列表 / 快速切换", "preview": "用 /shortcut add|list|cd 在飞书里维护自己的常用目录入口。", "command": "/shortcut list", "action_label": "看快捷目录"},
             {"title": "查看完整状态", "meta": "状态 · 目录 / 模型 / 上下文", "preview": "先确认现场，再决定继续当前任务还是切上下文。", "command": "/status", "action_label": "看状态"},
-            {"title": "新建隔离会话", "meta": "隔离 · 新任务 / 切话题", "preview": "当目标已经变了时，不要继续堆在当前会话里。", "command": "/new", "action_label": "新会话"},
+            {"title": "顶层开新对话", "meta": "隔离 · 新任务 / 切话题", "preview": "目标已经变了时，直接回顶层发新消息，不要继续堆在当前会话里。", "command": "/help", "action_label": "看说明"},
             {"title": "打开帮助", "meta": "引导 · 下一步建议", "preview": "需要 prompt 示例或命令速查时使用。", "command": "/help", "action_label": "打开帮助"},
         ]
 
@@ -419,7 +419,7 @@ class RuntimePanelPresenter:
             lines.extend(["", "目录入口：暂无快捷目录；可先 /cwd <path>。"])
         lines.extend([
             "",
-            "commands: /panel sessions /panel directories /panel commands /panel status /resume list /resume latest /cwd <path> /main /develop /new /status /model [name|default] /sandbox [mode] /clear",
+            "commands: /panel sessions /panel directories /panel commands /panel status /resume list /resume latest /cwd <path> /main /develop /status /model [name|default] /sandbox [mode] /clear",
         ])
         return "\n".join(lines)
 
