@@ -9,7 +9,13 @@ from typing import Any, Awaitable, Callable, Protocol
 
 from openrelay.backends import Backend, BackendContext
 from openrelay.core import ActiveRun, AppConfig, BackendReply, IncomingMessage, SessionRecord, get_session_workspace_root, utc_now
-from openrelay.feishu import FeishuMessenger, FeishuStreamingSession, FeishuTypingManager, build_streaming_content
+from openrelay.feishu import (
+    FeishuMessenger,
+    FeishuStreamingSession,
+    FeishuTypingManager,
+    STREAMING_ROLLOVER_NOTICE,
+    build_streaming_content,
+)
 from openrelay.storage import StateStore
 
 from .interactions import RunInteractionController
@@ -171,6 +177,32 @@ class BackendTurnSession:
             return self.streaming.message_id()
         return self.message.reply_to_message_id or ("" if self.runtime.is_card_action_message(self.message) else self.message.message_id)
 
+    async def _start_streaming_session(self, route: ReplyRoute | None = None) -> FeishuStreamingSession:
+        current_route = route or self.runtime.streaming_route_for_message(self.message)
+        session = self.runtime.streaming_session_factory(self.runtime.messenger)
+        await session.start(
+            self.message.chat_id,
+            reply_to_message_id=current_route.reply_to_message_id,
+            root_id=current_route.root_id,
+        )
+        self.runtime.remember_outbound_aliases(
+            self.message,
+            self.runtime.build_session_key(self.message),
+            [session.message_alias_ids()],
+        )
+        self.streaming = session
+        return session
+
+    async def _roll_over_streaming(self, snapshot: dict[str, Any]) -> None:
+        previous_streaming = self.streaming
+        if previous_streaming is not None and previous_streaming.needs_rollover():
+            await previous_streaming.freeze(snapshot, notice_text=STREAMING_ROLLOVER_NOTICE)
+        self.streaming = None
+        next_streaming = await self._start_streaming_session(ReplyRoute(reply_to_message_id="", root_id="", force_new_message=True))
+        if not next_streaming.is_active():
+            return
+        await next_streaming.update(snapshot)
+
     async def save_reply(self, reply: BackendReply) -> SessionRecord:
         updated = SessionRecord(
             session_id=self.session.session_id,
@@ -224,18 +256,7 @@ class BackendTurnSession:
         if self.runtime.config.feishu.stream_mode != "card":
             return
         if self.streaming is None:
-            self.streaming = self.runtime.streaming_session_factory(self.runtime.messenger)
-            route = self.runtime.streaming_route_for_message(self.message)
-            await self.streaming.start(
-                self.message.chat_id,
-                reply_to_message_id=route.reply_to_message_id,
-                root_id=route.root_id,
-            )
-            self.runtime.remember_outbound_aliases(
-                self.message,
-                self.runtime.build_session_key(self.message),
-                [self.streaming.message_alias_ids()],
-            )
+            await self._start_streaming_session()
         self.pending_streaming_states.append(copy.deepcopy(self.live_state))
         await self._update_streaming(self.pending_streaming_states.popleft())
         self.spinner_task = asyncio.create_task(self._spinner_loop())
@@ -260,23 +281,18 @@ class BackendTurnSession:
             return
         try:
             if self.streaming is None:
-                self.streaming = self.runtime.streaming_session_factory(self.runtime.messenger)
-                route = self.runtime.streaming_route_for_message(self.message)
-                await self.streaming.start(
-                    self.message.chat_id,
-                    reply_to_message_id=route.reply_to_message_id,
-                    root_id=route.root_id,
-                )
-                self.runtime.remember_outbound_aliases(
-                    self.message,
-                    self.runtime.build_session_key(self.message),
-                    [self.streaming.message_alias_ids()],
-                )
+                await self._start_streaming_session()
             if not self.streaming.is_active():
+                if self.streaming.needs_rollover():
+                    await self._roll_over_streaming(snapshot)
+                    return
                 self._stop_spinner_task()
                 return
             await self.streaming.update(snapshot)
             if not self.streaming.is_active():
+                if self.streaming.needs_rollover():
+                    await self._roll_over_streaming(snapshot)
+                    return
                 self._stop_spinner_task()
             self.last_live_text = live_text
         except Exception:

@@ -234,6 +234,7 @@ class FakeStreamingSession:
     def __init__(self, messenger):
         self.started = False
         self.closed = False
+        self.rollover_needed = False
         self.updates = []
         self.final_card = None
         self._message_id = "om_stream_card"
@@ -266,7 +267,14 @@ class FakeStreamingSession:
         return self.started
 
     def is_active(self) -> bool:
-        return self.started and not self.closed
+        return self.started and not self.closed and not self.rollover_needed
+
+    def needs_rollover(self) -> bool:
+        return self.started and not self.closed and self.rollover_needed
+
+    async def freeze(self, live_state: dict, *, notice_text: str = "") -> None:
+        self.rollover_needed = True
+        self.updates.append({"freeze_notice": notice_text, **dict(live_state)})
 
 
 class FakeTypingManager:
@@ -293,6 +301,19 @@ class ProgressBackend(Backend):
         if context.on_progress is not None:
             await context.on_progress({"type": "assistant.partial", "text": f"partial: {prompt}"})
         return BackendReply(text=f"done: {prompt}", native_session_id="native_2")
+
+
+class SlowProgressBackend(Backend):
+    name = "fake"
+
+    async def run(self, session: SessionRecord, prompt: str, context: BackendContext) -> BackendReply:
+        _ = session
+        if context.on_progress is not None:
+            await context.on_progress({"type": "run.started"})
+        if context.on_partial_text is not None:
+            await context.on_partial_text(f"partial: {prompt}")
+        await asyncio.sleep(0.05)
+        return BackendReply(text=f"done: {prompt}", native_session_id="native_slow_progress")
 
 
 class ReasoningBackend(Backend):
@@ -446,6 +467,25 @@ class BlockingStreamingSession(FakeStreamingSession):
         self.updates.append(dict(live_state))
         if self.update_calls > 1:
             await asyncio.Event().wait()
+
+
+class RollingStreamingSession(FakeStreamingSession):
+    def __init__(self, messenger, *, roll_over_after: int = 2):
+        super().__init__(messenger)
+        self.update_calls = 0
+        self.roll_over_after = roll_over_after
+
+    async def update(self, live_state: dict) -> None:
+        self.update_calls += 1
+        self.updates.append(dict(live_state))
+        if self.roll_over_after > 0 and self.update_calls >= self.roll_over_after:
+            self.rollover_needed = True
+
+
+class ImmediateRolloverStreamingSession(FakeStreamingSession):
+    async def start(self, receive_id: str, *, reply_to_message_id: str = "", root_id: str = "") -> None:
+        await super().start(receive_id, reply_to_message_id=reply_to_message_id, root_id=root_id)
+        self.rollover_needed = True
 
 
 class NativeSessionConcurrencyBackend(Backend):
@@ -979,7 +1019,69 @@ async def test_runtime_sandbox_command_requires_admin_for_danger(tmp_path: Path)
     assert messenger.messages[-1] == "danger-full-access 只允许管理员切换。"
 
     await runtime.dispatch_message(make_message("/sandbox danger-full-access", sender_open_id="ou_admin", event_suffix="admin"))
-    assert messenger.messages[-1] == "sandbox 已切换到 danger-full-access，新的原生会话会在首条真实消息时创建。"
+    assert messenger.messages[-1] == "sandbox 已切换到 danger-full-access；当前 scope 会从下一条真实消息开始使用新 thread。"
+    await runtime.shutdown()
+
+
+@pytest.mark.asyncio
+async def test_runtime_cwd_command_updates_scope_in_place(tmp_path: Path) -> None:
+    config = make_config(tmp_path)
+    config.workspace_root.mkdir(parents=True, exist_ok=True)
+    config.main_workspace_dir.mkdir(parents=True, exist_ok=True)
+    config.develop_workspace_dir.mkdir(parents=True, exist_ok=True)
+    target_dir = config.main_workspace_dir / "docs"
+    target_dir.mkdir(parents=True, exist_ok=True)
+    store = StateStore(config)
+    messenger = FakeMessenger()
+    runtime = RuntimeOrchestrator(config, store, messenger, backends={"codex": FakeBackend()})
+
+    prompt = make_message("first task", event_suffix="cwd_before")
+    session_key = runtime.session_scope.build_session_key(prompt)
+    await runtime.dispatch_message(prompt)
+    before = store.load_session(session_key)
+    assert store.list_messages(before.session_id)
+
+    await runtime.dispatch_message(make_message(f"/cwd {shlex.quote(str(target_dir))}", event_suffix="cwd_switch"))
+
+    after = store.load_session(session_key)
+    assert after.session_id == before.session_id
+    assert after.cwd == str(target_dir)
+    assert after.native_session_id == ""
+    assert store.list_messages(after.session_id) == []
+    assert messenger.messages[-1] == "\n".join(
+        [
+            "cwd 已切换到 docs。",
+            "现在直接发消息，就会在这个目录进入 Codex。",
+            "当前 scope 已原地更新；如需切回旧 thread，请用 /resume list。",
+        ]
+    )
+    await runtime.shutdown()
+
+
+@pytest.mark.asyncio
+async def test_runtime_clear_command_keeps_scope_session_id(tmp_path: Path) -> None:
+    config = make_config(tmp_path)
+    config.workspace_root.mkdir(parents=True, exist_ok=True)
+    config.main_workspace_dir.mkdir(parents=True, exist_ok=True)
+    config.develop_workspace_dir.mkdir(parents=True, exist_ok=True)
+    store = StateStore(config)
+    messenger = FakeMessenger()
+    runtime = RuntimeOrchestrator(config, store, messenger, backends={"codex": FakeBackend()})
+
+    prompt = make_message("clear me", event_suffix="clear_before")
+    session_key = runtime.session_scope.build_session_key(prompt)
+    await runtime.dispatch_message(prompt)
+    before = store.load_session(session_key)
+    assert before.native_session_id == "native_1"
+    assert store.list_messages(before.session_id)
+
+    await runtime.dispatch_message(make_message("/clear", event_suffix="clear_now"))
+
+    after = store.load_session(session_key)
+    assert after.session_id == before.session_id
+    assert after.native_session_id == ""
+    assert store.list_messages(after.session_id) == []
+    assert messenger.messages[-1] == "已清空当前上下文；当前 scope 保留原目录和配置。"
     await runtime.shutdown()
 
 
@@ -1135,7 +1237,7 @@ async def test_runtime_streaming_update_does_not_block_backend_turn(tmp_path: Pa
         config,
         store,
         messenger,
-        backends={"codex": ProgressBackend()},
+        backends={"codex": SlowProgressBackend()},
         streaming_session_factory=factory,
         typing_manager=typing,
     )
@@ -1149,6 +1251,61 @@ async def test_runtime_streaming_update_does_not_block_backend_turn(tmp_path: Pa
     assert sessions[0].final_card["config"]["wide_screen_mode"] is True
     session = store.load_session(runtime.session_scope.build_session_key(make_message("hello blocked stream", event_suffix="blocked_stream")))
     assert session.native_session_id == "native_2"
+    await runtime.shutdown()
+
+
+@pytest.mark.asyncio
+async def test_runtime_card_stream_rolls_over_to_new_top_level_card_before_timeout(tmp_path: Path) -> None:
+    config = make_config(tmp_path)
+    config.feishu.stream_mode = "card"
+    config.workspace_root.mkdir(parents=True, exist_ok=True)
+    config.main_workspace_dir.mkdir(parents=True, exist_ok=True)
+    config.develop_workspace_dir.mkdir(parents=True, exist_ok=True)
+    store = StateStore(config)
+    messenger = FakeMessenger()
+    typing = FakeTypingManager()
+    sessions: list[FakeStreamingSession] = []
+
+    def factory(current_messenger):
+        session = ImmediateRolloverStreamingSession(current_messenger) if not sessions else FakeStreamingSession(current_messenger)
+        session._message_id = f"om_stream_card_{len(sessions) + 1}"
+        sessions.append(session)
+        return session
+
+    runtime = RuntimeOrchestrator(
+        config,
+        store,
+        messenger,
+        backends={"codex": SlowProgressBackend()},
+        streaming_session_factory=factory,
+        typing_manager=typing,
+    )
+
+    await runtime.dispatch_message(
+        IncomingMessage(
+            event_id="evt_stream_rollover",
+            message_id="om_stream_rollover",
+            chat_id="oc_1",
+            chat_type="p2p",
+            sender_open_id="ou_user",
+            root_id="om_root_existing",
+            thread_id="omt_existing",
+            text="continue with rollover",
+            actionable=True,
+        )
+    )
+
+    assert len(sessions) == 2
+    assert sessions[0].start_calls == [
+        {"receive_id": "oc_1", "reply_to_message_id": "om_stream_rollover", "root_id": "om_root_existing"}
+    ]
+    assert sessions[0].needs_rollover() is True
+    assert sessions[0].updates[-1]["freeze_notice"] == "此卡已停止流式更新，openrelay 已在顶层新卡继续返回。"
+    assert sessions[1].start_calls == [
+        {"receive_id": "oc_1", "reply_to_message_id": "", "root_id": ""}
+    ]
+    assert sessions[1].closed is True
+    assert sessions[1].final_card is not None
     await runtime.shutdown()
 
 

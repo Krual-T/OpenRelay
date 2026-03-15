@@ -46,6 +46,7 @@ from .reply_card import (
     format_reasoning_duration,
 )
 from .streaming import FeishuStreamingSession
+from .streaming import STREAMING_ROLLOVER_NOTICE
 from .typing import FeishuTypingManager
 from .types import ParsedWebhook, SentMessageRef
 from .ws_client import FeishuWebSocketClient
@@ -61,6 +62,7 @@ __all__ = [
     "FeishuWebSocketClient",
     "ParsedWebhook",
     "STREAMING_ELEMENT_ID",
+    "STREAMING_ROLLOVER_NOTICE",
     "SentMessageRef",
     "_read_text",
     "build_button",
