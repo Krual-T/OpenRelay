@@ -14,6 +14,8 @@ from .panel import (
     SESSION_SORT_LABELS,
     build_panel_card,
 )
+from .panel_service import RuntimePanelService
+from .replying import ReplyRoute, RuntimeReplyPolicy
 from .restart import DEFAULT_SYSTEMD_SERVICE_UNIT, RuntimeRestartController, get_systemd_service_unit, is_systemd_service_process
 from .rendering import build_activity_summary, render_live_status_markdown, render_live_status_sections
 from .turn import BackendTurnSession, TurnRuntimeContext
@@ -33,8 +35,11 @@ __all__ = [
     "PANEL_STATUS",
     "PANEL_VIEW_LABELS",
     "QueuedFollowUp",
+    "ReplyRoute",
     "RuntimeExecutionCoordinator",
+    "RuntimePanelService",
     "RuntimeRestartController",
+    "RuntimeReplyPolicy",
     "RuntimeCommandHooks",
     "RuntimeCommandRouter",
     "SESSION_SORT_LABELS",

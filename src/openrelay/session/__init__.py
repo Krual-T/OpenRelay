@@ -15,8 +15,10 @@ from .browser import (
 from .list_card import build_resume_list_command, build_session_list_card
 from .lifecycle import SessionLifecycleResolver
 from .mutations import SessionMutationService
+from .shortcuts import SessionShortcutService
 from .scope import SessionScopeResolver
 from .ux import SessionUX
+from .workspace import SessionWorkspaceService
 
 __all__ = [
     "DEFAULT_BROWSE_LIMIT",
@@ -35,6 +37,8 @@ __all__ = [
     "SessionSortMode",
     "SessionUX",
     "SessionMutationService",
+    "SessionShortcutService",
     "build_resume_list_command",
     "build_session_list_card",
+    "SessionWorkspaceService",
 ]

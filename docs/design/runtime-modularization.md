@@ -90,8 +90,10 @@
 - 2026-03-15 新增 `src/openrelay/runtime/turn.py`，把 backend turn 生命周期、交互控制、流式回复状态从 `RuntimeOrchestrator` 移出
 - 2026-03-15 新增 `src/openrelay/runtime/execution.py`，把 active run、串行锁和 follow-up 队列从 `RuntimeOrchestrator` 移到执行协调器
 - 2026-03-15 新增 `src/openrelay/release/service.py`，把 release channel 切换、事件记录和 next-session 产出从 `RuntimeOrchestrator` / `RuntimeCommandRouter` 中抽离
+- 2026-03-15 新增 `src/openrelay/runtime/panel_service.py`，把 `/panel` 与 `/resume list` 的 card/text fallback 发送和展示数据组装从 `RuntimeOrchestrator` 抽离
+- 2026-03-15 新增 `src/openrelay/runtime/replying.py`，把 reply route、card update target 和 command card 发送策略从 `RuntimeOrchestrator` 抽离
 - `RuntimeCommandRouter` 现在只负责命令解析与调用协作者，不再直接拼接 release / session 变更细节
-- `RuntimeOrchestrator` 现在主要保留 dispatch、命令分流、session 解析委托与顶层异常边界
+- `RuntimeOrchestrator` 现在主要保留 dispatch、命令分流、session 解析委托、reply 协作者装配与顶层异常边界
 
 ## 预期结果
 

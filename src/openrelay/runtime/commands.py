@@ -18,7 +18,15 @@ from openrelay.core import (
     summarize_release_event,
 )
 from openrelay.release import ReleaseCommandService
-from openrelay.session import DEFAULT_SESSION_LIST_PAGE_SIZE, DEFAULT_SESSION_LIST_SORT, SessionBrowser, SessionMutationService, SessionSortMode, SessionUX
+from openrelay.session import (
+    DEFAULT_SESSION_LIST_PAGE_SIZE,
+    DEFAULT_SESSION_LIST_SORT,
+    SessionBrowser,
+    SessionMutationService,
+    SessionSortMode,
+    SessionUX,
+    SessionWorkspaceService,
+)
 from openrelay.storage import StateStore
 
 from .help import HelpRenderer
@@ -87,6 +95,7 @@ class RuntimeCommandRouter:
         session_browser: SessionBrowser,
         session_mutations: SessionMutationService,
         session_ux: SessionUX,
+        workspace: SessionWorkspaceService,
         help_renderer: HelpRenderer,
         release_commands: ReleaseCommandService,
         backends: dict[str, object],
@@ -97,6 +106,7 @@ class RuntimeCommandRouter:
         self.session_browser = session_browser
         self.session_mutations = session_mutations
         self.session_ux = session_ux
+        self.workspace = workspace
         self.help_renderer = help_renderer
         self.release_commands = release_commands
         self.backends = backends
@@ -372,7 +382,7 @@ class RuntimeCommandRouter:
             await self.hooks.reply(
                 message,
                 "\n".join([
-                    f"cwd={self.session_ux.format_cwd(session.cwd, session)}",
+                    f"cwd={self.workspace.format_cwd(session.cwd, session)}",
                     "切换目录：/cwd <path> 或 /cd <path>",
                     "切目录时会创建一个新的空会话；旧会话历史仍可通过 /resume 找回。",
                 ]),
@@ -381,7 +391,7 @@ class RuntimeCommandRouter:
             )
             return True
         try:
-            next_cwd = self.session_ux.resolve_cwd(session.cwd, arg_text, session)
+            next_cwd = self.workspace.resolve_cwd(session.cwd, arg_text, session)
         except ValueError as exc:
             await self.hooks.reply(message, f"cwd 切换失败：{exc}", command_reply=True, command_name=command_name)
             return True
@@ -389,7 +399,7 @@ class RuntimeCommandRouter:
         await self.hooks.reply(
             message,
             "\n".join([
-                f"cwd 已切换到 {self.session_ux.format_cwd(next_session.cwd, next_session)}。",
+                f"cwd 已切换到 {self.workspace.format_cwd(next_session.cwd, next_session)}。",
                 "现在直接发消息，就会在这个目录进入 Codex。",
                 "已创建新的空会话；原会话历史还在，想回来可以 /resume list。",
             ]),

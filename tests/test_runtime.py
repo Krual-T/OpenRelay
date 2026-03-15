@@ -74,6 +74,21 @@ class ThreadAwareFakeMessenger(FakeMessenger):
         return sent_messages
 
 
+class FailingCardMessenger(FakeMessenger):
+    async def send_interactive_card(
+        self,
+        chat_id: str,
+        card: dict,
+        *,
+        reply_to_message_id: str = "",
+        root_id: str = "",
+        force_new_message: bool = False,
+        update_message_id: str = "",
+    ) -> SentMessageRef:
+        _ = chat_id, card, reply_to_message_id, root_id, force_new_message, update_message_id
+        raise RuntimeError("card unavailable")
+
+
 def extract_card_commands(card: dict) -> list[str]:
     commands: list[str] = []
 
@@ -537,6 +552,24 @@ async def test_runtime_panel_command_sends_card(tmp_path: Path) -> None:
     assert "/panel directories" in panel_commands
     assert "/panel commands" in panel_commands
     assert "/panel status" in panel_commands
+    await runtime.shutdown()
+
+
+@pytest.mark.asyncio
+async def test_runtime_panel_command_falls_back_to_text_when_card_send_fails(tmp_path: Path) -> None:
+    config = make_config(tmp_path)
+    config.workspace_root.mkdir(parents=True, exist_ok=True)
+    config.main_workspace_dir.mkdir(parents=True, exist_ok=True)
+    config.develop_workspace_dir.mkdir(parents=True, exist_ok=True)
+    store = StateStore(config)
+    messenger = FailingCardMessenger()
+    runtime = RuntimeOrchestrator(config, store, messenger, backends={"codex": FakeBackend()})
+
+    await runtime.dispatch_message(make_message("/panel", event_suffix="panel_fallback"))
+
+    assert messenger.messages
+    assert "OpenRelay 面板" in messenger.messages[-1]
+    assert "结果面：/panel sessions | /panel directories | /panel commands | /panel status" in messenger.messages[-1]
     await runtime.shutdown()
 
 
