@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime
+from pathlib import Path
 import shlex
 from typing import Awaitable, Callable, Literal
 
@@ -279,7 +281,7 @@ class RuntimeCommandRouter:
             cwd=thread.cwd or session.cwd,
             label=thread.name or session.label,
         )
-        await self.hooks.reply(message, self._format_native_resume_success(resumed_session, thread), command_reply=True)
+        await self.hooks.reply(message, self._format_native_resume_success(resumed_session, thread), command_reply=True, command_name="/resume")
         return True
 
     async def _handle_compact(self, message: IncomingMessage, session_key: str, session: SessionRecord, arg_text: str) -> bool:
@@ -412,26 +414,45 @@ class RuntimeCommandRouter:
         return ""
 
     def _format_native_resume_success(self, session: SessionRecord, thread: NativeThreadDetails) -> str:
+        title = thread.name or thread.preview or thread.thread_id
         lines = [
-            f"已绑定 Codex 会话：{thread.name or thread.thread_id}",
-            f"session_id={session.session_id}",
+            f"已绑定 Codex 会话：{title}",
             f"thread_id={thread.thread_id}",
-            f"cwd={self.workspace.format_cwd(thread.cwd or session.cwd, session)}",
+            f"cwd={self._format_full_cwd(thread.cwd or session.cwd)}",
         ]
-        if thread.updated_at:
-            lines.append(f"updated_at={thread.updated_at}")
+        updated_at = self._format_user_facing_time(thread.updated_at)
+        if updated_at:
+            lines.append(f"最近更新：{updated_at}")
         if thread.status:
             lines.append(f"status={thread.status}")
-        history = list(thread.messages)[-6:]
-        if history:
-            lines.extend(["", "最近历史："])
-            for item in history:
-                role = "用户" if item.role == "user" else "助手"
-                lines.append(f"- {role}：{self.session_presentation.shorten(item.text, 120)}")
-        elif thread.preview:
+        if thread.preview:
             lines.extend(["", f"预览：{self.session_presentation.shorten(thread.preview, 120)}"])
-        lines.extend(["", "继续发送消息即可沿用这个 Codex thread。"])
+        lines.extend(["", "接下来请直接在这个 thread 里继续发送消息。"])
         return "\n".join(lines)
+
+    def _format_user_facing_time(self, value: str) -> str:
+        raw = value.strip()
+        if not raw:
+            return ""
+        try:
+            parsed = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+        except ValueError:
+            return raw
+        if parsed.tzinfo is not None:
+            parsed = parsed.astimezone()
+        return parsed.strftime("%Y-%m-%d %H:%M")
+
+    def _format_full_cwd(self, cwd: str) -> str:
+        raw = cwd.strip()
+        if not raw:
+            return ""
+        path = Path(raw).expanduser()
+        home = Path.home()
+        try:
+            relative = path.relative_to(home)
+        except ValueError:
+            return str(path)
+        return "~" if str(relative) == "." else f"~/{relative}"
 
     def _parse_resume_command_args(self, arg_text: str) -> ResumeCommandArgs:
         args = self._parse_paging_command_args(arg_text)
