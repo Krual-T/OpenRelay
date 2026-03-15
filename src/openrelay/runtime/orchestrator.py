@@ -290,6 +290,7 @@ class RuntimeOrchestrator:
             streaming_session_factory=self.streaming_session_factory,
             execution_coordinator=self.execution_coordinator,
             build_card_action_context=self.reply_policy.build_card_action_context,
+            streaming_route_for_message=self.reply_policy.streaming_route,
             root_id_for_message=self.reply_policy.root_id_for_message,
             is_card_action_message=self.reply_policy.is_card_action_message,
             build_session_key=self.session_scope.build_session_key,

@@ -14,6 +14,7 @@ from openrelay.storage import StateStore
 
 from .interactions import RunInteractionController
 from .live import apply_live_progress, create_live_reply_state
+from .replying import ReplyRoute
 
 
 LOGGER = logging.getLogger("openrelay.runtime")
@@ -40,6 +41,7 @@ class TurnRuntimeContext:
     streaming_session_factory: Callable[[FeishuMessenger], FeishuStreamingSession]
     execution_coordinator: TurnCoordinator
     build_card_action_context: Callable[[IncomingMessage, str], dict[str, str]]
+    streaming_route_for_message: Callable[[IncomingMessage], ReplyRoute]
     root_id_for_message: Callable[[IncomingMessage], str]
     is_card_action_message: Callable[[IncomingMessage], bool]
     build_session_key: Callable[[IncomingMessage], str]
@@ -246,10 +248,11 @@ class BackendTurnSession:
         try:
             if self.streaming is None:
                 self.streaming = self.runtime.streaming_session_factory(self.runtime.messenger)
+                route = self.runtime.streaming_route_for_message(self.message)
                 await self.streaming.start(
                     self.message.chat_id,
-                    reply_to_message_id=self.message.reply_to_message_id or ("" if self.runtime.is_card_action_message(self.message) else self.message.message_id),
-                    root_id=self.runtime.root_id_for_message(self.message),
+                    reply_to_message_id=route.reply_to_message_id,
+                    root_id=route.root_id,
                 )
                 self.runtime.remember_outbound_aliases(
                     self.message,
