@@ -529,37 +529,37 @@ def _build_process_panel_element(panel_text: object, panel_title: object) -> dic
     }
 
 
-def _streaming_answer_content(live_state: dict[str, Any] | None = None) -> str:
+def _streaming_inline_content(live_state: dict[str, Any] | None = None) -> str:
     live_state = live_state or {}
+    process_text = build_process_panel_text(live_state)
     partial_text = str(live_state.get("partial_text") or "").strip()
     if not partial_text:
-        return ""
+        return process_text
+
     partial_reasoning, partial_answer = split_reasoning_text(partial_text)
-    answer = partial_answer or strip_reasoning_tags(partial_text)
-    if answer:
-        return optimize_markdown_style(answer)
-    if partial_reasoning:
-        return ""
-    return ""
+    summary_text = partial_answer or strip_reasoning_tags(partial_text)
+    summary_text = optimize_markdown_style(summary_text).strip()
+    reasoning_text = clean_reasoning_prefix(partial_reasoning).strip()
+
+    blocks: list[str] = []
+    if process_text:
+        blocks.append(process_text)
+    elif reasoning_text:
+        blocks.append(f"💭 **Thinking...**\n\n{reasoning_text}")
+
+    if summary_text:
+        divider = "---"
+        blocks.append(f"{divider}\n{summary_text}")
+
+    return "\n\n".join(block for block in blocks if block).strip()
 
 
 def _streaming_process_text(live_state: dict[str, Any] | None = None) -> str:
     return build_process_panel_text(live_state or {})
 
-
-def _streaming_process_signature(live_state: dict[str, Any] | None = None) -> str:
-    live_state = live_state or {}
-    history_items = live_state.get("history_items")
-    if not isinstance(history_items, list):
-        return ""
-    return repr(history_items[-12:])
-
-
 def build_streaming_card_signature(live_state: dict[str, Any] | None = None) -> tuple[str, str]:
-    answer_content = _streaming_answer_content(live_state)
-    if not answer_content:
-        return ("plain", "")
-    return ("answer", _streaming_process_signature(live_state))
+    _ = live_state
+    return ("plain", "")
 
 
 def build_thinking_card_json() -> dict[str, Any]:
@@ -579,40 +579,12 @@ def build_thinking_card_json() -> dict[str, Any]:
 
 
 def build_streaming_card_json(live_state: dict[str, Any] | None = None) -> dict[str, Any]:
-    answer_content = _streaming_answer_content(live_state)
-    if not answer_content:
-        return build_thinking_card_json()
-
-    elements: list[dict[str, Any]] = []
-    process_panel = _build_process_panel_element(_streaming_process_text(live_state), PROCESS_LOG_PANEL_TITLE)
-    if process_panel is not None:
-        elements.append(process_panel)
-    elements.append(_build_streaming_markdown_element())
-    elements.append(_build_streaming_loading_element())
-    return {
-        "schema": "2.0",
-        "config": {
-            "streaming_mode": True,
-            "summary": {"content": DEFAULT_THINKING_TEXT},
-        },
-        "body": {"elements": elements},
-    }
+    _ = live_state
+    return build_thinking_card_json()
 
 
 def build_streaming_content(live_state: dict[str, Any] | None = None) -> str:
-    live_state = live_state or {}
-    answer_content = _streaming_answer_content(live_state)
-    if answer_content:
-        return answer_content
-    process_text = build_process_panel_text(live_state)
-    partial_text = str(live_state.get("partial_text") or "").strip()
-    if partial_text:
-        partial_reasoning, _partial_answer = split_reasoning_text(partial_text)
-        if partial_reasoning:
-            if process_text:
-                return process_text
-            return f"💭 **Thinking...**\n\n{partial_reasoning}"
-    return process_text
+    return _streaming_inline_content(live_state)
 
 
 def build_complete_card(
