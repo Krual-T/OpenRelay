@@ -505,6 +505,61 @@ async def test_codex_reasoning_prefers_summary_text_over_raw_content(tmp_path: P
 
 
 @pytest.mark.asyncio
+async def test_codex_event_agent_message_delta_updates_partial_text(tmp_path: Path) -> None:
+    _ = tmp_path
+    partial_texts: list[str] = []
+
+    async def on_partial_text(text: str) -> None:
+        partial_texts.append(text)
+
+    turn = CodexTurn(thread_id="thread_1", turn_id="turn_1", on_partial_text=on_partial_text)
+
+    await turn.handle_notification(
+        object(),
+        "codex/event/agent_message_content_delta",
+        {
+            "conversationId": "thread_1",
+            "id": "turn_1",
+            "msg": {
+                "type": "agent_message_content_delta",
+                "thread_id": "thread_1",
+                "turn_id": "turn_1",
+                "item_id": "msg_1",
+                "delta": "hello",
+            },
+        },
+    )
+
+    assert partial_texts == ["hello"]
+
+
+@pytest.mark.asyncio
+async def test_codex_event_task_complete_resolves_turn_future(tmp_path: Path) -> None:
+    _ = tmp_path
+    turn = CodexTurn(thread_id="thread_1", turn_id="turn_1")
+    turn.final_text = "done"
+
+    await turn.handle_notification(
+        object(),
+        "codex/event/task_complete",
+        {
+            "conversationId": "thread_1",
+            "id": "turn_1",
+            "msg": {
+                "type": "task_complete",
+                "turn_id": "turn_1",
+                "last_agent_message": "done",
+            },
+        },
+    )
+
+    reply = await turn.future
+
+    assert reply.text == "done"
+    assert reply.native_session_id == "thread_1"
+
+
+@pytest.mark.asyncio
 async def test_codex_turn_emits_file_change_and_collab_progress(tmp_path: Path) -> None:
     _ = tmp_path
     progress_events: list[dict[str, object]] = []
