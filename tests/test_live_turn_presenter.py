@@ -1,4 +1,4 @@
-from openrelay.agent_runtime import ApprovalDecision, ApprovalRequest, LiveTurnViewModel, PlanStep, ToolState
+from openrelay.agent_runtime import ApprovalDecision, ApprovalRequest, BackendEventRecord, LiveTurnViewModel, PlanStep, ToolState
 from openrelay.presentation.live_turn import LiveTurnPresenter
 
 
@@ -118,3 +118,33 @@ def test_live_turn_presenter_updates_native_session_and_spinner() -> None:
 
     assert snapshot["native_session_id"] == "thread_2"
     assert bumped["spinner_frame"] == 2
+
+
+def test_live_turn_presenter_renders_unexpected_backend_event_payload() -> None:
+    presenter = LiveTurnPresenter()
+    state = LiveTurnViewModel(
+        backend="codex",
+        session_id="relay_1",
+        native_session_id="thread_1",
+        turn_id="turn_1",
+        status="running",
+        backend_events=(
+            BackendEventRecord(
+                event_type="backend.notice",
+                title="Unexpected backend event: item/unknownEvent",
+                detail="Unexpected backend event: item/unknownEvent",
+                raw_payload={
+                    "raw_event": {
+                        "method": "item/unknownEvent",
+                        "params": {"foo": "bar"},
+                    }
+                },
+            ),
+        ),
+    )
+
+    snapshot = presenter.build_snapshot(state)
+    backend_event = next(item for item in snapshot["history_items"] if item["type"] == "backend_event")
+
+    assert backend_event["title"] == "Unexpected backend event: item/unknownEvent"
+    assert '"foo": "bar"' in backend_event["detail"]

@@ -21,6 +21,7 @@ from .events import (
 from .models import (
     ApprovalDecision,
     ApprovalRequest,
+    BackendEventRecord,
     BackendKind,
     LiveTurnViewModel,
     PlanStep,
@@ -42,6 +43,7 @@ __all__ = [
     "AssistantCompletedEvent",
     "AssistantDeltaEvent",
     "BackendCapabilities",
+    "BackendEventRecord",
     "BackendKind",
     "BackendNoticeEvent",
     "ListSessionsRequest",

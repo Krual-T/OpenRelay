@@ -9,6 +9,7 @@ from .events import (
     ApprovalResolvedEvent,
     AssistantCompletedEvent,
     AssistantDeltaEvent,
+    BackendNoticeEvent,
     PlanUpdatedEvent,
     ReasoningDeltaEvent,
     RuntimeEvent,
@@ -22,7 +23,7 @@ from .events import (
     TurnStartedEvent,
     UsageUpdatedEvent,
 )
-from .models import LiveTurnViewModel, ToolState
+from .models import BackendEventRecord, LiveTurnViewModel, ToolState
 
 
 class LiveTurnReducer:
@@ -48,6 +49,18 @@ class LiveTurnReducer:
                 self.state.reasoning_text = text or self.state.reasoning_text
             case PlanUpdatedEvent(steps=steps):
                 self.state.plan_steps = steps
+            case BackendNoticeEvent(level=level, message=message) if event.provider_payload.get("fallback"):
+                self.state.backend_events = (
+                    *self.state.backend_events,
+                    BackendEventRecord(
+                        event_type=event.event_type,
+                        level=level,
+                        title=str(event.provider_payload.get("title") or "Unexpected backend event"),
+                        detail=message,
+                        raw_payload=dict(event.provider_payload),
+                        created_at=event.created_at,
+                    ),
+                )
             case ToolStartedEvent(tool=tool):
                 self.state.status = "running"
                 self._upsert_tool(tool)

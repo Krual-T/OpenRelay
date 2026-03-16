@@ -231,7 +231,7 @@ class CodexProtocolMapper:
                     provider_payload={"method": method},
                 ),
             )
-        return ()
+        return (self._fallback_notice(method, params),)
 
     def map_server_request(
         self,
@@ -472,7 +472,14 @@ class CodexProtocolMapper:
             )
         tool = self._to_tool_state(item, status="running", state=state)
         if tool is None:
-            return ()
+            return (
+                self._fallback_notice(
+                    method,
+                    params,
+                    title=f"Unexpected backend item started: {item_type or 'unknown'}",
+                    raw_event={"method": method, "params": params, "item": item},
+                ),
+            )
         return (self._event(ToolStartedEvent, event_type="tool.started", tool=tool, provider_payload={"method": method}),)
 
     def _map_item_completed(
@@ -530,7 +537,14 @@ class CodexProtocolMapper:
             )
         tool = self._to_tool_state(item, status="completed", state=state)
         if tool is None:
-            return ()
+            return (
+                self._fallback_notice(
+                    method,
+                    params,
+                    title=f"Unexpected backend item completed: {item_type or 'unknown'}",
+                    raw_event={"method": method, "params": params, "item": item},
+                ),
+            )
         return (self._event(ToolCompletedEvent, event_type="tool.completed", tool=tool, provider_payload={"method": method}),)
 
     def _map_token_usage_updated(
@@ -694,6 +708,28 @@ class CodexProtocolMapper:
             session_id=self.session_id,
             turn_id=self.turn_id,
             **kwargs,
+        )
+
+    def _fallback_notice(
+        self,
+        method: str,
+        params: dict[str, Any],
+        *,
+        title: str = "",
+        raw_event: dict[str, Any] | None = None,
+    ) -> BackendNoticeEvent:
+        normalized_title = title or f"Unexpected backend event: {method or 'unknown'}"
+        return self._event(
+            BackendNoticeEvent,
+            event_type="backend.notice",
+            level="warning",
+            message=normalized_title,
+            provider_payload={
+                "fallback": True,
+                "method": method,
+                "title": normalized_title,
+                "raw_event": raw_event if isinstance(raw_event, dict) else {"method": method, "params": params},
+            },
         )
 
     def _extract_event_item(self, params: dict[str, Any]) -> dict[str, Any]:

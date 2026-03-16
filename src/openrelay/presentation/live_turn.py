@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from typing import Any, Callable
 
 from openrelay.agent_runtime import ApprovalDecision, ApprovalRequest, LiveTurnViewModel, ToolState
@@ -165,6 +166,15 @@ class LiveTurnPresenter:
                         "detail": "\n".join(plan_lines),
                     }
                 )
+        for backend_event in state.backend_events:
+            items.append(
+                {
+                    "type": "backend_event",
+                    "state": "completed" if backend_event.level != "error" else "error",
+                    "title": backend_event.title or "Unexpected backend event",
+                    "detail": self._format_backend_event_detail(backend_event.detail, backend_event.raw_payload),
+                }
+            )
         if state.pending_approval is not None:
             items.append(
                 {
@@ -200,6 +210,16 @@ class LiveTurnPresenter:
                 continue
             preserved.append(dict(item))
         return preserved + items
+
+    def _format_backend_event_detail(self, detail: str, raw_payload: dict[str, Any]) -> str:
+        blocks: list[str] = []
+        normalized_detail = str(detail or "").strip()
+        if normalized_detail:
+            blocks.append(normalized_detail)
+        raw_event = raw_payload.get("raw_event")
+        if isinstance(raw_event, dict) and raw_event:
+            blocks.append(json.dumps(raw_event, ensure_ascii=False, indent=2, sort_keys=True))
+        return "\n\n".join(blocks).strip()
 
     def _tool_history_item(self, tool: ToolState) -> dict[str, Any] | None:
         if tool.kind == "command":

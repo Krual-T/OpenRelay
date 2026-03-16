@@ -172,6 +172,25 @@ def test_build_streaming_content_renders_web_search_as_blue_exploration() -> Non
     assert "└ Search site:techcrunch.com AI March 11 2026" in content
 
 
+def test_build_streaming_content_renders_unexpected_backend_event_payload() -> None:
+    content = build_streaming_content(
+        {
+            "history_items": [
+                {
+                    "type": "backend_event",
+                    "state": "completed",
+                    "title": "Unexpected backend event: item/unknownEvent",
+                    "detail": "Unexpected backend event: item/unknownEvent\n\n{\n  \"method\": \"item/unknownEvent\",\n  \"params\": {\n    \"foo\": \"bar\"\n  }\n}",
+                }
+            ]
+        }
+    )
+
+    assert "Unexpected backend event: item/unknownEvent" in content
+    assert '"method": "item/unknownEvent"' in content
+    assert '"foo": "bar"' in content
+
+
 @pytest.mark.asyncio
 async def test_streaming_session_switches_to_answer_card_when_answer_starts(monkeypatch: pytest.MonkeyPatch) -> None:
     session = FeishuStreamingSession(object())
