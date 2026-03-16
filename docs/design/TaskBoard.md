@@ -35,6 +35,9 @@
   - `src/openrelay/runtime/orchestrator.py` 已在未显式覆盖 backend 的情况下初始化内建 `CodexRuntimeBackend` 和 `AgentRuntimeService`；`src/openrelay/runtime/turn.py` 的 `BackendTurnSession.run(...)` 对 Codex 路径已优先走 `AgentRuntimeService.run_turn(...)`，其他 backend 仍保留旧 `Backend.run(...)` 路径。
   - `BackendTurnSession` 已在 turn 级订阅 runtime event hub，把 `SessionStartedEvent`、assistant / reasoning / plan / tool / turn 终态重新投影为现有 live progress 事件，并在 `ApprovalRequestedEvent` 时复用现有 `RunInteractionController` 完成用户决策后回调 `AgentRuntimeService.resolve_approval(...)`。
   - 已补充 `tests/test_runtime.py` 中的 runtime-service 接线测试，验证 orchestrator 在显式注入 runtime backend 时会绕过旧 backend `run(...)` 并持久化新的 native session id；同时与现有 runtime/card-stream/interaction 回归一起通过。
+  - `src/openrelay/runtime/commands.py` 的 `/resume`、`/compact` 原生 thread 操作已优先走 `AgentRuntimeService.list_sessions(...)`、`read_session(...)`、`compact_locator(...)`；旧 `CodexBackend.list_threads/read_thread/compact_thread` 只作为 fallback 保留。
+  - `src/openrelay/runtime/panel_service.py` 的 `/resume` 会话卡片数据源已优先走 `AgentRuntimeService.list_sessions(...)`，使原生命令式恢复列表与新的 Codex runtime backend 共享同一 session 枚举入口。
+  - 已补充 `tests/test_runtime.py` 中 runtime-service 驱动的 `/resume latest` 与 `/compact` 回归，验证在显式注入 runtime backend 时无需旧 backend 原生 thread 扩展方法也能完成会话恢复、thread 读取与 compact。
 
 ## 使用约定
 

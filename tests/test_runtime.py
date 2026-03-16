@@ -10,16 +10,17 @@ from openrelay.agent_runtime import (
     ApprovalDecision,
     ApprovalRequest,
     BackendCapabilities,
+    SessionTranscript,
     RuntimeEventSink,
     SessionLocator,
     SessionStartedEvent,
     SessionSummary,
-    SessionTranscript,
     TurnCompletedEvent,
     TurnInput,
     TurnStartedEvent,
     AssistantDeltaEvent,
 )
+from openrelay.agent_runtime.models import TranscriptMessage
 from openrelay.backends.base import Backend, BackendContext
 from openrelay.core import AppConfig, BackendConfig, DirectoryShortcut, FeishuConfig
 from openrelay.feishu import SentMessageRef, parse_card_action_event
@@ -563,6 +564,7 @@ class FakeRuntimeTurnHandle:
 class FakeAgentRuntimeBackend(AgentBackend):
     def __init__(self) -> None:
         self.turn_inputs: list[TurnInput] = []
+        self.compacted: list[str] = []
 
     def name(self) -> str:
         return "codex"
@@ -593,12 +595,34 @@ class FakeAgentRuntimeBackend(AgentBackend):
         )
 
     async def list_sessions(self, request) -> tuple[list[SessionSummary], str]:
-        _ = request
-        return ([], "")
+        return (
+            [
+                SessionSummary(
+                    backend="codex",
+                    native_session_id="runtime_native_1",
+                    title="runtime latest",
+                    preview="runtime preview",
+                    cwd=request.cwd or "",
+                    updated_at="2026-03-16T00:00:00Z",
+                    status="idle",
+                )
+            ],
+            "",
+        )
 
     async def read_session(self, locator: SessionLocator) -> SessionTranscript:
-        _ = locator
-        raise NotImplementedError
+        return SessionTranscript(
+            summary=SessionSummary(
+                backend="codex",
+                native_session_id=locator.native_session_id,
+                title="runtime latest",
+                preview="runtime preview",
+                cwd="/runtime",
+                updated_at="2026-03-16T00:00:00Z",
+                status="idle",
+            ),
+            messages=(TranscriptMessage(role="assistant", text="runtime transcript"),),
+        )
 
     async def start_turn(self, locator: SessionLocator, turn_input: TurnInput, sink: RuntimeEventSink):
         self.turn_inputs.append(turn_input)
@@ -654,8 +678,8 @@ class FakeAgentRuntimeBackend(AgentBackend):
         _ = locator, approval, request
 
     async def compact_session(self, locator: SessionLocator) -> dict[str, object]:
-        _ = locator
-        return {}
+        self.compacted.append(locator.native_session_id)
+        return {"compactId": f"compact:{locator.native_session_id}"}
 
     async def shutdown(self) -> None:
         return
@@ -745,6 +769,34 @@ async def test_runtime_uses_agent_runtime_for_codex_when_configured(tmp_path: Pa
     assert runtime_backend.turn_inputs and runtime_backend.turn_inputs[0].metadata["relay_session_id"] == session.session_id
     assert messenger.messages[-1] == "runtime hello"
     assert session.native_session_id == "runtime_native_1"
+    await runtime.shutdown()
+
+
+@pytest.mark.asyncio
+async def test_runtime_resume_and_compact_use_agent_runtime_when_configured(tmp_path: Path) -> None:
+    config = make_config(tmp_path)
+    config.workspace_root.mkdir(parents=True, exist_ok=True)
+    config.main_workspace_dir.mkdir(parents=True, exist_ok=True)
+    config.develop_workspace_dir.mkdir(parents=True, exist_ok=True)
+    store = StateStore(config)
+    messenger = FakeMessenger()
+    runtime_backend = FakeAgentRuntimeBackend()
+    runtime = RuntimeOrchestrator(
+        config,
+        store,
+        messenger,
+        backends={"codex": FakeBackend()},
+        runtime_backends={"codex": runtime_backend},
+    )
+
+    await runtime.dispatch_message(make_message("/resume latest", event_suffix="runtime_resume_latest"))
+    resumed = store.load_session(runtime.session_scope.top_level_thread_scope_key(make_message("/resume latest", event_suffix="runtime_resume_latest")))
+    await runtime.dispatch_message(make_message("/compact", event_suffix="runtime_compact"))
+
+    assert resumed.native_session_id == "runtime_native_1"
+    assert "已连接 Codex 会话" in messenger.messages[-2]
+    assert messenger.messages[-1] == "已发起 Codex compact：runtime_native_1\ncompact_id=compact:runtime_native_1"
+    assert runtime_backend.compacted == ["runtime_native_1"]
     await runtime.shutdown()
 
 

@@ -3,6 +3,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Awaitable, Callable
 
+from openrelay.agent_runtime import ListSessionsRequest
+from openrelay.agent_runtime.service import AgentRuntimeService
 from openrelay.backends import BackendContext, BackendDescriptor
 from openrelay.core import AppConfig, IncomingMessage, SessionRecord, get_session_workspace_root
 from openrelay.feishu import FeishuMessenger
@@ -33,6 +35,7 @@ class RuntimePanelService:
     reply_policy: RuntimeReplyPolicy
     reply_fallback: FallbackReply
     presenter: RuntimePanelPresenter
+    runtime_service: AgentRuntimeService | None = None
 
     async def send_panel(self, message: IncomingMessage, session_key: str, session: SessionRecord, args: PanelCommandArgs) -> None:
         action_context = self.reply_policy.build_card_action_context(message, session_key)
@@ -80,6 +83,30 @@ class RuntimePanelService:
         action_context: dict[str, str],
     ) -> tuple[dict[str, object], str]:
         _ = message
+        if self.runtime_service is not None and session.backend in self.runtime_service.backends:
+            rows, _cursor = await self.runtime_service.list_sessions(
+                session.backend,
+                ListSessionsRequest(
+                    limit=max(DEFAULT_SESSION_LIST_PAGE_SIZE * max(page, 1) + 1, DEFAULT_SESSION_LIST_PAGE_SIZE + 1),
+                    cwd=session.cwd,
+                ),
+            )
+            return self._build_thread_list_card_from_rows(
+                session,
+                page,
+                action_context,
+                [
+                    {
+                        "thread_id": row.native_session_id,
+                        "preview": row.preview,
+                        "cwd": row.cwd,
+                        "updated_at": row.updated_at,
+                        "status": row.status,
+                        "name": row.title,
+                    }
+                    for row in rows
+                ],
+            )
         backend = self.backends.get(session.backend)
         if backend is None or not callable(getattr(backend, "list_threads", None)):
             fallback = "当前后端不支持 `/resume` 原生命令。"
@@ -91,22 +118,45 @@ class RuntimePanelService:
             BackendContext(workspace_root=get_session_workspace_root(self.config, session)),
             limit,
         )
+        return self._build_thread_list_card_from_rows(
+            session,
+            page,
+            action_context,
+            [
+                {
+                    "thread_id": str(getattr(row, "thread_id", "") or "").strip(),
+                    "preview": str(getattr(row, "preview", "") or ""),
+                    "cwd": str(getattr(row, "cwd", "") or "").strip(),
+                    "updated_at": str(getattr(row, "updated_at", "") or "").strip(),
+                    "status": str(getattr(row, "status", "") or "").strip(),
+                    "name": str(getattr(row, "name", "") or ""),
+                }
+                for row in list(rows or [])
+            ],
+        )
+
+    def _build_thread_list_card_from_rows(
+        self,
+        session: SessionRecord,
+        page: int,
+        action_context: dict[str, str],
+        threads: list[dict[str, str]],
+    ) -> tuple[dict[str, object], str]:
         thread_entries: list[dict[str, object]] = []
-        threads = list(rows or [])
         start = (max(page, 1) - 1) * DEFAULT_SESSION_LIST_PAGE_SIZE
         visible_threads = threads[start:start + DEFAULT_SESSION_LIST_PAGE_SIZE]
         for index, row in enumerate(visible_threads, start=start + 1):
-            thread_id = str(getattr(row, "thread_id", "") or "").strip()
-            preview = self.session_presentation.shorten(str(getattr(row, "preview", "") or ""), 96)
-            title = str(getattr(row, "name", "") or preview or thread_id or f"thread {index}")
+            thread_id = str(row.get("thread_id") or "").strip()
+            preview = self.session_presentation.shorten(str(row.get("preview") or ""), 96)
+            title = str(row.get("name") or preview or thread_id or f"thread {index}")
             meta: list[str] = []
-            updated_at = str(getattr(row, "updated_at", "") or "").strip()
+            updated_at = str(row.get("updated_at") or "").strip()
             if updated_at:
                 meta.append(updated_at[:16].replace("T", " "))
-            status = str(getattr(row, "status", "") or "").strip()
+            status = str(row.get("status") or "").strip()
             if status:
                 meta.append(f"status={status}")
-            cwd = str(getattr(row, "cwd", "") or "").strip()
+            cwd = str(row.get("cwd") or "").strip()
             if cwd:
                 meta.append(f"cwd={self.workspace.format_cwd(cwd, session)}")
             meta.append(f"id={thread_id}")

@@ -110,6 +110,7 @@ class RuntimeOrchestrator:
             self.reply_policy,
             self._reply_command_fallback,
             self.panel_presenter,
+            self.agent_runtime,
         )
         self.command_router = RuntimeCommandRouter(
             config,
@@ -135,6 +136,7 @@ class RuntimeOrchestrator:
                 available_backend_names=self.available_backend_names,
                 cancel_active_run_for_session=self._cancel_active_run_for_session,
             ),
+            self.agent_runtime,
         )
         self.restart_controller = RuntimeRestartController(LOGGER)
 
