@@ -146,6 +146,9 @@ class AgentRuntimeService:
     async def compact_session(self, binding: RelaySessionBinding) -> dict[str, object]:
         return await self._select_backend(binding.backend).compact_session(binding.locator)
 
+    async def compact_locator(self, locator: SessionLocator) -> dict[str, object]:
+        return await self._select_backend(locator.backend).compact_session(locator)
+
     def _select_backend(self, backend: str) -> AgentBackend:
         adapter = self.backends.get(backend)
         if adapter is None:
