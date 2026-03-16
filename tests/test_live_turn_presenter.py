@@ -81,6 +81,36 @@ def test_live_turn_presenter_builds_approval_resolved_snapshot() -> None:
     assert interaction["detail"] == "Approval accepted"
 
 
+def test_live_turn_presenter_preserves_resolved_interaction_when_state_clears_pending_approval() -> None:
+    presenter = LiveTurnPresenter()
+    state = LiveTurnViewModel(
+        backend="codex",
+        session_id="relay_1",
+        native_session_id="thread_1",
+        turn_id="turn_1",
+        status="running",
+    )
+
+    snapshot = presenter.build_snapshot(
+        state,
+        previous={
+            "history_items": [
+                {
+                    "type": "interaction",
+                    "state": "completed",
+                    "interaction_id": "approval_1",
+                    "title": "Command Approval Required",
+                    "detail": "Approval accepted",
+                }
+            ]
+        },
+    )
+
+    assert snapshot["history_items"][0]["type"] == "interaction"
+    assert snapshot["history_items"][0]["state"] == "completed"
+    assert snapshot["history_items"][0]["detail"] == "Approval accepted"
+
+
 def test_live_turn_presenter_updates_native_session_and_spinner() -> None:
     presenter = LiveTurnPresenter()
     snapshot = presenter.with_native_session_id({"spinner_frame": 1}, "thread_2")

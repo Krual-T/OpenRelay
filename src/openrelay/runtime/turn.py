@@ -33,7 +33,6 @@ from openrelay.session import RelaySessionBinding, SessionBindingStore
 from openrelay.storage import StateStore
 
 from .interactions import RunInteractionController
-from .live import apply_live_progress
 from .replying import ReplyRoute
 
 
@@ -142,7 +141,6 @@ class BackendTurnSession:
             root_id=self.runtime.root_id_for_message(self.message),
             action_context=self.runtime.build_card_action_context(self.message, self.session.base_key),
             reply_target_getter=self.reply_target_message_id,
-            emit_progress=self.on_progress,
             send_text=lambda text: self.runtime.messenger.send_text(
                 self.message.chat_id,
                 text,
@@ -160,10 +158,6 @@ class BackendTurnSession:
             cancel=self.cancel,
             try_handle_input=self.interaction_controller.try_handle_message if self.interaction_controller is not None else None,
         )
-
-    async def on_progress(self, event: dict[str, Any]) -> None:
-        apply_live_progress(self.live_state, event)
-        self._request_streaming_update()
 
     async def run_with_agent_runtime(self, backend_prompt: str) -> BackendReply:
         runtime_service = self.runtime.runtime_service

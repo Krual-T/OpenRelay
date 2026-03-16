@@ -13,7 +13,7 @@
 - **目标**：把 `openrelay` 收敛为统一的 agent runtime relay，让 Feishu 壳层、runtime 主路径、session binding、interaction 和 presentation 都围绕 backend-neutral 的运行时语义组织，而不是继续围绕 Codex 专有协议长出结构。
 - **当前关注**：
   - `codex_adapter` 内部已经拆成 transport / client / turn stream / adapter 四层，但 transport 仍是通过 `CodexAppServerClient` 间接复用旧 `src/openrelay/backends/codex.py` 的 app-server 通信实现，legacy transport 文件还没真正退出主依赖链。
-  - `LiveTurnPresenter` 已接入 runtime turn 主路径，但当前只在 reducer state 可读时优先走 `LiveTurnViewModel -> snapshot` 投影；spinner、即时 resolved 状态和若干过渡分支仍保留在 `runtime/live.py` / `turn.py`，legacy live bridge 还没删干净。
+  - `LiveTurnPresenter` 已接入 runtime turn 主路径，approval 交互也不再通过 `emit_progress -> apply_live_progress` 回桥；当前剩余 live bridge 主要已经缩到 `runtime/live.py` 的兼容 state machine 与 spinner/格式化辅助，还需要决定最终保留边界。
   - runtime approval 主路径已经切到 `ApprovalRequest -> ApprovalDecision`，但 legacy `request(method, params)` 兼容入口仍在 interaction controller 内保留，interaction 层还没有彻底删掉旧 provider-method 分支。
   - 命令、面板、live 渲染仍然直接暴露 `Codex` 用户语义，第二个 backend 还不能以同构 adapter 自然接入。
 - **关闭条件**：
@@ -67,6 +67,8 @@
   - `src/openrelay/runtime/turn.py` 已移除 runtime 主路径里的 `run.started` 进度注入和未使用的 `on_partial_text(...)` 直写；assistant partial 现在完全依赖 reducer state + presenter snapshot，当前剩余的 display-only legacy live 逻辑主要就是 spinner 与 `SessionStartedEvent` 的最小同步。
   - `src/openrelay/presentation/live_turn.py` 现已接管 `native_session_id` 同步和 spinner 帧推进；`src/openrelay/runtime/turn.py` 不再直接写 `live_state["native_session_id"]` 或 `live_state["spinner_frame"]`，说明 live-state 变换职责已基本从 turn 层收敛到 presenter。
   - `src/openrelay/runtime/live.py` 已删除无调用的 `apply_runtime_event(...)` 桥接函数，并把初始 snapshot / final reply card 入口收敛为委托 `LiveTurnPresenter` 的兼容包装；结合 `tests/test_runtime_live.py` 回归通过，说明该文件已经更接近纯格式化 / 兼容层。
+  - `src/openrelay/runtime/interactions/controller.py` 已移除仅供 legacy live bridge 使用的 `emit_progress` 回调；`src/openrelay/runtime/turn.py` 也已去掉 `on_progress(...) -> apply_live_progress(...)` 主路径入口，runtime approval 展示现在只依赖统一 `ApprovalRequestedEvent/ApprovalResolvedEvent` 与 `LiveTurnPresenter`。
+  - `src/openrelay/presentation/live_turn.py` 已补充对 resolved approval interaction 的保留投影，`tests/test_live_turn_presenter.py` 与 `tests/test_runtime_interactions.py` 已同步覆盖，说明即使 reducer state 清空 `pending_approval`，streaming snapshot 仍能稳定保留审批完成过渡态而不需要 legacy progress dict。
 
 ## 使用约定
 

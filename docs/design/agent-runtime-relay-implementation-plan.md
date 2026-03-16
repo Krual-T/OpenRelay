@@ -450,7 +450,8 @@
 - 当前状态：
   - 已新增 `src/openrelay/presentation/live_turn.py`，提供 `LiveTurnPresenter`
   - `src/openrelay/runtime/turn.py` 在拿到 reducer state 时，已优先通过 presenter 把 `LiveTurnViewModel` 投影为 streaming snapshot
-  - spinner、局部 legacy progress、approval resolved 的即时展示仍暂时保留在 `turn.py + runtime/live.py`，因此阶段 3 目前完成了“presenter 建立与主路径接入”，但还没完成 legacy live bridge 删除
+  - `src/openrelay/runtime/interactions/controller.py` 已去掉 `emit_progress` 回调；runtime approval 展示现在只走 `ApprovalRequestedEvent/ApprovalResolvedEvent + presenter`，不再回落到 `interaction.requested/resolved -> apply_live_progress(...)` 兼容桥
+  - spinner 与 `runtime/live.py` 内的 `apply_live_progress(...)` 仍保留给 legacy/兼容测试路径，因此阶段 3 目前完成了“runtime 主路径脱离 legacy progress bridge”，但还没完成 compatibility live state machine 的最终清理
 
 ### 阶段 4：移除 legacy backend 主路径
 
@@ -522,3 +523,5 @@
 - `src/openrelay/runtime/turn.py` 已移除 runtime 主路径中的 `run.started` 进度注入和未使用的 `on_partial_text(...)` 直写逻辑；assistant partial 现在完全依赖 reducer state + presenter snapshot 投影，legacy live-state 直接写入点继续减少。
 - `src/openrelay/presentation/live_turn.py` 现已接管 `native_session_id` 同步和 spinner 帧推进的 snapshot 变换；`src/openrelay/runtime/turn.py` 不再直接写 `live_state[\"native_session_id\"]` 或 `live_state[\"spinner_frame\"]`，剩余的 live-state 管理已基本集中到 presenter。
 - `src/openrelay/runtime/live.py` 已删除无调用的 `apply_runtime_event(...)` 桥接函数，并把 `create_live_reply_state(...)`、`build_reply_card(...)` 收敛为委托 `LiveTurnPresenter` 的兼容入口；当前文件主要只剩 `apply_live_progress(...)` 和 process panel / reply card 格式化兼容逻辑。
+- `src/openrelay/runtime/interactions/controller.py` 现已删除 runtime 主路径不再需要的 `emit_progress` 依赖；`src/openrelay/runtime/turn.py` 也已去掉 `on_progress(...) -> apply_live_progress(...)` 入口，说明 approval 交互展示已完全切到统一 runtime event + presenter 投影。
+- `src/openrelay/presentation/live_turn.py` 已补充对已 resolved approval interaction 的保留逻辑；即使 reducer state 在 `approval.resolved` 后清空 `pending_approval`，streaming snapshot 仍能稳定显示 “Resuming / Approval accepted” 这一过渡结果，而不必再借助 legacy progress event 维持 UI。
