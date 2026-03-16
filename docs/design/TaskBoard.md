@@ -12,9 +12,9 @@
 - **优先级**：P0
 - **目标**：把 `openrelay` 收敛为统一的 agent runtime relay，让 Feishu 壳层、runtime 主路径、session binding、interaction 和 presentation 都围绕 backend-neutral 的运行时语义组织，而不是继续围绕 Codex 专有协议长出结构。
 - **当前关注**：
-  - `openrelay` 仍有大量 runtime 语义直接继承自 Codex provider 形状。
-  - backend adapter、runtime event、session binding、interaction、presentation 的边界还没有彻底按统一模型收口。
-  - 未来 Claude Code 等 backend 的接入路径还没有被当前主结构自然吸收。
+  - 现有主路径虽然已经接上 `agent_runtime`，但仍保留 “runtime event -> legacy progress dict -> Feishu” 的回退桥。
+  - `CodexRuntimeBackend`、`CodexProtocolMapper`、旧 `src/openrelay/backends/codex.py` 之间仍存在职责重叠，Codex adapter 还没有按 transport / client / turn stream / adapter 四层拆开。
+  - 命令、交互、面板、live 渲染仍然直接暴露 `Codex` 用户语义，第二个 backend 还不能以同构 adapter 自然接入。
 - **关闭条件**：
   - [ ] `docs/design/agent-runtime-relay.md` 继续作为唯一主线 design note，并保持和代码现状一致。
   - [ ] runtime 主层只依赖统一 agent runtime 模型，不再把 provider-specific method / item type 暴露为主路径语义。
@@ -22,6 +22,9 @@
   - [ ] 新增或调整的实现、测试和文档证据都回写到同一任务条目。
 - **建议产物**：`docs/design/agent-runtime-relay.md`；`src/openrelay/` 下与 runtime、session、presentation、backend adapter 相关的后续实现与测试。
 - **本轮新增证据**：
+  - 已新增 `docs/design/agent-runtime-relay-implementation-plan.md`，把下一阶段收敛方案具体化到新增类、修改类、替换点、删除点和分阶段实施顺序。
+  - 新方案明确当前 `agent_runtime` 已完成的基础层，以及下一阶段必须移除的双轨残留：`src/openrelay/backends/codex.py`、`src/openrelay/runtime/turn.py` 中的 legacy progress bridge、`src/openrelay/runtime/commands.py` 中重复的 native thread DTO。
+  - 新方案把后续结构明确为：`CodexRpcTransport`、`CodexSessionClient`、`CodexTurnStream`、`LiveTurnPresenter`、`claude_adapter/` 同构目录，并把 `src/openrelay/backends/codex_adapter/backend.py` 收敛为薄 `AgentBackend` adapter。
   - `docs/design/agent-runtime-relay.md` 已补充“实现补充附录”，明确第一阶段 Codex 事件映射、审批映射、binding 过渡、orchestrator 接线和测试矩阵。
   - 附录约束以当前仓库可验证实现为证据来源：`src/openrelay/backends/codex.py`、`src/openrelay/runtime/live.py`、`src/openrelay/runtime/interactions/controller.py`、`tests/test_codex_backend.py`。
   - 已新增 `src/openrelay/agent_runtime/` 下的统一 runtime model / event / backend contract / reducer / service 骨架，以及 `src/openrelay/session/models.py`、`src/openrelay/session/store.py` 的 binding store。
@@ -47,6 +50,7 @@
   - `src/openrelay/runtime/orchestrator.py` 的默认 legacy backend 构造现在直接只返回真正仍有 factory 的后端；由于 builtin descriptor 里的 `codex` 只再承担展示元数据，`RuntimeOrchestrator(config, store, messenger)` 的默认 Codex 主路径完全收敛到 `CodexRuntimeBackend + AgentRuntimeService`。
   - 由于 `available_backend_names()` 已基于 legacy/runtime backend 并集，builtin descriptor 继续保留 `codex` 名称与 transport 展示信息时，对 `/backend`、help、panel、health 和 runtime turn 选择逻辑没有行为变化；显式传入 `backends={\"codex\": ...}` 的兼容测试场景仍保持原样。
   - `src/openrelay/backends/__init__.py` 已移除对 `CodexBackend` 的包级导出；本轮进一步删除 `src/openrelay/backends/codex.py` 内的 `CodexBackend` 兼容壳，并把 `src/openrelay/backends/registry.py` 收敛为“descriptor 可选 factory”的纯注册表，避免默认导入链和默认实例化路径继续保留无用 legacy backend 对象。
+  - 当前 design note 继续保留为 `docs/design/agent-runtime-relay.md`；新增实施文档只负责回答“接下来具体怎么改”，不再把实施细节继续堆回主设计文档，避免目标层与落地层混写。
 
 ## 使用约定
 
