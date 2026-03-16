@@ -4,7 +4,9 @@ import logging
 from typing import Any
 from typing import Callable
 
+from openrelay.agent_runtime.service import AgentRuntimeService
 from openrelay.backends import Backend, BackendDescriptor, CodexBackend, build_builtin_backend_descriptors, instantiate_builtin_backends
+from openrelay.backends.codex_adapter.backend import CodexRuntimeBackend
 from openrelay.core import (
     AppConfig,
     IncomingMessage,
@@ -17,6 +19,7 @@ from openrelay.presentation.session import SessionPresentation
 from openrelay.release import ReleaseCommandService
 from openrelay.session import (
     SessionBrowser,
+    SessionBindingStore,
     SessionLifecycleResolver,
     SessionMutationService,
     SessionScopeResolver,
@@ -47,6 +50,7 @@ class RuntimeOrchestrator:
         store: StateStore,
         messenger: FeishuMessenger,
         backends: dict[str, Backend] | None = None,
+        runtime_backends: dict[str, object] | None = None,
         backend_descriptors: dict[str, BackendDescriptor] | None = None,
         streaming_session_factory: Callable[[FeishuMessenger], FeishuStreamingSession] | None = None,
         typing_manager: FeishuTypingManager | None = None,
@@ -56,6 +60,13 @@ class RuntimeOrchestrator:
         self.messenger = messenger
         self.backend_descriptors = backend_descriptors or build_builtin_backend_descriptors()
         self.backends = backends or instantiate_builtin_backends(config, self.backend_descriptors)
+        self.binding_store = SessionBindingStore(store)
+        self.runtime_backends = runtime_backends if runtime_backends is not None else (
+            self._build_builtin_runtime_backends() if backends is None else {}
+        )
+        self.agent_runtime = (
+            AgentRuntimeService(self.runtime_backends, self.binding_store) if self.runtime_backends else None
+        )
         if config.backend.default_backend not in self.backends:
             raise ValueError(f"Configured default backend is unavailable: {config.backend.default_backend}")
         self.execution_coordinator = RuntimeExecutionCoordinator()
@@ -128,6 +139,9 @@ class RuntimeOrchestrator:
         self.restart_controller = RuntimeRestartController(LOGGER)
 
     async def shutdown(self) -> None:
+        if self.agent_runtime is not None:
+            for backend in self.runtime_backends.values():
+                await backend.shutdown()
         await CodexBackend.shutdown_all()
         await self.messenger.close()
         self.store.close()
@@ -297,7 +311,20 @@ class RuntimeOrchestrator:
             build_session_key=self.session_scope.build_session_key,
             remember_outbound_aliases=self.session_scope.remember_outbound_aliases,
             reply_final=self._reply_final,
+            binding_store=self.binding_store,
+            runtime_service=self.agent_runtime,
         )
+
+    def _build_builtin_runtime_backends(self) -> dict[str, object]:
+        return {
+            "codex": CodexRuntimeBackend(
+                self.config.backend.codex_cli_path,
+                self.config.backend.default_model,
+                workspace_root=self.config.workspace_root,
+                sqlite_home=self.config.backend.codex_sqlite_home,
+                request_timeout_seconds=self.config.backend.codex_request_timeout_seconds,
+            )
+        }
 
     async def _reply_final(
         self,

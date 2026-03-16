@@ -5,6 +5,21 @@ import os
 
 import pytest
 
+from openrelay.agent_runtime import (
+    AgentBackend,
+    ApprovalDecision,
+    ApprovalRequest,
+    BackendCapabilities,
+    RuntimeEventSink,
+    SessionLocator,
+    SessionStartedEvent,
+    SessionSummary,
+    SessionTranscript,
+    TurnCompletedEvent,
+    TurnInput,
+    TurnStartedEvent,
+    AssistantDeltaEvent,
+)
 from openrelay.backends.base import Backend, BackendContext
 from openrelay.core import AppConfig, BackendConfig, DirectoryShortcut, FeishuConfig
 from openrelay.feishu import SentMessageRef, parse_card_action_event
@@ -325,7 +340,7 @@ class SlowProgressBackend(Backend):
         if context.on_partial_text is not None:
             await context.on_partial_text(f"partial: {prompt}")
         await asyncio.sleep(0.05)
-        return BackendReply(text=f"done: {prompt}", native_session_id="native_slow_progress")
+        return BackendReply(text=f"done: {prompt}", native_session_id="native_2")
 
 
 class ReasoningBackend(Backend):
@@ -535,6 +550,117 @@ class ImageAwareBackend(Backend):
         return BackendReply(text="done: image", native_session_id="native_image")
 
 
+class FakeRuntimeTurnHandle:
+    def __init__(self, session_id: str, turn_id: str) -> None:
+        self.session_id = session_id
+        self.turn_id = turn_id
+        self.backend = "codex"
+
+    async def wait(self) -> None:
+        return
+
+
+class FakeAgentRuntimeBackend(AgentBackend):
+    def __init__(self) -> None:
+        self.turn_inputs: list[TurnInput] = []
+
+    def name(self) -> str:
+        return "codex"
+
+    def capabilities(self) -> BackendCapabilities:
+        return BackendCapabilities(supports_reasoning_stream=True, supports_command_approval=True)
+
+    async def start_session(self, request) -> SessionSummary:
+        return SessionSummary(
+            backend="codex",
+            native_session_id="runtime_native_1",
+            title="runtime",
+            preview="",
+            cwd=request.cwd,
+            updated_at="2026-03-16T00:00:00Z",
+            status="idle",
+        )
+
+    async def resume_session(self, locator: SessionLocator) -> SessionSummary:
+        return SessionSummary(
+            backend="codex",
+            native_session_id=locator.native_session_id,
+            title="runtime",
+            preview="",
+            cwd="",
+            updated_at="2026-03-16T00:00:00Z",
+            status="idle",
+        )
+
+    async def list_sessions(self, request) -> tuple[list[SessionSummary], str]:
+        _ = request
+        return ([], "")
+
+    async def read_session(self, locator: SessionLocator) -> SessionTranscript:
+        _ = locator
+        raise NotImplementedError
+
+    async def start_turn(self, locator: SessionLocator, turn_input: TurnInput, sink: RuntimeEventSink):
+        self.turn_inputs.append(turn_input)
+        await sink.publish(
+            SessionStartedEvent(
+                backend="codex",
+                session_id=str(turn_input.metadata.get("relay_session_id") or ""),
+                turn_id="",
+                event_type="session.started",
+                native_session_id="runtime_native_1",
+            )
+        )
+        await sink.publish(
+            TurnStartedEvent(
+                backend="codex",
+                session_id=str(turn_input.metadata.get("relay_session_id") or ""),
+                turn_id="runtime_turn_1",
+                event_type="turn.started",
+            )
+        )
+        await sink.publish(
+            AssistantDeltaEvent(
+                backend="codex",
+                session_id=str(turn_input.metadata.get("relay_session_id") or ""),
+                turn_id="runtime_turn_1",
+                event_type="assistant.delta",
+                delta="runtime hello",
+            )
+        )
+        await sink.publish(
+            TurnCompletedEvent(
+                backend="codex",
+                session_id=str(turn_input.metadata.get("relay_session_id") or ""),
+                turn_id="runtime_turn_1",
+                event_type="turn.completed",
+                final_text="runtime hello",
+            )
+        )
+        return FakeRuntimeTurnHandle(
+            session_id=str(turn_input.metadata.get("relay_session_id") or ""),
+            turn_id="runtime_turn_1",
+        )
+
+    async def interrupt_turn(self, locator: SessionLocator, turn_id: str) -> None:
+        _ = locator, turn_id
+
+    async def resolve_approval(
+        self,
+        locator: SessionLocator,
+        approval: ApprovalDecision,
+        request: ApprovalRequest,
+    ) -> None:
+        _ = locator, approval, request
+
+    async def compact_session(self, locator: SessionLocator) -> dict[str, object]:
+        _ = locator
+        return {}
+
+    async def shutdown(self) -> None:
+        return
+
+
 
 def make_config(tmp_path: Path) -> AppConfig:
     return AppConfig(
@@ -590,6 +716,35 @@ async def test_runtime_runs_backend_turn(tmp_path: Path) -> None:
     assert messenger.messages[-1] == "echo: hello"
     session = store.load_session(runtime.session_scope.build_session_key(make_message("hello")))
     assert session.native_session_id == "native_1"
+    await runtime.shutdown()
+
+
+@pytest.mark.asyncio
+async def test_runtime_uses_agent_runtime_for_codex_when_configured(tmp_path: Path) -> None:
+    config = make_config(tmp_path)
+    config.workspace_root.mkdir(parents=True, exist_ok=True)
+    config.main_workspace_dir.mkdir(parents=True, exist_ok=True)
+    config.develop_workspace_dir.mkdir(parents=True, exist_ok=True)
+    store = StateStore(config)
+    messenger = FakeMessenger()
+    legacy_backend = FakeBackend()
+    runtime_backend = FakeAgentRuntimeBackend()
+    runtime = RuntimeOrchestrator(
+        config,
+        store,
+        messenger,
+        backends={"codex": legacy_backend},
+        runtime_backends={"codex": runtime_backend},
+    )
+
+    await runtime.dispatch_message(make_message("hello runtime"))
+
+    session = store.load_session(runtime.session_scope.build_session_key(make_message("hello runtime")))
+
+    assert legacy_backend.calls == []
+    assert runtime_backend.turn_inputs and runtime_backend.turn_inputs[0].metadata["relay_session_id"] == session.session_id
+    assert messenger.messages[-1] == "runtime hello"
+    assert session.native_session_id == "runtime_native_1"
     await runtime.shutdown()
 
 
