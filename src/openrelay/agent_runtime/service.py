@@ -31,6 +31,9 @@ class RuntimeEventHub:
     def subscribe(self, subscriber: RuntimeEventSubscriber) -> None:
         self.subscribers.append(subscriber)
 
+    def unsubscribe(self, subscriber: RuntimeEventSubscriber) -> None:
+        self.subscribers = [existing for existing in self.subscribers if existing is not subscriber]
+
     async def publish(self, event: RuntimeEvent) -> None:
         for subscriber in self.subscribers:
             await subscriber(event)
