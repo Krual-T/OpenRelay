@@ -234,6 +234,8 @@ class CodexTurn:
     plan_text_by_id: dict[str, str] = field(default_factory=dict)
     usage: dict[str, Any] | None = None
     future: asyncio.Future[BackendReply] | None = None
+    last_delta_fingerprint: tuple[str, ...] | None = None
+    last_delta_method: str = ""
 
     def __post_init__(self) -> None:
         self.future = asyncio.get_running_loop().create_future()
@@ -294,6 +296,39 @@ class CodexTurn:
         msg = params.get("msg") if isinstance(params.get("msg"), dict) else {}
         event_item = msg.get("item") if isinstance(msg.get("item"), dict) else {}
         return _normalize_event_item(event_item)
+
+    def _duplicate_delta_alias(self, method: str, params: dict[str, Any]) -> bool:
+        msg = params.get("msg") if isinstance(params.get("msg"), dict) else {}
+        delta = str(params.get("delta") or msg.get("delta") or "")
+        fingerprint: tuple[str, ...] | None = None
+        if method in {"item/agentMessage/delta", "codex/event/agent_message_content_delta"} and delta:
+            fingerprint = (
+                "agent",
+                str(params.get("itemId") or msg.get("item_id") or msg.get("itemId") or ""),
+                delta,
+            )
+        elif method in {"item/reasoning/textDelta", "codex/event/reasoning_content_delta"} and delta:
+            fingerprint = (
+                "reasoning.content",
+                str(params.get("itemId") or msg.get("item_id") or msg.get("itemId") or ""),
+                str(params.get("contentIndex") or msg.get("content_index") or msg.get("contentIndex") or 0),
+                delta,
+            )
+        elif method in {"item/reasoning/summaryTextDelta", "codex/event/reasoning_summary_text_delta"} and delta:
+            fingerprint = (
+                "reasoning.summary",
+                str(params.get("itemId") or msg.get("item_id") or msg.get("itemId") or ""),
+                str(params.get("summaryIndex") or msg.get("summary_index") or msg.get("summaryIndex") or 0),
+                delta,
+            )
+        if fingerprint is None:
+            self.last_delta_fingerprint = None
+            self.last_delta_method = ""
+            return False
+        is_duplicate = fingerprint == self.last_delta_fingerprint and method != self.last_delta_method
+        self.last_delta_fingerprint = fingerprint
+        self.last_delta_method = method
+        return is_duplicate
 
     async def interrupt(self, client: "CodexAppServerClient", reason: str = "interrupted by user") -> None:
         self.interrupted = True
@@ -551,6 +586,8 @@ class CodexTurn:
             return
         thread_id, turn_id = self._message_identity(params)
         if not self.matches(thread_id, turn_id):
+            return
+        if self._duplicate_delta_alias(method, params):
             return
 
         if method == "turn/started":

@@ -277,6 +277,18 @@ class FakeStreamingSession:
         self.updates.append({"freeze_notice": notice_text, **dict(live_state)})
 
 
+class FailingFinalCardStreamingSession(FakeStreamingSession):
+    def __init__(self, messenger):
+        super().__init__(messenger)
+        self.close_calls: list[dict | None] = []
+
+    async def close(self, final_card: dict | None = None) -> None:
+        self.close_calls.append(final_card)
+        if final_card is not None and len(self.close_calls) == 1:
+            raise RuntimeError("final card update failed")
+        await super().close(final_card)
+
+
 class FakeTypingManager:
     def __init__(self):
         self.added = []
@@ -1213,6 +1225,43 @@ async def test_runtime_card_stream_mode_puts_reasoning_into_collapsible_panel(tm
     assert reasoning_panel["expanded"] is False
     assert "先检查 runtime。" in reasoning_panel["elements"][0]["content"]
     assert sessions[0].final_card["body"]["elements"][-1]["content"] == "done: hello reasoning"
+    await runtime.shutdown()
+
+
+@pytest.mark.asyncio
+async def test_runtime_card_stream_mode_falls_back_to_text_after_final_card_failure(tmp_path: Path) -> None:
+    config = make_config(tmp_path)
+    config.feishu.stream_mode = "card"
+    config.workspace_root.mkdir(parents=True, exist_ok=True)
+    config.main_workspace_dir.mkdir(parents=True, exist_ok=True)
+    config.develop_workspace_dir.mkdir(parents=True, exist_ok=True)
+    store = StateStore(config)
+    messenger = FakeMessenger()
+    typing = FakeTypingManager()
+    sessions: list[FailingFinalCardStreamingSession] = []
+
+    def factory(current_messenger):
+        session = FailingFinalCardStreamingSession(current_messenger)
+        sessions.append(session)
+        return session
+
+    runtime = RuntimeOrchestrator(
+        config,
+        store,
+        messenger,
+        backends={"codex": FakeBackend()},
+        streaming_session_factory=factory,
+        typing_manager=typing,
+    )
+
+    await runtime.dispatch_message(make_message("hello fallback", event_suffix="stream_fallback"))
+
+    assert sessions
+    assert len(sessions[0].close_calls) == 2
+    assert sessions[0].close_calls[0] is not None
+    assert sessions[0].close_calls[1] is None
+    assert sessions[0].closed is True
+    assert messenger.messages[-1] == "echo: hello fallback"
     await runtime.shutdown()
 
 

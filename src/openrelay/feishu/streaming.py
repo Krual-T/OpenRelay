@@ -258,17 +258,17 @@ class FeishuStreamingSession:
     async def close(self, final_card: dict[str, Any] | None = None) -> None:
         if self.state is None or self.closed:
             return
-        self.closed = True
         self._cancel_pending_flush_task()
         async with self._lock:
-            if self.state is None:
+            if self.state is None or self.closed:
                 return
             await self.flush_pending_content()
             if final_card is not None:
                 await self._disable_streaming_mode()
                 await self.update_card_json(final_card)
-                return
-            await self._disable_streaming_mode()
+            else:
+                await self._disable_streaming_mode()
+            self.closed = True
 
     def message_id(self) -> str:
         if self.state is None:

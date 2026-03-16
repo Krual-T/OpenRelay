@@ -320,6 +320,10 @@ class RuntimeOrchestrator:
                 return
             except Exception:
                 LOGGER.exception("streaming final card update failed for event_id=%s", message.event_id)
+                try:
+                    await streaming.close()
+                except Exception:
+                    LOGGER.exception("streaming fallback close failed for event_id=%s", message.event_id)
         await self._send_text_reply(message, text, self.reply_policy.default_route(message))
 
     async def _reply(self, message: IncomingMessage, text: str, command_reply: bool = False, command_name: str = "") -> None:

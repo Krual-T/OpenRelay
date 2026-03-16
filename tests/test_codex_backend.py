@@ -534,6 +534,46 @@ async def test_codex_event_agent_message_delta_updates_partial_text(tmp_path: Pa
 
 
 @pytest.mark.asyncio
+async def test_codex_reasoning_delta_dedupes_alias_notifications(tmp_path: Path) -> None:
+    _ = tmp_path
+    progress_events: list[dict[str, object]] = []
+
+    async def on_progress(event: dict[str, object]) -> None:
+        progress_events.append(event)
+
+    turn = CodexTurn(thread_id="thread_1", turn_id="turn_1", on_progress=on_progress)
+
+    await turn.handle_notification(
+        object(),
+        "item/reasoning/textDelta",
+        {
+            "threadId": "thread_1",
+            "turnId": "turn_1",
+            "itemId": "rs_1",
+            "contentIndex": 0,
+            "delta": "先检查 runtime。",
+        },
+    )
+    await turn.handle_notification(
+        object(),
+        "codex/event/reasoning_content_delta",
+        {
+            "conversationId": "thread_1",
+            "id": "turn_1",
+            "msg": {
+                "thread_id": "thread_1",
+                "turn_id": "turn_1",
+                "item_id": "rs_1",
+                "content_index": 0,
+                "delta": "先检查 runtime。",
+            },
+        },
+    )
+
+    assert progress_events == [{"type": "reasoning.delta", "text": "先检查 runtime。"}]
+
+
+@pytest.mark.asyncio
 async def test_codex_event_task_complete_resolves_turn_future(tmp_path: Path) -> None:
     _ = tmp_path
     turn = CodexTurn(thread_id="thread_1", turn_id="turn_1")
