@@ -3,7 +3,8 @@ from pathlib import Path
 
 import pytest
 
-from openrelay.backends import BackendContext
+from openrelay.agent_runtime import SessionLocator, SessionSummary, SessionTranscript
+from openrelay.agent_runtime.models import TranscriptMessage
 from openrelay.core import AppConfig, BackendConfig, FeishuConfig, IncomingMessage
 from openrelay.presentation.runtime_status import RuntimeStatusPresenter
 from openrelay.presentation.session import SessionPresentation
@@ -48,12 +49,13 @@ class FakeNativeMessage:
         self.text = text
 
 
-class FakeNativeBackend:
+class FakeRuntimeService:
     def __init__(self, cwd: str) -> None:
         self.cwd = cwd
         self.list_calls: list[int] = []
         self.read_calls: list[str] = []
         self.compact_calls: list[str] = []
+        self.backends = {"codex": object()}
         self.threads = []
         for index in range(1, 16):
             thread_id = "thread_latest" if index == 1 else "thread_older" if index == 2 else f"thread_{index}"
@@ -72,23 +74,48 @@ class FakeNativeBackend:
                 )
             )
 
-    async def list_threads(self, session, context: BackendContext, limit: int = 20):
-        assert context.workspace_root
-        self.list_calls.append(limit)
-        return (self.threads[:limit], "")
+    async def list_sessions(self, backend: str, request) -> tuple[list[SessionSummary], str]:
+        assert backend == "codex"
+        self.list_calls.append(request.limit)
+        return (
+            [
+                SessionSummary(
+                    backend="codex",
+                    native_session_id=thread.thread_id,
+                    title=thread.name,
+                    preview=thread.preview,
+                    cwd=thread.cwd,
+                    updated_at=thread.updated_at,
+                    status=thread.status,
+                )
+                for thread in self.threads[: request.limit]
+            ],
+            "",
+        )
 
-    async def read_thread(self, session, context: BackendContext, thread_id: str, *, include_turns: bool = True):
-        assert context.workspace_root
-        assert include_turns is True
-        self.read_calls.append(thread_id)
+    async def read_session(self, locator: SessionLocator) -> SessionTranscript:
+        self.read_calls.append(locator.native_session_id)
         for thread in self.threads:
-            if thread.thread_id == thread_id:
-                return thread
-        raise AssertionError(f"unknown thread: {thread_id}")
+            if thread.thread_id == locator.native_session_id:
+                return SessionTranscript(
+                    summary=SessionSummary(
+                        backend="codex",
+                        native_session_id=thread.thread_id,
+                        title=thread.name,
+                        preview=thread.preview,
+                        cwd=thread.cwd,
+                        updated_at=thread.updated_at,
+                        status=thread.status,
+                    ),
+                    messages=tuple(
+                        TranscriptMessage(role=message.role, text=message.text)
+                        for message in thread.messages
+                    ),
+                )
+        raise AssertionError(f"unknown thread: {locator.native_session_id}")
 
-    async def compact_thread(self, session, context: BackendContext, thread_id: str):
-        assert context.workspace_root
-        self.compact_calls.append(thread_id)
+    async def compact_locator(self, locator: SessionLocator):
+        self.compact_calls.append(locator.native_session_id)
         return {"compactId": "compact_1"}
 
 
@@ -192,7 +219,7 @@ def build_router(tmp_path: Path) -> tuple[RuntimeCommandRouter, StateStore, Fake
     session_mutations = SessionMutationService(config, store, session_ux)
     session_scope = SessionScopeResolver(config, store, logging.getLogger("test.runtime.commands"))
     hooks = FakeHooks()
-    native_backend = FakeNativeBackend(str(config.main_workspace_dir))
+    runtime_service = FakeRuntimeService(str(config.main_workspace_dir))
     router = RuntimeCommandRouter(
         config,
         store,
@@ -205,7 +232,6 @@ def build_router(tmp_path: Path) -> tuple[RuntimeCommandRouter, StateStore, Fake
         HelpRenderer(config, store, session_ux, workspace, SessionShortcutService(config, store, workspace)),
         ReleaseCommandService(config, store, session_ux, session_mutations),
         RuntimeStatusPresenter(config, store, session_ux),
-        {"codex": native_backend, "claude": object()},
         RuntimeCommandHooks(
             reply=hooks.reply,
             send_help=hooks.send_help,
@@ -217,6 +243,7 @@ def build_router(tmp_path: Path) -> tuple[RuntimeCommandRouter, StateStore, Fake
             available_backend_names=hooks.available_backend_names,
             cancel_active_run_for_session=hooks.cancel_active_run_for_session,
         ),
+        runtime_service,
     )
     return router, store, hooks
 

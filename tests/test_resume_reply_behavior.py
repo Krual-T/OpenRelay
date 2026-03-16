@@ -3,7 +3,8 @@ from pathlib import Path
 import logging
 import pytest
 
-from openrelay.backends import BackendContext
+from openrelay.agent_runtime import SessionLocator, SessionSummary, SessionTranscript
+from openrelay.agent_runtime.models import TranscriptMessage
 from openrelay.core import AppConfig, BackendConfig, FeishuConfig, IncomingMessage
 from openrelay.presentation.runtime_status import RuntimeStatusPresenter
 from openrelay.presentation.session import SessionPresentation
@@ -31,8 +32,9 @@ class FakeNativeMessage:
         self.text = text
 
 
-class FakeNativeBackend:
+class FakeRuntimeService:
     def __init__(self, cwd: str) -> None:
+        self.backends = {"codex": object()}
         self.threads = [
             FakeNativeThread(
                 "thread_latest",
@@ -48,21 +50,43 @@ class FakeNativeBackend:
             )
         ]
 
-    async def list_threads(self, session, context: BackendContext, limit: int = 20):
-        assert context.workspace_root
-        return (self.threads[:limit], "")
+    async def list_sessions(self, backend: str, request) -> tuple[list[SessionSummary], str]:
+        assert backend == "codex"
+        return (
+            [
+                SessionSummary(
+                    backend="codex",
+                    native_session_id=thread.thread_id,
+                    title=thread.name,
+                    preview=thread.preview,
+                    cwd=thread.cwd,
+                    updated_at=thread.updated_at,
+                    status=thread.status,
+                )
+                for thread in self.threads[: request.limit]
+            ],
+            "",
+        )
 
-    async def read_thread(self, session, context: BackendContext, thread_id: str, *, include_turns: bool = True):
-        assert context.workspace_root
-        assert include_turns is True
+    async def read_session(self, locator: SessionLocator) -> SessionTranscript:
         for thread in self.threads:
-            if thread.thread_id == thread_id:
-                return thread
-        raise AssertionError(f"unknown thread: {thread_id}")
+            if thread.thread_id == locator.native_session_id:
+                return SessionTranscript(
+                    summary=SessionSummary(
+                        backend="codex",
+                        native_session_id=thread.thread_id,
+                        title=thread.name,
+                        preview=thread.preview,
+                        cwd=thread.cwd,
+                        updated_at=thread.updated_at,
+                        status=thread.status,
+                    ),
+                    messages=tuple(TranscriptMessage(role=message.role, text=message.text) for message in thread.messages),
+                )
+        raise AssertionError(f"unknown thread: {locator.native_session_id}")
 
-    async def compact_thread(self, session, context: BackendContext, thread_id: str):
-        assert context.workspace_root
-        return {"compactId": f"compact_for_{thread_id}"}
+    async def compact_locator(self, locator: SessionLocator):
+        return {"compactId": f"compact_for_{locator.native_session_id}"}
 
 
 class FakeHooks:
@@ -130,7 +154,7 @@ def make_message(text: str, suffix: str = "cmd") -> IncomingMessage:
     )
 
 
-def build_router(tmp_path: Path) -> tuple[RuntimeCommandRouter, StateStore, FakeHooks, FakeNativeBackend]:
+def build_router(tmp_path: Path) -> tuple[RuntimeCommandRouter, StateStore, FakeHooks, FakeRuntimeService]:
     config = make_config(tmp_path)
     prepare_dirs(config)
     store = StateStore(config)
@@ -138,7 +162,7 @@ def build_router(tmp_path: Path) -> tuple[RuntimeCommandRouter, StateStore, Fake
     workspace = SessionWorkspaceService(config)
     session_scope = SessionScopeResolver(config, store, logging.getLogger("test.resume.reply"))
     hooks = FakeHooks()
-    native_backend = FakeNativeBackend(str(config.main_workspace_dir))
+    runtime_service = FakeRuntimeService(str(config.main_workspace_dir))
     router = RuntimeCommandRouter(
         config,
         store,
@@ -151,7 +175,6 @@ def build_router(tmp_path: Path) -> tuple[RuntimeCommandRouter, StateStore, Fake
         HelpRenderer(config, store, session_presentation, workspace, SessionShortcutService(config, store, workspace)),
         ReleaseCommandService(config, store, session_presentation, SessionMutationService(config, store, session_presentation)),
         RuntimeStatusPresenter(config, store, session_presentation),
-        {"codex": native_backend},
         RuntimeCommandHooks(
             reply=hooks.reply,
             send_help=hooks.send_help,
@@ -163,8 +186,9 @@ def build_router(tmp_path: Path) -> tuple[RuntimeCommandRouter, StateStore, Fake
             available_backend_names=hooks.available_backend_names,
             cancel_active_run_for_session=hooks.cancel_active_run_for_session,
         ),
+        runtime_service,
     )
-    return router, store, hooks, native_backend
+    return router, store, hooks, runtime_service
 
 
 def test_reply_policy_keeps_resume_on_original_message(tmp_path: Path) -> None:
@@ -195,6 +219,6 @@ async def test_resume_success_text_is_thread_focused(tmp_path: Path) -> None:
     assert "cwd=~/Projects/openrelay" in text
     assert "最近更新：" in text
     assert "最近历史：" not in text
-    assert "接下来请直接在这个 thread 里继续发送消息。" in text
+    assert "已在当前 thread 中 connected；接下来直接继续发消息即可。" in text
     assert hooks.replies[-1]["kwargs"]["command_name"] == "/resume"
     store.close()
