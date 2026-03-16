@@ -634,7 +634,7 @@ class RuntimeCommandRouter:
             await self.hooks.reply(message, "\n".join([f"backend={session.backend}", f"available={', '.join(available)}"]), command_reply=True)
             return True
         backend = arg_text.lower()
-        if backend not in self.backends:
+        if backend not in available:
             await self.hooks.reply(message, f"backend 仅支持：{', '.join(available)}", command_reply=True)
             return True
         next_session = self.session_mutations.switch_backend(session_key, session, backend)
