@@ -1181,7 +1181,7 @@ Feishu 层不关心 backend 类型，也不关心 provider method。
 
 - 不追求一次性把全部 provider 细节写成最终规范。
 - 只把 Phase 1 到 Phase 3 真正会阻塞实现的边界定死。
-- 约束以当前仓库可验证证据为准：`src/openrelay/backends/codex.py`、`src/openrelay/runtime/live.py`、`src/openrelay/runtime/interactions/controller.py`、`tests/test_codex_backend.py`。
+- 约束以当前仓库可验证证据为准；legacy `src/openrelay/backends/codex.py`、`src/openrelay/runtime/live.py`、`tests/test_codex_backend.py` 已在后续收敛中删除，相关职责已迁入 `codex_adapter/`、`LiveTurnPresenter` 和更聚焦的 runtime/adapter 测试。
 
 ### Codex CLI 参考方式
 
@@ -1375,3 +1375,34 @@ Codex adapter 第一阶段必须显式实现下面三条规则：
 - Feishu 展示层只投影统一运行时状态，后续换 backend 不需要重写 UI 主结构。
 - Claude Code 接入会变成“新增 adapter”，而不是“重新设计 runtime”。
 - 用户体验可以继续向“远程 TUI relay”靠近，而不是在多个 backend 之间长出不一致的产品语义。
+
+## 当前落地结果
+
+截至 2026-03-16，这份设计主线已经在代码中形成下面的稳定结构：
+
+- runtime 主路径统一收敛到 `AgentRuntimeService -> AgentBackend -> RuntimeEvent -> LiveTurnReducer -> LiveTurnViewModel -> LiveTurnPresenter`
+- Codex adapter 已收敛到 `src/openrelay/backends/codex_adapter/` 目录，旧 `src/openrelay/backends/codex.py` 已移入 `app_server.py` 并不再作为主路径模块暴露
+- Claude 已以同构 `src/openrelay/backends/claude_adapter/` 目录接入，当前提供最小 turn 执行能力
+- `/resume`、`/compact`、session presentation 与 panel 已改成 backend-neutral session 语义，不再把用户可见身份表述成 `Codex thread`
+- runtime approval 主路径只保留 `ApprovalRequest -> ApprovalDecision`
+- legacy live progress state machine、legacy runtime orchestrator 测试、legacy codex backend 测试都已删除
+
+当前直接对应这份设计的主要代码锚点是：
+
+- `src/openrelay/agent_runtime/`
+- `src/openrelay/backends/codex_adapter/`
+- `src/openrelay/backends/claude_adapter/`
+- `src/openrelay/presentation/live_turn.py`
+- `src/openrelay/runtime/turn.py`
+- `src/openrelay/runtime/interactions/controller.py`
+
+当前验证主线由下面这些测试覆盖：
+
+- `tests/test_runtime_commands.py`
+- `tests/test_resume_reply_behavior.py`
+- `tests/test_runtime_help.py`
+- `tests/test_runtime_interactions.py`
+- `tests/test_live_turn_presenter.py`
+- `tests/test_codex_protocol_mapper.py`
+- `tests/test_codex_runtime_backend.py`
+- `tests/test_claude_runtime_backend.py`
