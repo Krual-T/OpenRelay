@@ -4,7 +4,6 @@ from collections.abc import Callable
 from dataclasses import dataclass
 
 from openrelay.backends.base import Backend
-from openrelay.backends.codex import CodexBackend
 from openrelay.core import AppConfig
 
 
@@ -24,14 +23,20 @@ def build_builtin_backend_descriptors() -> dict[str, BackendDescriptor]:
             name="codex",
             transport="cli-app-server",
             summary="persistent CLI backend via app-server protocol",
-            factory=lambda config: CodexBackend(
-                config.backend.codex_cli_path,
-                config.backend.default_model,
-                sqlite_home=config.backend.codex_sqlite_home,
-                request_timeout_seconds=config.backend.codex_request_timeout_seconds,
-            ),
+            factory=_build_legacy_codex_backend,
         ),
     }
+
+
+def _build_legacy_codex_backend(config: AppConfig) -> Backend:
+    from openrelay.backends.codex import CodexBackend
+
+    return CodexBackend(
+        config.backend.codex_cli_path,
+        config.backend.default_model,
+        sqlite_home=config.backend.codex_sqlite_home,
+        request_timeout_seconds=config.backend.codex_request_timeout_seconds,
+    )
 
 
 
