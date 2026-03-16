@@ -106,6 +106,16 @@ class UsageSnapshot:
     context_window: int | None = None
 
 
+@dataclass(slots=True, frozen=True)
+class BackendEventRecord:
+    event_type: str
+    level: Literal["info", "warning", "error"] = "info"
+    title: str = ""
+    detail: str = ""
+    raw_payload: dict[str, Any] = field(default_factory=dict)
+    created_at: str = field(default_factory=utc_now)
+
+
 @dataclass(slots=True)
 class LiveTurnViewModel:
     backend: BackendKind
@@ -117,6 +127,7 @@ class LiveTurnViewModel:
     reasoning_text: str = ""
     plan_steps: tuple[PlanStep, ...] = ()
     tools: tuple[ToolState, ...] = ()
+    backend_events: tuple[BackendEventRecord, ...] = ()
     pending_approval: ApprovalRequest | None = None
     usage: UsageSnapshot | None = None
     error_message: str = ""

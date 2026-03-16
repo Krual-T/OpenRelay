@@ -4,6 +4,7 @@ from openrelay.agent_runtime import (
     ApprovalResolvedEvent,
     AssistantCompletedEvent,
     AssistantDeltaEvent,
+    BackendNoticeEvent,
     PlanUpdatedEvent,
     ReasoningDeltaEvent,
     ToolCompletedEvent,
@@ -268,3 +269,41 @@ def test_codex_mapper_maps_assistant_completed_event() -> None:
 
     assert len(events) == 1 and isinstance(events[0], AssistantCompletedEvent)
     assert events[0].text == "final answer"
+
+
+def test_codex_mapper_falls_back_for_unexpected_backend_event() -> None:
+    mapper = CodexProtocolMapper(session_id="relay-1", native_session_id="thread_1", turn_id="turn_1")
+    state = CodexTurnState()
+
+    events = mapper.map_notification(
+        "item/unknownEvent",
+        {
+            "threadId": "thread_1",
+            "turnId": "turn_1",
+            "foo": "bar",
+        },
+        state,
+    )
+
+    assert len(events) == 1 and isinstance(events[0], BackendNoticeEvent)
+    assert events[0].provider_payload["fallback"] is True
+    assert events[0].provider_payload["raw_event"]["params"]["foo"] == "bar"
+
+
+def test_codex_mapper_falls_back_for_unexpected_item_type() -> None:
+    mapper = CodexProtocolMapper(session_id="relay-1", native_session_id="thread_1", turn_id="turn_1")
+    state = CodexTurnState()
+
+    events = mapper.map_notification(
+        "item/started",
+        {
+            "threadId": "thread_1",
+            "turnId": "turn_1",
+            "item": {"id": "mystery_1", "type": "customTool", "foo": "bar"},
+        },
+        state,
+    )
+
+    assert len(events) == 1 and isinstance(events[0], BackendNoticeEvent)
+    assert events[0].provider_payload["fallback"] is True
+    assert events[0].provider_payload["raw_event"]["item"]["type"] == "customTool"
