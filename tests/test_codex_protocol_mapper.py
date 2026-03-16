@@ -14,16 +14,18 @@ from openrelay.agent_runtime import (
     TurnStartedEvent,
     UsageUpdatedEvent,
 )
-from openrelay.backends.codex_adapter import CodexProtocolMapper
+from openrelay.backends.codex_adapter import CodexProtocolMapper, CodexTurnState
 
 
 def test_codex_mapper_maps_turn_started_and_alias_agent_delta() -> None:
     mapper = CodexProtocolMapper(session_id="relay-1", native_session_id="thread_1")
+    state = CodexTurnState()
 
-    started = mapper.map_notification("turn/started", {"threadId": "thread_1", "turn": {"id": "turn_1"}})
+    started = mapper.map_notification("turn/started", {"threadId": "thread_1", "turn": {"id": "turn_1"}}, state)
     direct = mapper.map_notification(
         "item/agentMessage/delta",
         {"threadId": "thread_1", "turnId": "turn_1", "itemId": "msg_1", "delta": "hello"},
+        state,
     )
     alias = mapper.map_notification(
         "codex/event/agent_message_content_delta",
@@ -32,6 +34,7 @@ def test_codex_mapper_maps_turn_started_and_alias_agent_delta() -> None:
             "id": "turn_1",
             "msg": {"thread_id": "thread_1", "turn_id": "turn_1", "item_id": "msg_1", "delta": "hello"},
         },
+        state,
     )
 
     assert len(started) == 1 and isinstance(started[0], TurnStartedEvent)
@@ -42,6 +45,7 @@ def test_codex_mapper_maps_turn_started_and_alias_agent_delta() -> None:
 
 def test_codex_mapper_aggregates_reasoning_and_prefers_summary() -> None:
     mapper = CodexProtocolMapper(session_id="relay-1", native_session_id="thread_1", turn_id="turn_1")
+    state = CodexTurnState()
 
     delta = mapper.map_notification(
         "item/reasoning/textDelta",
@@ -52,6 +56,7 @@ def test_codex_mapper_aggregates_reasoning_and_prefers_summary() -> None:
             "contentIndex": 0,
             "delta": "verbose trace",
         },
+        state,
     )
     alias = mapper.map_notification(
         "codex/event/reasoning_content_delta",
@@ -66,6 +71,7 @@ def test_codex_mapper_aggregates_reasoning_and_prefers_summary() -> None:
                 "delta": "verbose trace",
             },
         },
+        state,
     )
     completed = mapper.map_notification(
         "item/completed",
@@ -79,6 +85,7 @@ def test_codex_mapper_aggregates_reasoning_and_prefers_summary() -> None:
                 "content": ["verbose trace"],
             },
         },
+        state,
     )
 
     assert len(delta) == 1 and isinstance(delta[0], ReasoningDeltaEvent)
@@ -90,6 +97,7 @@ def test_codex_mapper_aggregates_reasoning_and_prefers_summary() -> None:
 
 def test_codex_mapper_maps_tool_lifecycle_and_usage() -> None:
     mapper = CodexProtocolMapper(session_id="relay-1", native_session_id="thread_1", turn_id="turn_1")
+    state = CodexTurnState()
 
     started = mapper.map_notification(
         "item/started",
@@ -98,10 +106,12 @@ def test_codex_mapper_maps_tool_lifecycle_and_usage() -> None:
             "turnId": "turn_1",
             "item": {"id": "cmd_1", "type": "commandExecution", "command": "rg runtime"},
         },
+        state,
     )
     progress = mapper.map_notification(
         "item/commandExecution/outputDelta",
         {"threadId": "thread_1", "turnId": "turn_1", "itemId": "cmd_1", "delta": "src/openrelay/runtime\n"},
+        state,
     )
     completed = mapper.map_notification(
         "item/completed",
@@ -116,6 +126,7 @@ def test_codex_mapper_maps_tool_lifecycle_and_usage() -> None:
                 "exitCode": 0,
             },
         },
+        state,
     )
     usage = mapper.map_notification(
         "thread/tokenUsage/updated",
@@ -127,6 +138,7 @@ def test_codex_mapper_maps_tool_lifecycle_and_usage() -> None:
                 "modelContextWindow": 200000,
             },
         },
+        state,
     )
 
     assert len(started) == 1 and isinstance(started[0], ToolStartedEvent)
@@ -143,6 +155,7 @@ def test_codex_mapper_maps_tool_lifecycle_and_usage() -> None:
 
 def test_codex_mapper_maps_server_request_and_resolution() -> None:
     mapper = CodexProtocolMapper(session_id="relay-1", native_session_id="thread_1", turn_id="turn_1")
+    state = CodexTurnState()
 
     requested = mapper.map_server_request(
         42,
@@ -158,6 +171,7 @@ def test_codex_mapper_maps_server_request_and_resolution() -> None:
     resolved = mapper.map_notification(
         "serverRequest/resolved",
         {"threadId": "thread_1", "turnId": "turn_1", "requestId": "42"},
+        state,
     )
     response = mapper.build_approval_response(
         requested.request,
@@ -175,6 +189,7 @@ def test_codex_mapper_maps_server_request_and_resolution() -> None:
 
 def test_codex_mapper_maps_terminal_turn_outcomes() -> None:
     mapper = CodexProtocolMapper(session_id="relay-1", native_session_id="thread_1", turn_id="turn_1")
+    state = CodexTurnState()
 
     mapper.map_notification(
         "item/completed",
@@ -183,6 +198,7 @@ def test_codex_mapper_maps_terminal_turn_outcomes() -> None:
             "turnId": "turn_1",
             "item": {"id": "msg_1", "type": "agentMessage", "text": "done"},
         },
+        state,
     )
     completed = mapper.map_notification(
         "codex/event/task_complete",
@@ -191,6 +207,7 @@ def test_codex_mapper_maps_terminal_turn_outcomes() -> None:
             "id": "turn_1",
             "msg": {"turn_id": "turn_1", "last_agent_message": "done"},
         },
+        state,
     )
     failed = mapper.map_notification(
         "error",
@@ -200,6 +217,7 @@ def test_codex_mapper_maps_terminal_turn_outcomes() -> None:
             "error": {"message": "boom"},
             "willRetry": False,
         },
+        state,
     )
 
     assert len(completed) == 1 and isinstance(completed[0], TurnCompletedEvent)
@@ -210,6 +228,7 @@ def test_codex_mapper_maps_terminal_turn_outcomes() -> None:
 
 def test_codex_mapper_maps_structured_plan_update() -> None:
     mapper = CodexProtocolMapper(session_id="relay-1", native_session_id="thread_1", turn_id="turn_1")
+    state = CodexTurnState()
 
     events = mapper.map_notification(
         "turn/plan/updated",
@@ -222,6 +241,7 @@ def test_codex_mapper_maps_structured_plan_update() -> None:
             ],
             "explanation": "phase 1",
         },
+        state,
     )
 
     assert len(events) == 1 and isinstance(events[0], PlanUpdatedEvent)
@@ -232,6 +252,7 @@ def test_codex_mapper_maps_structured_plan_update() -> None:
 
 def test_codex_mapper_maps_assistant_completed_event() -> None:
     mapper = CodexProtocolMapper(session_id="relay-1", native_session_id="thread_1", turn_id="turn_1")
+    state = CodexTurnState()
 
     events = mapper.map_notification(
         "item/completed",
@@ -240,6 +261,7 @@ def test_codex_mapper_maps_assistant_completed_event() -> None:
             "turnId": "turn_1",
             "item": {"id": "msg_1", "type": "agentMessage", "text": "final answer"},
         },
+        state,
     )
 
     assert len(events) == 1 and isinstance(events[0], AssistantCompletedEvent)

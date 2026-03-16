@@ -98,22 +98,61 @@ class _ReasoningItemState:
         return combine_indexed_text(self.summary_by_index) or combine_indexed_text(self.content_by_index)
 
 
+@dataclass(slots=True)
+class CodexTurnState:
+    agent_text_by_id: dict[str, str] = field(default_factory=dict)
+    command_output_by_id: dict[str, str] = field(default_factory=dict)
+    file_change_output_by_id: dict[str, str] = field(default_factory=dict)
+    reasoning_by_id: dict[str, _ReasoningItemState] = field(default_factory=dict)
+    reasoning_order: list[str] = field(default_factory=list)
+    usage: UsageSnapshot | None = None
+    final_text: str = ""
+
+
 class CodexProtocolMapper:
     def __init__(self, session_id: str, native_session_id: str = "", turn_id: str = "") -> None:
         self.session_id = session_id
         self.native_session_id = native_session_id
         self.turn_id = turn_id
-        self.agent_text_by_id: dict[str, str] = {}
-        self.command_output_by_id: dict[str, str] = {}
-        self.file_change_output_by_id: dict[str, str] = {}
-        self.reasoning_by_id: dict[str, _ReasoningItemState] = {}
-        self.reasoning_order: list[str] = []
         self.last_delta_fingerprint: tuple[str, ...] | None = None
         self.last_delta_method = ""
-        self.usage: UsageSnapshot | None = None
-        self.final_text = ""
 
-    def map_notification(self, method: str, params: dict[str, Any]) -> tuple[RuntimeEvent, ...]:
+    def build_thread_params(
+        self,
+        *,
+        cwd: str,
+        model: str | None,
+        safety_mode: str,
+        default_model: str,
+    ) -> dict[str, Any]:
+        params = {
+            "cwd": cwd,
+            "model": model or default_model or None,
+            "sandbox": safety_mode,
+            "approvalPolicy": "never",
+        }
+        return {key: value for key, value in params.items() if value not in {None, ""}}
+
+    def build_turn_start_params(
+        self,
+        *,
+        thread_id: str,
+        turn_input: Any,
+    ) -> dict[str, Any]:
+        return {
+            "threadId": thread_id,
+            "cwd": turn_input.cwd,
+            "approvalPolicy": "never",
+            **({"model": turn_input.model} if turn_input.model else {}),
+            "input": self._build_turn_input(turn_input),
+        }
+
+    def map_notification(
+        self,
+        method: str,
+        params: dict[str, Any],
+        state: CodexTurnState,
+    ) -> tuple[RuntimeEvent, ...]:
         thread_id, turn_id = self._message_identity(params)
         if not self._matches(thread_id, turn_id):
             return ()
@@ -125,22 +164,22 @@ class CodexProtocolMapper:
         if method == "turn/started":
             return self._map_turn_started(params)
         if method in {"item/agentMessage/delta", "codex/event/agent_message_content_delta"}:
-            return self._map_agent_delta(params)
+            return self._map_agent_delta(params, state)
         if method in {"item/reasoning/textDelta", "codex/event/reasoning_content_delta"}:
-            return self._map_reasoning_content_delta(params)
+            return self._map_reasoning_content_delta(params, state)
         if method in {"item/reasoning/summaryTextDelta", "codex/event/reasoning_summary_text_delta"}:
-            return self._map_reasoning_summary_delta(params)
+            return self._map_reasoning_summary_delta(params, state)
         if method == "item/reasoning/summaryPartAdded":
-            self._reasoning_state(self._item_id(params))
+            self._reasoning_state(state, self._item_id(params))
             return ()
         if method == "item/plan/delta":
             return self._map_plan_delta(params)
         if method == "turn/plan/updated":
             return self._map_plan_updated(params)
         if method in {"item/commandExecution/outputDelta", "codex/event/command_output_delta"}:
-            return self._map_tool_output_delta(params, storage=self.command_output_by_id)
+            return self._map_tool_output_delta(params, storage=state.command_output_by_id)
         if method == "item/fileChange/outputDelta":
-            return self._map_tool_output_delta(params, storage=self.file_change_output_by_id)
+            return self._map_tool_output_delta(params, storage=state.file_change_output_by_id)
         if method == "item/commandExecution/terminalInteraction":
             return (
                 self._event(
@@ -175,13 +214,13 @@ class CodexProtocolMapper:
                 ),
             )
         if method in {"item/started", "codex/event/item_started"}:
-            return self._map_item_started(method, params)
+            return self._map_item_started(method, params, state)
         if method in {"item/completed", "codex/event/item_completed"}:
-            return self._map_item_completed(method, params)
+            return self._map_item_completed(method, params, state)
         if method in {"thread/tokenUsage/updated", "codex/event/token_count"}:
-            return self._map_token_usage_updated(method, params)
+            return self._map_token_usage_updated(method, params, state)
         if method in {"turn/completed", "codex/event/task_complete"}:
-            return self._map_turn_completed(method, params)
+            return self._map_turn_completed(method, params, state)
         if method == "error" and not params.get("willRetry"):
             error = params.get("error") if isinstance(params.get("error"), dict) else {}
             return (
@@ -320,27 +359,27 @@ class CodexProtocolMapper:
         self.turn_id = str(params.get("turnId") or turn.get("id") or msg.get("turn_id") or self.turn_id or "")
         return (self._event(TurnStartedEvent, event_type="turn.started"),)
 
-    def _map_agent_delta(self, params: dict[str, Any]) -> tuple[RuntimeEvent, ...]:
+    def _map_agent_delta(self, params: dict[str, Any], state: CodexTurnState) -> tuple[RuntimeEvent, ...]:
         item_id = self._item_id(params)
         delta = self._delta(params)
-        text = f"{self.agent_text_by_id.get(item_id, '')}{delta}"
-        self.agent_text_by_id[item_id] = text
-        self.final_text = text or self.final_text
+        text = f"{state.agent_text_by_id.get(item_id, '')}{delta}"
+        state.agent_text_by_id[item_id] = text
+        state.final_text = text or state.final_text
         return (self._event(AssistantDeltaEvent, event_type="assistant.delta", delta=delta),)
 
-    def _map_reasoning_content_delta(self, params: dict[str, Any]) -> tuple[RuntimeEvent, ...]:
+    def _map_reasoning_content_delta(self, params: dict[str, Any], state: CodexTurnState) -> tuple[RuntimeEvent, ...]:
         item_id = self._item_id(params)
         index = self._int_field(params, "contentIndex", "content_index")
-        reasoning = self._reasoning_state(item_id)
+        reasoning = self._reasoning_state(state, item_id)
         reasoning.append_content(index, self._delta(params))
-        return (self._event(ReasoningDeltaEvent, event_type="reasoning.delta", text=self._combined_reasoning_text()),)
+        return (self._event(ReasoningDeltaEvent, event_type="reasoning.delta", text=self._combined_reasoning_text(state)),)
 
-    def _map_reasoning_summary_delta(self, params: dict[str, Any]) -> tuple[RuntimeEvent, ...]:
+    def _map_reasoning_summary_delta(self, params: dict[str, Any], state: CodexTurnState) -> tuple[RuntimeEvent, ...]:
         item_id = self._item_id(params)
         index = self._int_field(params, "summaryIndex", "summary_index")
-        reasoning = self._reasoning_state(item_id)
+        reasoning = self._reasoning_state(state, item_id)
         reasoning.append_summary(index, self._delta(params))
-        return (self._event(ReasoningDeltaEvent, event_type="reasoning.delta", text=self._combined_reasoning_text()),)
+        return (self._event(ReasoningDeltaEvent, event_type="reasoning.delta", text=self._combined_reasoning_text(state)),)
 
     def _map_plan_delta(self, params: dict[str, Any]) -> tuple[RuntimeEvent, ...]:
         item_id = self._item_id(params)
@@ -380,12 +419,17 @@ class CodexProtocolMapper:
             ),
         )
 
-    def _map_item_started(self, method: str, params: dict[str, Any]) -> tuple[RuntimeEvent, ...]:
+    def _map_item_started(
+        self,
+        method: str,
+        params: dict[str, Any],
+        state: CodexTurnState,
+    ) -> tuple[RuntimeEvent, ...]:
         item = self._extract_event_item(params)
         item_type = str(item.get("type") or "")
         item_id = str(item.get("id") or "")
         if item_type == "reasoning":
-            self._reasoning_state(item_id)
+            self._reasoning_state(state, item_id)
             return (
                 self._event(
                     BackendNoticeEvent,
@@ -394,19 +438,24 @@ class CodexProtocolMapper:
                     provider_payload={"method": method, "item_id": item_id, "item_type": item_type},
                 ),
             )
-        tool = self._to_tool_state(item, status="running")
+        tool = self._to_tool_state(item, status="running", state=state)
         if tool is None:
             return ()
         return (self._event(ToolStartedEvent, event_type="tool.started", tool=tool, provider_payload={"method": method}),)
 
-    def _map_item_completed(self, method: str, params: dict[str, Any]) -> tuple[RuntimeEvent, ...]:
+    def _map_item_completed(
+        self,
+        method: str,
+        params: dict[str, Any],
+        state: CodexTurnState,
+    ) -> tuple[RuntimeEvent, ...]:
         item = self._extract_event_item(params)
         item_type = str(item.get("type") or "")
         item_id = str(item.get("id") or "")
         if item_type == "agentMessage":
-            text = str(item.get("text") or self.agent_text_by_id.get(item_id, "")).strip()
+            text = str(item.get("text") or state.agent_text_by_id.get(item_id, "")).strip()
             if text:
-                self.final_text = text
+                state.final_text = text
                 return (
                     self._event(
                         AssistantCompletedEvent,
@@ -417,14 +466,14 @@ class CodexProtocolMapper:
                 )
             return ()
         if item_type == "reasoning":
-            reasoning = self._reasoning_state(item_id)
+            reasoning = self._reasoning_state(state, item_id)
             summary = item.get("summary")
             content = item.get("content")
             if isinstance(summary, list):
                 reasoning.seed_summary([str(part) for part in summary])
             if isinstance(content, list):
                 reasoning.seed_content([str(part) for part in content])
-            text = self._combined_reasoning_text() or reasoning.text()
+            text = self._combined_reasoning_text(state) or reasoning.text()
             if not text:
                 return ()
             return (
@@ -447,25 +496,35 @@ class CodexProtocolMapper:
                     provider_payload={"method": method, "item_id": item_id},
                 ),
             )
-        tool = self._to_tool_state(item, status="completed")
+        tool = self._to_tool_state(item, status="completed", state=state)
         if tool is None:
             return ()
         return (self._event(ToolCompletedEvent, event_type="tool.completed", tool=tool, provider_payload={"method": method}),)
 
-    def _map_token_usage_updated(self, method: str, params: dict[str, Any]) -> tuple[RuntimeEvent, ...]:
+    def _map_token_usage_updated(
+        self,
+        method: str,
+        params: dict[str, Any],
+        state: CodexTurnState,
+    ) -> tuple[RuntimeEvent, ...]:
         usage = self._extract_usage(params)
         if usage is None:
             return ()
-        self.usage = usage
+        state.usage = usage
         return (self._event(UsageUpdatedEvent, event_type="usage.updated", usage=usage, provider_payload={"method": method}),)
 
-    def _map_turn_completed(self, method: str, params: dict[str, Any]) -> tuple[RuntimeEvent, ...]:
+    def _map_turn_completed(
+        self,
+        method: str,
+        params: dict[str, Any],
+        state: CodexTurnState,
+    ) -> tuple[RuntimeEvent, ...]:
         turn = params.get("turn") if isinstance(params.get("turn"), dict) else {}
         msg = params.get("msg") if isinstance(params.get("msg"), dict) else {}
         if not turn:
             turn = {"status": msg.get("status") or "completed", "error": msg.get("error")}
         last_agent_message = str(msg.get("last_agent_message") or msg.get("lastAgentMessage") or "").strip()
-        final_text = (self.final_text or last_agent_message).strip()
+        final_text = (state.final_text or last_agent_message).strip()
         status = str(turn.get("status") or "")
         if status == "completed":
             return (
@@ -473,7 +532,7 @@ class CodexProtocolMapper:
                     TurnCompletedEvent,
                     event_type="turn.completed",
                     final_text=final_text,
-                    usage=self.usage,
+                    usage=state.usage,
                     provider_payload={"method": method},
                 ),
             )
@@ -495,12 +554,18 @@ class CodexProtocolMapper:
             ),
         )
 
-    def _to_tool_state(self, item: dict[str, Any], *, status: str) -> ToolState | None:
+    def _to_tool_state(
+        self,
+        item: dict[str, Any],
+        *,
+        status: str,
+        state: CodexTurnState,
+    ) -> ToolState | None:
         item_type = str(item.get("type") or "")
         item_id = str(item.get("id") or "")
         if item_type == "commandExecution":
             command = str(item.get("command") or "")
-            aggregated_output = str(item.get("aggregatedOutput") or self.command_output_by_id.get(item_id, ""))
+            aggregated_output = str(item.get("aggregatedOutput") or state.command_output_by_id.get(item_id, ""))
             return ToolState(
                 tool_id=item_id,
                 kind="command",
@@ -528,7 +593,7 @@ class CodexProtocolMapper:
                 title="File changes",
                 status=status,  # type: ignore[arg-type]
                 preview=self._summarize_file_changes(item),
-                detail=self.file_change_output_by_id.get(item_id, ""),
+                detail=state.file_change_output_by_id.get(item_id, ""),
                 provider_payload={"item_type": item_type, "changes": item.get("changes"), "status": item.get("status")},
             )
         if item_type == "collabAgentToolCall":
@@ -656,6 +721,14 @@ class CodexProtocolMapper:
         self.last_delta_method = method
         return is_duplicate
 
+    def _build_turn_input(self, turn_input: Any) -> list[dict[str, Any]]:
+        items: list[dict[str, Any]] = []
+        if str(turn_input.text or "").strip():
+            items.append({"type": "text", "text": turn_input.text})
+        for path in turn_input.local_image_paths:
+            items.append({"type": "localImage", "path": path})
+        return items
+
     def _item_id(self, params: dict[str, Any]) -> str:
         msg = params.get("msg") if isinstance(params.get("msg"), dict) else {}
         return str(params.get("itemId") or msg.get("item_id") or msg.get("itemId") or "")
@@ -672,19 +745,19 @@ class CodexProtocolMapper:
         except (TypeError, ValueError):
             return 0
 
-    def _reasoning_state(self, item_id: str) -> _ReasoningItemState:
-        if item_id and item_id not in self.reasoning_order:
-            self.reasoning_order.append(item_id)
-        state = self.reasoning_by_id.get(item_id)
-        if state is None:
-            state = _ReasoningItemState()
-            self.reasoning_by_id[item_id] = state
-        return state
+    def _reasoning_state(self, state: CodexTurnState, item_id: str) -> _ReasoningItemState:
+        if item_id and item_id not in state.reasoning_order:
+            state.reasoning_order.append(item_id)
+        reasoning_state = state.reasoning_by_id.get(item_id)
+        if reasoning_state is None:
+            reasoning_state = _ReasoningItemState()
+            state.reasoning_by_id[item_id] = reasoning_state
+        return reasoning_state
 
-    def _combined_reasoning_text(self) -> str:
+    def _combined_reasoning_text(self, state: CodexTurnState) -> str:
         parts: list[str] = []
-        for item_id in self.reasoning_order:
-            text = self._reasoning_state(item_id).text().strip()
+        for item_id in state.reasoning_order:
+            text = self._reasoning_state(state, item_id).text().strip()
             if text:
                 parts.append(text)
         return "\n\n".join(parts).strip()

@@ -108,7 +108,7 @@ class CapturingSink:
 
 @pytest.mark.asyncio
 async def test_codex_runtime_backend_starts_session_and_reads_threads(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr("openrelay.backends.codex_adapter.backend.CodexAppServerClient", FakeCodexClient)
+    monkeypatch.setattr("openrelay.backends.codex_adapter.transport.CodexAppServerClient", FakeCodexClient)
     backend = CodexRuntimeBackend(
         codex_path="codex",
         default_model="gpt-test",
@@ -132,7 +132,7 @@ async def test_codex_runtime_backend_starts_session_and_reads_threads(tmp_path: 
 
 @pytest.mark.asyncio
 async def test_codex_runtime_backend_streams_runtime_events(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr("openrelay.backends.codex_adapter.backend.CodexAppServerClient", FakeCodexClient)
+    monkeypatch.setattr("openrelay.backends.codex_adapter.transport.CodexAppServerClient", FakeCodexClient)
     backend = CodexRuntimeBackend(
         codex_path="codex",
         default_model="gpt-test",
@@ -184,7 +184,7 @@ class FakeApprovalClient(FakeCodexClient):
 
 @pytest.mark.asyncio
 async def test_codex_runtime_backend_resolves_pending_approval(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr("openrelay.backends.codex_adapter.backend.CodexAppServerClient", FakeApprovalClient)
+    monkeypatch.setattr("openrelay.backends.codex_adapter.transport.CodexAppServerClient", FakeApprovalClient)
     backend = CodexRuntimeBackend(
         codex_path="codex",
         default_model="gpt-test",
@@ -219,11 +219,12 @@ async def test_codex_runtime_backend_resolves_pending_approval(tmp_path: Path, m
     )
 
     for _ in range(20):
-        client = next(iter(backend._clients.values()))
-        if client.sent_server_results:
+        client = next(iter(backend._clients.values())).transport._client
+        if client is not None and client.sent_server_results:
             break
         await asyncio.sleep(0)
-    client = next(iter(backend._clients.values()))
+    client = next(iter(backend._clients.values())).transport._client
 
+    assert client is not None
     assert client.sent_server_results == [(7, {"decision": "acceptForSession"})]
     assert not handle.future.done()
