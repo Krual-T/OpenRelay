@@ -413,6 +413,11 @@ class RuntimeCommandRouter:
         raw = value.strip()
         if not raw:
             return ""
+        if raw.isdigit():
+            timestamp = int(raw)
+            if timestamp > 10**12:
+                timestamp /= 1000
+            return datetime.fromtimestamp(timestamp).astimezone().strftime("%Y-%m-%d %H:%M:%S")
         try:
             parsed = datetime.fromisoformat(raw.replace("Z", "+00:00"))
         except ValueError:

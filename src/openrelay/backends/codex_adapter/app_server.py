@@ -72,6 +72,22 @@ class CodexThreadDetails:
     messages: tuple[CodexThreadMessage, ...] = ()
 
 
+def _normalize_thread_status(value: Any) -> str:
+    if isinstance(value, str):
+        return value.strip()
+    if isinstance(value, dict):
+        for key in ("type", "status", "state", "name"):
+            normalized = str(value.get(key) or "").strip()
+            if normalized:
+                return normalized
+        compact = json.dumps(value, ensure_ascii=False, separators=(",", ":")).strip()
+        return compact
+    if isinstance(value, list):
+        parts = [_normalize_thread_status(item) for item in value]
+        return " / ".join(part for part in parts if part).strip()
+    return str(value or "").strip()
+
+
 def build_cancel_reset_reason(method: str) -> str:
     return f"Codex app-server request {method} cancelled by /stop before response"
 
@@ -97,7 +113,7 @@ def _normalize_thread_summary(payload: dict[str, Any]) -> CodexThreadSummary:
         preview=str(payload.get("preview") or "").strip(),
         cwd=str(payload.get("cwd") or "").strip(),
         updated_at=str(payload.get("updatedAt") or "").strip(),
-        status=str(payload.get("status") or "").strip(),
+        status=_normalize_thread_status(payload.get("status")),
         name=str(payload.get("name") or "").strip(),
     )
 

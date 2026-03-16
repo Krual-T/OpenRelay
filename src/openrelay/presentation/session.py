@@ -112,13 +112,13 @@ def build_backend_session_list_card(info: dict[str, Any]) -> dict[str, Any]:
     if sessions:
         for entry in sessions:
             title = str(entry.get("title") or entry.get("label") or entry.get("session_id") or "未命名会话")
-            lines = [f"> **{entry.get('index', '-')}. {title}**{' · 当前' if entry.get('active') else ''}"]
+            lines = [f"**{entry.get('index', '-')}. {title}**{' · 当前' if entry.get('active') else ''}"]
             meta = str(entry.get("meta") or "").strip()
             if meta:
-                lines.append(f"> {meta}")
+                lines.append(meta)
             session_id = str(entry.get("session_id") or entry.get("resume_token") or "").strip()
             if session_id:
-                lines.append(f"> `{session_id}`")
+                lines.append(f"`{session_id}`")
             elements.append(markdown_block("\n".join(lines)))
             elements.append(
                 {
@@ -143,16 +143,6 @@ def build_backend_session_list_card(info: dict[str, Any]) -> dict[str, Any]:
         controls.append(build_button("下一页", build_resume_card_command(page=page + 1), "primary", action_context))
     if controls:
         elements.append({"tag": "action", "actions": controls})
-    elements.append(
-        {
-            "tag": "action",
-            "actions": [
-                build_button("恢复上一条", "/resume latest", "default", action_context),
-                build_button("面板", "/panel", "default", action_context),
-                build_button("帮助", "/help", "default", action_context),
-            ],
-        }
-    )
     return build_card_shell(f"Relay {backend_name} thread histories", elements, tone="info")
 
 
