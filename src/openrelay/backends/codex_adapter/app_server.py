@@ -37,7 +37,7 @@ DEFAULT_RESUME_TIMEOUT_SECONDS = 15.0
 STOP_INTERRUPT_REASON = "interrupted by /stop"
 JSONRPC_INTERNAL_ERROR = -32603
 JSONRPC_METHOD_NOT_FOUND = -32601
-LOGGER = logging.getLogger("openrelay.backends.codex")
+LOGGER = logging.getLogger("openrelay.backends.codex_adapter.app_server")
 RequestId: TypeAlias = int | str
 
 

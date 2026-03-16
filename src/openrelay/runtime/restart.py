@@ -5,7 +5,7 @@ import logging
 import os
 import sys
 
-from openrelay.backends.codex import CodexAppServerClient
+from openrelay.backends.codex_adapter.app_server import CodexAppServerClient
 
 DEFAULT_SYSTEMD_SERVICE_UNIT = "openrelay.service"
 
