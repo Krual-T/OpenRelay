@@ -67,7 +67,7 @@ class RuntimeOrchestrator:
         self.agent_runtime = (
             AgentRuntimeService(self.runtime_backends, self.binding_store) if self.runtime_backends else None
         )
-        if config.backend.default_backend not in self.backends:
+        if config.backend.default_backend not in self.available_backend_names():
             raise ValueError(f"Configured default backend is unavailable: {config.backend.default_backend}")
         self.execution_coordinator = RuntimeExecutionCoordinator()
         self.active_runs = self.execution_coordinator.active_runs
@@ -266,7 +266,7 @@ class RuntimeOrchestrator:
 
     async def _run_backend_turn(self, message: IncomingMessage, execution_key: str, session: SessionRecord) -> None:
         backend = self.backends.get(session.backend)
-        if backend is None:
+        if backend is None and not self._supports_runtime_backend(session.backend):
             await self._reply(message, f"Unsupported backend: {session.backend}")
             return
 
@@ -363,7 +363,10 @@ class RuntimeOrchestrator:
         await self._reply(message, text, command_reply=True, command_name=command_name)
 
     def available_backend_names(self) -> list[str]:
-        return sorted(self.backends)
+        return sorted(set(self.backends) | set(self.runtime_backends))
+
+    def _supports_runtime_backend(self, backend: str) -> bool:
+        return self.agent_runtime is not None and backend in self.runtime_backends
 
     async def _send_text_reply(self, message: IncomingMessage, text: str, route: ReplyRoute) -> None:
         sent_messages = await self.messenger.send_text(

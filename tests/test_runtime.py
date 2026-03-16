@@ -801,6 +801,33 @@ async def test_runtime_resume_and_compact_use_agent_runtime_when_configured(tmp_
 
 
 @pytest.mark.asyncio
+async def test_runtime_can_run_with_runtime_backend_only(tmp_path: Path) -> None:
+    config = make_config(tmp_path)
+    config.workspace_root.mkdir(parents=True, exist_ok=True)
+    config.main_workspace_dir.mkdir(parents=True, exist_ok=True)
+    config.develop_workspace_dir.mkdir(parents=True, exist_ok=True)
+    store = StateStore(config)
+    messenger = FakeMessenger()
+    runtime_backend = FakeAgentRuntimeBackend()
+    runtime = RuntimeOrchestrator(
+        config,
+        store,
+        messenger,
+        backends={},
+        runtime_backends={"codex": runtime_backend},
+    )
+
+    await runtime.dispatch_message(make_message("runtime only", event_suffix="runtime_only"))
+
+    session = store.load_session(runtime.session_scope.build_session_key(make_message("runtime only", event_suffix="runtime_only")))
+
+    assert messenger.messages[-1] == "runtime hello"
+    assert session.native_session_id == "runtime_native_1"
+    assert runtime_backend.turn_inputs and runtime_backend.turn_inputs[0].text == "runtime only"
+    await runtime.shutdown()
+
+
+@pytest.mark.asyncio
 async def test_runtime_top_level_messages_start_independent_sessions_by_default(tmp_path: Path) -> None:
     config = make_config(tmp_path)
     config.workspace_root.mkdir(parents=True, exist_ok=True)

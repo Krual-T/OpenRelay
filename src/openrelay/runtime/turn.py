@@ -92,7 +92,7 @@ class BackendTurnSession:
             self.live_state["heading"] = "Generating reply"
             self.live_state["status"] = "Waiting for streamed output"
 
-    async def run(self, backend: Backend, message_summary: str, backend_prompt: str) -> None:
+    async def run(self, backend: Backend | None, message_summary: str, backend_prompt: str) -> None:
         try:
             await self.prepare(message_summary)
             self.build_interaction_controller()
@@ -100,6 +100,8 @@ class BackendTurnSession:
             if self._should_use_agent_runtime():
                 reply = await self.run_with_agent_runtime(backend_prompt)
             else:
+                if backend is None:
+                    raise RuntimeError(f"Unsupported backend: {self.session.backend}")
                 reply = await backend.run(
                     self.session,
                     backend_prompt,

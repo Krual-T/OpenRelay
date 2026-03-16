@@ -38,6 +38,9 @@
   - `src/openrelay/runtime/commands.py` 的 `/resume`、`/compact` 原生 thread 操作已优先走 `AgentRuntimeService.list_sessions(...)`、`read_session(...)`、`compact_locator(...)`；旧 `CodexBackend.list_threads/read_thread/compact_thread` 只作为 fallback 保留。
   - `src/openrelay/runtime/panel_service.py` 的 `/resume` 会话卡片数据源已优先走 `AgentRuntimeService.list_sessions(...)`，使原生命令式恢复列表与新的 Codex runtime backend 共享同一 session 枚举入口。
   - 已补充 `tests/test_runtime.py` 中 runtime-service 驱动的 `/resume latest` 与 `/compact` 回归，验证在显式注入 runtime backend 时无需旧 backend 原生 thread 扩展方法也能完成会话恢复、thread 读取与 compact。
+  - `src/openrelay/runtime/orchestrator.py` 现在对 backend 可用性的判断已基于“旧 backend 集合 + runtime backend 集合”的并集；`BackendTurnSession.run(...)` 也允许在只有 runtime backend、没有旧 `Backend` 实例时执行 Codex turn。
+  - `/backend` 命令的可选 backend 校验已与 orchestrator 使用同一可用 backend 集合，不再要求 runtime-only backend 同时在旧 `backends` 映射里占位。
+  - 已补充 `tests/test_runtime.py` 中 runtime-only 配置回归，验证在 `backends={}`、`runtime_backends={\"codex\": ...}` 的情况下仍能正常执行 Codex turn 并持久化 native session id。
 
 ## 使用约定
 
