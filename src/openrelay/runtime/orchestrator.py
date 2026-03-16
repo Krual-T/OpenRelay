@@ -5,7 +5,8 @@ from typing import Any
 from typing import Callable
 
 from openrelay.agent_runtime.service import AgentRuntimeService
-from openrelay.backends import Backend, BackendDescriptor, CodexBackend, build_builtin_backend_descriptors, instantiate_builtin_backends
+from openrelay.backends import Backend, BackendDescriptor, build_builtin_backend_descriptors, instantiate_builtin_backends
+from openrelay.backends.codex import CodexAppServerClient
 from openrelay.backends.codex_adapter.backend import CodexRuntimeBackend
 from openrelay.core import (
     AppConfig,
@@ -144,7 +145,7 @@ class RuntimeOrchestrator:
         if self.agent_runtime is not None:
             for backend in self.runtime_backends.values():
                 await backend.shutdown()
-        await CodexBackend.shutdown_all()
+        await CodexAppServerClient.shutdown_all()
         await self.messenger.close()
         self.store.close()
 

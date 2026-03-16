@@ -795,6 +795,8 @@ class CodexTurn:
 
 
 class CodexAppServerClient:
+    _instances: set["CodexAppServerClient"] = set()
+
     def __init__(
         self,
         codex_path: str,
@@ -827,6 +829,7 @@ class CodexAppServerClient:
         self._wait_task: asyncio.Task[None] | None = None
         self._lock = asyncio.Lock()
         self._reset_lock = asyncio.Lock()
+        self._instances.add(self)
 
     def _normalize_request_timeout(self, seconds: float | None) -> float | None:
         if seconds is None:
@@ -1301,11 +1304,18 @@ class CodexAppServerClient:
     async def shutdown(self) -> None:
         process = self.process
         self.process = None
+        self._instances.discard(self)
         if process is None:
             return
         async with self._lock:
             self._ready_task = None
         await self._terminate_process(process)
+
+    @classmethod
+    async def shutdown_all(cls) -> None:
+        for client in list(cls._instances):
+            await client.shutdown()
+        cls._instances.clear()
 
 
 class CodexBackend(Backend):
@@ -1378,6 +1388,5 @@ class CodexBackend(Backend):
 
     @classmethod
     async def shutdown_all(cls) -> None:
-        for client in list(cls._clients.values()):
-            await client.shutdown()
+        await CodexAppServerClient.shutdown_all()
         cls._clients.clear()
