@@ -28,6 +28,7 @@
   - 已新增 `tests/test_agent_runtime.py`、`tests/test_session_binding_store.py`，并与 `tests/test_state.py`、`tests/test_session_scope.py` 一起验证通过，说明新骨架目前可与旧主路径并行存在。
   - 已新增 `src/openrelay/backends/codex_adapter/mapper.py` 与 `src/openrelay/backends/codex_adapter/__init__.py`，把 Codex app-server notification / server request 归约为统一 runtime event 与 `ApprovalRequest`，并内置 turn 归属、alias 去重、reasoning 聚合、tool 生命周期、usage 映射和审批响应构造。
   - 已新增 `tests/test_codex_protocol_mapper.py`，验证 `turn/started`、agent / reasoning alias 去重、reasoning summary 优先级、tool 生命周期、approval request / resolved、usage 和 turn 终态映射；并与既有 `tests/test_codex_backend.py`、`tests/test_agent_runtime.py` 一起通过。
+  - 旧 `src/openrelay/backends/codex.py` 的 `CodexTurn.handle_notification(...)` 已切到消费 `CodexProtocolMapper` 输出的统一 runtime event，再翻译回现有 progress callback；现有 backend API、turn future 和交互回调保持兼容。
 
 ## 使用约定
 

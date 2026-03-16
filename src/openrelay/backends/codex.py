@@ -8,7 +8,26 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, TypeAlias
 
+from openrelay.agent_runtime import (
+    ApprovalResolvedEvent,
+    AssistantCompletedEvent,
+    AssistantDeltaEvent,
+    BackendNoticeEvent,
+    PlanUpdatedEvent,
+    ReasoningDeltaEvent,
+    RuntimeEvent,
+    SessionStartedEvent,
+    ToolCompletedEvent,
+    ToolProgressEvent,
+    ToolStartedEvent,
+    TurnCompletedEvent,
+    TurnFailedEvent,
+    TurnInterruptedEvent,
+    TurnStartedEvent,
+    UsageUpdatedEvent,
+)
 from openrelay.backends.base import Backend, BackendContext, build_subprocess_env, safety_to_codex_approval
+from openrelay.backends.codex_adapter import CodexProtocolMapper
 from openrelay.core import BackendReply, SessionRecord
 
 
@@ -236,9 +255,15 @@ class CodexTurn:
     future: asyncio.Future[BackendReply] | None = None
     last_delta_fingerprint: tuple[str, ...] | None = None
     last_delta_method: str = ""
+    mapper: CodexProtocolMapper = field(init=False)
 
     def __post_init__(self) -> None:
         self.future = asyncio.get_running_loop().create_future()
+        self.mapper = CodexProtocolMapper(
+            session_id=self.thread_id,
+            native_session_id=self.thread_id,
+            turn_id=self.turn_id,
+        )
 
     def _remember_reasoning_item(self, item_id: str) -> None:
         if item_id and item_id not in self.reasoning_order:
@@ -343,6 +368,7 @@ class CodexTurn:
 
     async def set_turn_id(self, client: "CodexAppServerClient", turn_id: str) -> None:
         self.turn_id = turn_id or self.turn_id
+        self.mapper.turn_id = self.turn_id
         if self.interrupted and self.turn_id and not self.interrupt_sent:
             self.interrupt_sent = True
             try:
@@ -361,6 +387,163 @@ class CodexTurn:
         await self._emit_progress({"type": "assistant.partial", "text": text})
         if self.on_partial_text is not None:
             await self.on_partial_text(text)
+
+    async def _apply_runtime_event(self, event: RuntimeEvent) -> None:
+        if isinstance(event, SessionStartedEvent):
+            return
+        if isinstance(event, TurnStartedEvent):
+            self.turn_id = event.turn_id or self.turn_id
+            self.mapper.turn_id = self.turn_id
+            return
+        if isinstance(event, AssistantDeltaEvent):
+            await self._emit_partial_text(self.mapper.final_text)
+            return
+        if isinstance(event, AssistantCompletedEvent):
+            if event.text:
+                self.final_text = event.text
+                self.agent_messages.append(event.text)
+                await self._emit_progress({"type": "agent.message", "text": event.text})
+            return
+        if isinstance(event, ReasoningDeltaEvent):
+            event_type = "reasoning.completed" if event.provider_payload.get("completed") else "reasoning.delta"
+            await self._emit_progress({"type": event_type, "text": event.text})
+            return
+        if isinstance(event, BackendNoticeEvent):
+            method = str(event.provider_payload.get("method") or "")
+            if method == "item/plan/delta":
+                await self._emit_progress({"type": "plan.delta", "text": event.message})
+                return
+            if method == "item/commandExecution/terminalInteraction":
+                await self._emit_progress(
+                    {
+                        "type": "command.terminal",
+                        "interaction": {
+                            "itemId": str(event.provider_payload.get("item_id") or ""),
+                            "processId": str(event.provider_payload.get("process_id") or ""),
+                            "stdin": str(event.provider_payload.get("stdin") or ""),
+                        },
+                    }
+                )
+                return
+            if event.message == "Reasoning started":
+                await self._emit_progress({"type": "reasoning.started"})
+            return
+        if isinstance(event, PlanUpdatedEvent):
+            if event.provider_payload.get("item_id"):
+                text = event.steps[0].step if event.steps else ""
+                if text:
+                    self.plan_text_by_id[str(event.provider_payload.get("item_id") or "")] = text
+                    await self._emit_progress({"type": "plan.completed", "text": text})
+                return
+            await self._emit_progress(
+                {
+                    "type": "plan.updated",
+                    "plan": [{"step": step.step, "status": step.status} for step in event.steps],
+                    "explanation": event.explanation,
+                }
+            )
+            return
+        if isinstance(event, ToolStartedEvent):
+            await self._emit_legacy_tool_event("started", event.tool)
+            return
+        if isinstance(event, ToolProgressEvent):
+            if event.provider_payload.get("method") == "item/mcpToolCall/progress":
+                await self._emit_progress(
+                    {
+                        "type": "mcp_tool.progress",
+                        "progress": {
+                            "itemId": event.tool_id,
+                            "content": event.provider_payload.get("content"),
+                        },
+                    }
+                )
+            return
+        if isinstance(event, ToolCompletedEvent):
+            await self._emit_legacy_tool_event("completed", event.tool)
+            return
+        if isinstance(event, ApprovalResolvedEvent):
+            await self._emit_progress({"type": "server_request.resolved", "requestId": event.approval_id, "threadId": self.thread_id})
+            return
+        if isinstance(event, UsageUpdatedEvent):
+            self.usage = {
+                "input_tokens": event.usage.input_tokens,
+                "cached_input_tokens": event.usage.cached_input_tokens,
+                "output_tokens": event.usage.output_tokens,
+                "reasoning_output_tokens": event.usage.reasoning_output_tokens,
+                "total_tokens": event.usage.total_tokens,
+                "model_context_window": event.usage.context_window,
+            }
+            return
+        if isinstance(event, TurnCompletedEvent):
+            self.done = True
+            if event.final_text:
+                self.final_text = event.final_text
+            if event.usage is not None:
+                self.usage = {
+                    "input_tokens": event.usage.input_tokens,
+                    "cached_input_tokens": event.usage.cached_input_tokens,
+                    "output_tokens": event.usage.output_tokens,
+                    "reasoning_output_tokens": event.usage.reasoning_output_tokens,
+                    "total_tokens": event.usage.total_tokens,
+                    "model_context_window": event.usage.context_window,
+                }
+            await self._emit_progress({"type": "turn.completed", "usage": self.usage})
+            reply = BackendReply(
+                text=(self.final_text or (self.agent_messages[-1] if self.agent_messages else "")).strip(),
+                native_session_id=self.thread_id,
+                metadata={"usage": self.usage or {}},
+            )
+            if self.future is not None and not self.future.done():
+                self.future.set_result(reply)
+            return
+        if isinstance(event, TurnInterruptedEvent):
+            self.done = True
+            if self.future is not None and not self.future.done():
+                self.future.set_exception(InterruptedError(self.interrupt_message))
+            return
+        if isinstance(event, TurnFailedEvent):
+            self.done = True
+            if self.future is not None and not self.future.done():
+                self.future.set_exception(RuntimeError(event.message))
+
+    async def _emit_legacy_tool_event(self, phase: str, tool: Any) -> None:
+        if tool.kind == "command":
+            command = {
+                "id": tool.tool_id,
+                "command": tool.title if tool.title != "Command" else tool.preview,
+                "outputPreview": tool.detail,
+                "exitCode": tool.exit_code,
+            }
+            self.command_by_id[tool.tool_id] = command
+            await self._emit_progress({"type": f"command.{phase}", "command": command})
+            return
+        if tool.kind == "web_search":
+            search = {
+                "id": tool.tool_id,
+                "query": tool.preview,
+                "action": tool.provider_payload.get("action") if isinstance(tool.provider_payload, dict) else {},
+            }
+            await self._emit_progress({"type": f"web_search.{phase}", "search": search})
+            return
+        if tool.kind == "file_change":
+            file_change = {
+                "id": tool.tool_id,
+                "status": str(tool.provider_payload.get("status") or ""),
+                "changes": tool.provider_payload.get("changes") if isinstance(tool.provider_payload.get("changes"), list) else [],
+            }
+            await self._emit_progress({"type": f"file_change.{phase}", "file_change": file_change})
+            return
+        if tool.kind == "custom":
+            collab = {
+                "id": tool.tool_id,
+                "tool": tool.title,
+                "status": str(tool.provider_payload.get("status") or ""),
+                "prompt": tool.preview,
+                "senderThreadId": str(tool.provider_payload.get("senderThreadId") or ""),
+                "receiverThreadIds": list(tool.provider_payload.get("receiverThreadIds") or []),
+                "agentsStates": tool.provider_payload.get("agentsStates") if isinstance(tool.provider_payload.get("agentsStates"), dict) else {},
+            }
+            await self._emit_progress({"type": f"collab.{phase}", "collab": collab})
 
     def _extract_search(self, item: dict[str, Any]) -> dict[str, Any]:
         return {
@@ -584,124 +767,10 @@ class CodexTurn:
     async def handle_notification(self, client: "CodexAppServerClient", method: str, params: dict[str, Any]) -> None:
         if self.done:
             return
-        thread_id, turn_id = self._message_identity(params)
-        if not self.matches(thread_id, turn_id):
-            return
-        if self._duplicate_delta_alias(method, params):
-            return
-
-        if method == "turn/started":
-            await self._handle_turn_started(client, params)
-            return
-        if method == "thread/started":
-            return
-        if method == "item/agentMessage/delta":
-            await self._handle_agent_message_delta(params)
-            return
-        if method == "codex/event/agent_message_content_delta":
-            await self._handle_agent_message_delta(params)
-            return
-        if method == "item/reasoning/textDelta":
-            await self._handle_reasoning_text_delta(params)
-            return
-        if method == "codex/event/reasoning_content_delta":
-            await self._handle_reasoning_text_delta(params)
-            return
-        if method == "item/reasoning/summaryTextDelta":
-            await self._handle_reasoning_summary_delta(params)
-            return
-        if method == "codex/event/reasoning_summary_text_delta":
-            await self._handle_reasoning_summary_delta(params)
-            return
-        if method == "item/reasoning/summaryPartAdded":
-            msg = params.get("msg") if isinstance(params.get("msg"), dict) else {}
-            self._reasoning_state(str(params.get("itemId") or msg.get("item_id") or ""))
-            return
-        if method == "item/plan/delta":
-            item_id = str(params.get("itemId") or "")
-            text = f"{self.plan_text_by_id.get(item_id, '')}{params.get('delta') or ''}"
-            self.plan_text_by_id[item_id] = text
-            await self._emit_progress({"type": "plan.delta", "text": text})
-            return
-        if method == "item/commandExecution/outputDelta":
-            await self._handle_command_output_delta(params)
-            return
-        if method == "codex/event/command_output_delta":
-            await self._handle_command_output_delta(params)
-            return
-        if method == "item/commandExecution/terminalInteraction":
-            await self._emit_progress(
-                {
-                    "type": "command.terminal",
-                    "interaction": {
-                        "itemId": str(params.get("itemId") or ""),
-                        "processId": str(params.get("processId") or ""),
-                        "stdin": str(params.get("stdin") or ""),
-                    },
-                }
-            )
-            return
-        if method == "item/fileChange/outputDelta":
-            msg = params.get("msg") if isinstance(params.get("msg"), dict) else {}
-            item_id = str(params.get("itemId") or msg.get("item_id") or "")
-            delta = str(params.get("delta") or msg.get("delta") or "")
-            self.file_change_output_by_id[item_id] = f"{self.file_change_output_by_id.get(item_id, '')}{delta}"
-            return
-        if method == "turn/plan/updated":
-            await self._emit_progress(
-                {
-                    "type": "plan.updated",
-                    "plan": params.get("plan") if isinstance(params.get("plan"), list) else [],
-                    "explanation": params.get("explanation"),
-                }
-            )
-            return
-        if method == "item/mcpToolCall/progress":
-            await self._emit_progress(
-                {
-                    "type": "mcp_tool.progress",
-                    "progress": {
-                        "itemId": str(params.get("itemId") or ""),
-                        "content": params.get("content"),
-                    },
-                }
-            )
-            return
-        if method == "serverRequest/resolved":
-            await self._emit_progress(
-                {
-                    "type": "server_request.resolved",
-                    "requestId": params.get("requestId"),
-                    "threadId": str(params.get("threadId") or ""),
-                }
-            )
-            return
-        if method == "item/started":
-            await self._handle_item_started(params)
-            return
-        if method == "codex/event/item_started":
-            await self._handle_item_started(params)
-            return
-        if method == "item/completed":
-            await self._handle_item_completed(params)
-            return
-        if method == "codex/event/item_completed":
-            await self._handle_item_completed(params)
-            return
-        if method == "thread/tokenUsage/updated":
-            await self._handle_token_usage_updated(params)
-            return
-        if method == "codex/event/token_count":
-            await self._handle_token_usage_updated(params)
-            return
-        if method == "error":
-            await self._handle_error(params)
-            return
-        if method == "turn/completed":
-            await self._handle_turn_completed(params)
-            return
-        if method == "codex/event/task_complete":
-            await self._handle_turn_completed(params)
+        events = self.mapper.map_notification(method, params)
+        self.turn_id = self.mapper.turn_id or self.turn_id
+        for event in events:
+            await self._apply_runtime_event(event)
 
     async def handle_server_request(
         self,
@@ -712,9 +781,8 @@ class CodexTurn:
     ) -> bool:
         if self.done:
             return False
-        thread_id = str(params.get("threadId") or "")
-        turn_id = str(params.get("turnId") or "")
-        if not self.matches(thread_id, turn_id):
+        requested = self.mapper.map_server_request(request_id, method, params)
+        if requested is None:
             return False
         if self.on_server_request is None:
             return False

@@ -376,6 +376,7 @@ class CodexProtocolMapper:
                 event_type="tool.progress",
                 tool_id=item_id,
                 detail=delta,
+                provider_payload={"method": "item/tool/outputDelta"},
             ),
         )
 
@@ -508,7 +509,7 @@ class CodexProtocolMapper:
                 preview=command,
                 detail=aggregated_output,
                 exit_code=item.get("exitCode") if isinstance(item.get("exitCode"), int) else None,
-                provider_payload={"item_type": item_type},
+                provider_payload={"item_type": item_type, "status": item.get("status")},
             )
         if item_type == "webSearch":
             query = str(item.get("query") or "")
@@ -518,7 +519,7 @@ class CodexProtocolMapper:
                 title=query or "Web search",
                 status=status,  # type: ignore[arg-type]
                 preview=query,
-                provider_payload={"item_type": item_type, "action": item.get("action")},
+                provider_payload={"item_type": item_type, "action": item.get("action"), "status": item.get("status")},
             )
         if item_type == "fileChange":
             return ToolState(
@@ -528,7 +529,7 @@ class CodexProtocolMapper:
                 status=status,  # type: ignore[arg-type]
                 preview=self._summarize_file_changes(item),
                 detail=self.file_change_output_by_id.get(item_id, ""),
-                provider_payload={"item_type": item_type, "changes": item.get("changes")},
+                provider_payload={"item_type": item_type, "changes": item.get("changes"), "status": item.get("status")},
             )
         if item_type == "collabAgentToolCall":
             return ToolState(
@@ -539,6 +540,7 @@ class CodexProtocolMapper:
                 preview=str(item.get("prompt") or ""),
                 provider_payload={
                     "item_type": item_type,
+                    "status": item.get("status"),
                     "senderThreadId": item.get("senderThreadId"),
                     "receiverThreadIds": item.get("receiverThreadIds"),
                     "agentsStates": item.get("agentsStates"),
@@ -551,7 +553,7 @@ class CodexProtocolMapper:
                 title=str(item.get("server") or item.get("tool") or "MCP tool"),
                 status=status,  # type: ignore[arg-type]
                 preview=_flatten_text(item.get("content")),
-                provider_payload={"item_type": item_type},
+                provider_payload={"item_type": item_type, "status": item.get("status")},
             )
         return None
 
