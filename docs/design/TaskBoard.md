@@ -15,7 +15,7 @@
   - `codex_adapter` 内部已经拆成 transport / client / turn stream / adapter 四层，但 transport 仍是通过 `CodexAppServerClient` 间接复用旧 `src/openrelay/backends/codex.py` 的 app-server 通信实现，legacy transport 文件还没真正退出主依赖链。
   - `LiveTurnPresenter` 已接入 runtime turn 主路径，approval 交互也不再通过 `emit_progress -> apply_live_progress` 回桥；当前剩余 live bridge 主要已经缩到 `runtime/live.py` 的兼容 state machine 与 spinner/格式化辅助，还需要决定最终保留边界。
   - runtime approval 主路径已经切到 `ApprovalRequest -> ApprovalDecision`，但 legacy `request(method, params)` 兼容入口仍在 interaction controller 内保留，interaction 层还没有彻底删掉旧 provider-method 分支。
-  - 命令、面板、live 渲染仍然直接暴露 `Codex` 用户语义，第二个 backend 还不能以同构 adapter 自然接入。
+  - 第二个 backend 已有 `claude_adapter/` 最小占位并接入 runtime backend/default descriptor，但目前仍只覆盖 turn 执行，尚未提供 session list/read/compact/approval 等更完整能力。
 - **关闭条件**：
   - [ ] `docs/design/agent-runtime-relay.md` 继续作为唯一主线 design note，并保持和代码现状一致。
   - [ ] runtime 主层只依赖统一 agent runtime 模型，不再把 provider-specific method / item type 暴露为主路径语义。
@@ -69,6 +69,10 @@
   - `src/openrelay/runtime/live.py` 已删除无调用的 `apply_runtime_event(...)` 桥接函数，并把初始 snapshot / final reply card 入口收敛为委托 `LiveTurnPresenter` 的兼容包装；结合 `tests/test_runtime_live.py` 回归通过，说明该文件已经更接近纯格式化 / 兼容层。
   - `src/openrelay/runtime/interactions/controller.py` 已移除仅供 legacy live bridge 使用的 `emit_progress` 回调；`src/openrelay/runtime/turn.py` 也已去掉 `on_progress(...) -> apply_live_progress(...)` 主路径入口，runtime approval 展示现在只依赖统一 `ApprovalRequestedEvent/ApprovalResolvedEvent` 与 `LiveTurnPresenter`。
   - `src/openrelay/presentation/live_turn.py` 已补充对 resolved approval interaction 的保留投影，`tests/test_live_turn_presenter.py` 与 `tests/test_runtime_interactions.py` 已同步覆盖，说明即使 reducer state 清空 `pending_approval`，streaming snapshot 仍能稳定保留审批完成过渡态而不需要 legacy progress dict。
+  - `src/openrelay/presentation/session.py` 已把 `/resume` 卡片收敛为 backend-neutral 的 `build_backend_session_list_card(...)`；`src/openrelay/runtime/commands.py` 也已删除 `NativeThread*` DTO，改为通用 runtime session DTO，并把 `/resume` `/compact` 的用户可见语义从 `thread/Codex` 改成 `session/backend`。
+  - `src/openrelay/runtime/commands.py`、`src/openrelay/runtime/panel_service.py` 已改为按 `BackendCapabilities` 判断 session list / compact 能力，不再把 “runtime backend 已注册” 直接等同于 “支持原生会话管理”。
+  - 已新增 `src/openrelay/backends/claude_adapter/transport.py`、[`client.py`](/home/Shaokun.Tang/Projects/openrelay/src/openrelay/backends/claude_adapter/client.py)、[`mapper.py`](/home/Shaokun.Tang/Projects/openrelay/src/openrelay/backends/claude_adapter/mapper.py)、[`backend.py`](/home/Shaokun.Tang/Projects/openrelay/src/openrelay/backends/claude_adapter/backend.py)；`src/openrelay/runtime/orchestrator.py` 默认 runtime backend 集合与 `src/openrelay/backends/registry.py` builtin descriptor 也已接入 `claude`。
+  - 已新增 `tests/test_claude_runtime_backend.py`，并与 `tests/test_runtime_commands.py`、`tests/test_resume_reply_behavior.py`、`tests/test_runtime_help.py` 一起通过，说明第二 backend 已能通过统一 `AgentBackend` 主路径执行最小 turn，同时不再污染 `/resume` `/compact` 的 capability 边界。
 
 ## 使用约定
 

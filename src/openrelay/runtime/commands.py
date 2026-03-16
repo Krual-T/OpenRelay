@@ -36,7 +36,7 @@ from .help import HelpRenderer
 
 ADMIN_ONLY_COMMANDS = {"/restart"}
 PANEL_USAGE = "使用 /panel [sessions|directories|commands|status] [--page N] [--sort updated-desc|active-first]。"
-RESUME_USAGE = "使用 /resume 打开 Codex 会话卡片，或 /resume [latest|<序号>|<thread_id>|<local_session_id>] 直接连接。"
+RESUME_USAGE = "使用 /resume 打开后端会话卡片，或 /resume [latest|<序号>|<session_id>|<local_session_id>] 直接连接。"
 SHORTCUT_USAGE = (
     "使用 /shortcut list | /shortcut add <name> <path> [all|main|develop] | "
     "/shortcut remove <name> | /shortcut cd <name>。"
@@ -90,8 +90,8 @@ class PagingCommandArgs:
 
 
 @dataclass(slots=True)
-class NativeThreadSummary:
-    thread_id: str
+class RuntimeSessionSummary:
+    session_id: str
     preview: str
     cwd: str
     updated_at: str
@@ -100,20 +100,20 @@ class NativeThreadSummary:
 
 
 @dataclass(slots=True)
-class NativeThreadMessage:
+class RuntimeTranscriptMessage:
     role: str
     text: str
 
 
 @dataclass(slots=True)
-class NativeThreadDetails:
-    thread_id: str
+class RuntimeSessionDetails:
+    session_id: str
     preview: str
     cwd: str
     updated_at: str
     status: str
     name: str
-    messages: tuple[NativeThreadMessage, ...]
+    messages: tuple[RuntimeTranscriptMessage, ...]
 
 
 class RuntimeCommandRouter:
@@ -251,7 +251,7 @@ class RuntimeCommandRouter:
 
     async def _handle_resume(self, message: IncomingMessage, session_key: str, session: SessionRecord, arg_text: str) -> bool:
         if not self._can_use_top_level_session_command(message):
-            await self.hooks.reply(message, "`/resume` 只允许在私聊顶层使用；子 thread 会固定绑定当前 Codex 会话。", command_reply=True, command_name="/resume")
+            await self.hooks.reply(message, "`/resume` 只允许在私聊顶层使用；子 thread 会固定绑定当前后端会话。", command_reply=True, command_name="/resume")
             return True
         try:
             args = self._parse_resume_command_args(arg_text)
@@ -260,41 +260,46 @@ class RuntimeCommandRouter:
             return True
 
         scope_key = self._top_level_thread_scope_key(message)
-        if not self._uses_runtime_native_threads(session):
+        if not self._supports_runtime_session_listing(session):
             await self.hooks.reply(message, "当前后端不支持 `/resume` 原生命令。", command_reply=True, command_name="/resume")
             return True
         if not args.target:
             await self.hooks.send_session_list(message, session_key, session, args.page, args.sort_mode)
             return True
-        target_thread_id = await self._resolve_resume_thread_id(session_key, session, args.target, args.page)
-        if not target_thread_id:
-            await self.hooks.reply(message, "没有找到可连接的 Codex 会话。先发 `/resume` 看可用 thread。", command_reply=True, command_name="/resume")
+        target_session_id = await self._resolve_resume_session_id(session_key, session, args.target, args.page)
+        if not target_session_id:
+            await self.hooks.reply(message, "没有找到可连接的后端会话。先发 `/resume` 查看可用会话。", command_reply=True, command_name="/resume")
             return True
-        thread = await self._read_native_thread(session, target_thread_id)
+        runtime_session = await self._read_runtime_session(session, target_session_id)
         resumed_session = self.session_mutations.bind_native_thread(
             scope_key,
             session,
-            thread.thread_id,
-            cwd=thread.cwd or session.cwd,
-            label=thread.name or session.label,
+            runtime_session.session_id,
+            cwd=runtime_session.cwd or session.cwd,
+            label=runtime_session.name or session.label,
         )
-        await self.hooks.reply(message, self._format_native_resume_success(resumed_session, thread), command_reply=True, command_name="/resume")
+        await self.hooks.reply(
+            message,
+            self._format_runtime_session_resume_success(resumed_session, runtime_session),
+            command_reply=True,
+            command_name="/resume",
+        )
         return True
 
     async def _handle_compact(self, message: IncomingMessage, session_key: str, session: SessionRecord, arg_text: str) -> bool:
-        if not self._uses_runtime_native_threads(session):
+        if not self._supports_runtime_compact(session):
             await self.hooks.reply(message, "当前后端不支持 `/compact` 原生命令。", command_reply=True, command_name="/compact")
             return True
         target = arg_text.strip()
-        thread_id = session.native_session_id
+        session_id = session.native_session_id
         if target:
-            thread_id = await self._resolve_resume_thread_id(session_key, session, target, page=1)
-        if not thread_id:
-            await self.hooks.reply(message, "当前没有可 compact 的 Codex thread。先恢复一个 thread，或先发一条真实消息创建 thread。", command_reply=True, command_name="/compact")
+            session_id = await self._resolve_resume_session_id(session_key, session, target, page=1)
+        if not session_id:
+            await self.hooks.reply(message, "当前没有可 compact 的后端会话。先恢复一个会话，或先发一条真实消息创建会话。", command_reply=True, command_name="/compact")
             return True
-        result = await self._compact_native_thread(session, thread_id)
+        result = await self._compact_runtime_session(session, session_id)
         compact_id = str(result.get("compactId") or result.get("id") or "").strip()
-        lines = [f"已发起 Codex compact：{thread_id}"]
+        lines = [f"已发起 {session.backend} compact：{session_id}"]
         if compact_id:
             lines.append(f"compact_id={compact_id}")
         await self.hooks.reply(message, "\n".join(lines), command_reply=True, command_name="/compact")
@@ -306,15 +311,15 @@ class RuntimeCommandRouter:
     def _top_level_thread_scope_key(self, message: IncomingMessage) -> str:
         return self.session_scope.top_level_thread_scope_key(message)
 
-    async def _list_native_threads(self, session: SessionRecord, limit: int) -> list[NativeThreadSummary]:
+    async def _list_runtime_sessions(self, session: SessionRecord, limit: int) -> list[RuntimeSessionSummary]:
         assert self.runtime_service is not None
         rows, _cursor = await self.runtime_service.list_sessions(
             session.backend,
             ListSessionsRequest(limit=limit, cwd=session.cwd),
         )
         return [
-            NativeThreadSummary(
-                thread_id=row.native_session_id,
+            RuntimeSessionSummary(
+                session_id=row.native_session_id,
                 preview=row.preview,
                 cwd=row.cwd,
                 updated_at=row.updated_at,
@@ -324,35 +329,44 @@ class RuntimeCommandRouter:
             for row in rows
         ]
 
-    async def _read_native_thread(self, session: SessionRecord, thread_id: str) -> NativeThreadDetails:
+    async def _read_runtime_session(self, session: SessionRecord, session_id: str) -> RuntimeSessionDetails:
         assert self.runtime_service is not None
         transcript = await self.runtime_service.read_session(
-            SessionLocator(backend=session.backend, native_session_id=thread_id)  # type: ignore[arg-type]
+            SessionLocator(backend=session.backend, native_session_id=session_id)  # type: ignore[arg-type]
         )
-        return NativeThreadDetails(
-            thread_id=transcript.summary.native_session_id,
+        return RuntimeSessionDetails(
+            session_id=transcript.summary.native_session_id,
             preview=transcript.summary.preview,
             cwd=transcript.summary.cwd,
             updated_at=transcript.summary.updated_at,
             status=transcript.summary.status,
             name=transcript.summary.title,
             messages=tuple(
-                NativeThreadMessage(role=item.role, text=item.text)
+                RuntimeTranscriptMessage(role=item.role, text=item.text)
                 for item in transcript.messages
                 if item.text.strip()
             ),
         )
 
-    async def _compact_native_thread(self, session: SessionRecord, thread_id: str) -> dict[str, object]:
+    async def _compact_runtime_session(self, session: SessionRecord, session_id: str) -> dict[str, object]:
         assert self.runtime_service is not None
         return await self.runtime_service.compact_locator(
-            SessionLocator(backend=session.backend, native_session_id=thread_id)  # type: ignore[arg-type]
+            SessionLocator(backend=session.backend, native_session_id=session_id)  # type: ignore[arg-type]
         )
 
-    def _uses_runtime_native_threads(self, session: SessionRecord) -> bool:
-        return self.runtime_service is not None and session.backend in self.runtime_service.backends
+    def _supports_runtime_session_listing(self, session: SessionRecord) -> bool:
+        if self.runtime_service is None:
+            return False
+        backend = self.runtime_service.backends.get(session.backend)
+        return backend is not None and backend.capabilities().supports_session_list
 
-    async def _resolve_resume_thread_id(
+    def _supports_runtime_compact(self, session: SessionRecord) -> bool:
+        if self.runtime_service is None:
+            return False
+        backend = self.runtime_service.backends.get(session.backend)
+        return backend is not None and backend.capabilities().supports_compact
+
+    async def _resolve_resume_session_id(
         self,
         session_key: str,
         session: SessionRecord,
@@ -362,37 +376,37 @@ class RuntimeCommandRouter:
         normalized = target.strip()
         if not normalized:
             return ""
-        threads = await self._list_native_threads(session, max(DEFAULT_SESSION_LIST_PAGE_SIZE * max(page, 1), 20))
+        sessions = await self._list_runtime_sessions(session, max(DEFAULT_SESSION_LIST_PAGE_SIZE * max(page, 1), 20))
         lowered = normalized.lower()
         if lowered in {"latest", "prev", "previous"}:
-            return threads[0].thread_id if threads else ""
+            return sessions[0].session_id if sessions else ""
         if normalized.isdigit():
             index = int(normalized) - 1
-            if 0 <= index < len(threads):
-                return threads[index].thread_id
-        for thread in threads:
-            if normalized == thread.thread_id:
-                return thread.thread_id
+            if 0 <= index < len(sessions):
+                return sessions[index].session_id
+        for runtime_session in sessions:
+            if normalized == runtime_session.session_id:
+                return runtime_session.session_id
         local_match = self.session_browser.find_local_session(session_key, normalized)
         if local_match is not None:
             return local_match.native_session_id or ""
         return ""
 
-    def _format_native_resume_success(self, session: SessionRecord, thread: NativeThreadDetails) -> str:
-        title = thread.name or thread.preview or thread.thread_id
+    def _format_runtime_session_resume_success(self, session: SessionRecord, runtime_session: RuntimeSessionDetails) -> str:
+        title = runtime_session.name or runtime_session.preview or runtime_session.session_id
         lines = [
-            f"已连接 Codex 会话：{title}",
-            f"thread_id={thread.thread_id}",
-            f"cwd={self._format_full_cwd(thread.cwd or session.cwd)}",
+            f"已连接 {session.backend} 会话：{title}",
+            f"session_id={runtime_session.session_id}",
+            f"cwd={self._format_full_cwd(runtime_session.cwd or session.cwd)}",
         ]
-        updated_at = self._format_user_facing_time(thread.updated_at)
+        updated_at = self._format_user_facing_time(runtime_session.updated_at)
         if updated_at:
             lines.append(f"最近更新：{updated_at}")
-        if thread.status:
-            lines.append(f"status={thread.status}")
-        if thread.preview:
-            lines.extend(["", f"预览：{self.session_presentation.shorten(thread.preview, 120)}"])
-        lines.extend(["", "已在当前 thread 中 connected；接下来直接继续发消息即可。"])
+        if runtime_session.status:
+            lines.append(f"status={runtime_session.status}")
+        if runtime_session.preview:
+            lines.extend(["", f"预览：{self.session_presentation.shorten(runtime_session.preview, 120)}"])
+        lines.extend(["", "已在当前顶层对话中连接；接下来直接继续发消息即可。"])
         return "\n".join(lines)
 
     def _format_user_facing_time(self, value: str) -> str:

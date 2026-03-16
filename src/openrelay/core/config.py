@@ -38,6 +38,7 @@ class BackendConfig:
     default_model: str = ""
     default_safety_mode: str = "workspace-write"
     codex_cli_path: str = "codex"
+    claude_cli_path: str = "claude"
     codex_sessions_dir: Path = Path.home() / ".codex" / "sessions"
     codex_sqlite_home: Path = Path.home() / ".codex"
     codex_request_timeout_seconds: float | None = None
