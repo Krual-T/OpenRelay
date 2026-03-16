@@ -24,6 +24,8 @@
 - **本轮新增证据**：
   - `docs/design/agent-runtime-relay.md` 已补充“实现补充附录”，明确第一阶段 Codex 事件映射、审批映射、binding 过渡、orchestrator 接线和测试矩阵。
   - 附录约束以当前仓库可验证实现为证据来源：`src/openrelay/backends/codex.py`、`src/openrelay/runtime/live.py`、`src/openrelay/runtime/interactions/controller.py`、`tests/test_codex_backend.py`。
+  - 已新增 `src/openrelay/agent_runtime/` 下的统一 runtime model / event / backend contract / reducer / service 骨架，以及 `src/openrelay/session/models.py`、`src/openrelay/session/store.py` 的 binding store。
+  - 已新增 `tests/test_agent_runtime.py`、`tests/test_session_binding_store.py`，并与 `tests/test_state.py`、`tests/test_session_scope.py` 一起验证通过，说明新骨架目前可与旧主路径并行存在。
 
 ## 使用约定
 
