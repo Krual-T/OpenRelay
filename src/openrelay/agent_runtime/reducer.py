@@ -31,53 +31,55 @@ class LiveTurnReducer:
 
     def apply(self, event: RuntimeEvent) -> LiveTurnViewModel:
         self.state.updated_at = event.created_at or utc_now()
-        if isinstance(event, SessionStartedEvent):
-            if event.native_session_id:
-                self.state.native_session_id = event.native_session_id
-        elif isinstance(event, TurnStartedEvent):
-            self.state.status = "running"
-            if event.turn_id:
-                self.state.turn_id = event.turn_id
-            self.state.error_message = ""
-        elif isinstance(event, AssistantDeltaEvent):
-            self.state.status = "running"
-            self.state.assistant_text = f"{self.state.assistant_text}{event.delta}"
-        elif isinstance(event, AssistantCompletedEvent):
-            self.state.assistant_text = event.text or self.state.assistant_text
-        elif isinstance(event, ReasoningDeltaEvent):
-            self.state.reasoning_text = event.text or self.state.reasoning_text
-        elif isinstance(event, PlanUpdatedEvent):
-            self.state.plan_steps = event.steps
-        elif isinstance(event, ToolStartedEvent):
-            self.state.status = "running"
-            self._upsert_tool(event.tool)
-        elif isinstance(event, ToolProgressEvent):
-            self._update_tool_detail(event.tool_id, event.detail)
-        elif isinstance(event, ToolCompletedEvent):
-            self._upsert_tool(event.tool)
-        elif isinstance(event, ApprovalRequestedEvent):
-            self.state.pending_approval = event.request
-        elif isinstance(event, ApprovalResolvedEvent):
-            if self.state.pending_approval is not None and self.state.pending_approval.approval_id == event.approval_id:
+        match event:
+            case SessionStartedEvent(native_session_id=native_session_id) if native_session_id:
+                self.state.native_session_id = native_session_id
+            case TurnStartedEvent(turn_id=turn_id):
+                self.state.status = "running"
+                if turn_id:
+                    self.state.turn_id = turn_id
+                self.state.error_message = ""
+            case AssistantDeltaEvent(delta=delta):
+                self.state.status = "running"
+                self.state.assistant_text = f"{self.state.assistant_text}{delta}"
+            case AssistantCompletedEvent(text=text):
+                self.state.assistant_text = text or self.state.assistant_text
+            case ReasoningDeltaEvent(text=text):
+                self.state.reasoning_text = text or self.state.reasoning_text
+            case PlanUpdatedEvent(steps=steps):
+                self.state.plan_steps = steps
+            case ToolStartedEvent(tool=tool):
+                self.state.status = "running"
+                self._upsert_tool(tool)
+            case ToolProgressEvent(tool_id=tool_id, detail=detail):
+                self._update_tool_detail(tool_id, detail)
+            case ToolCompletedEvent(tool=tool):
+                self._upsert_tool(tool)
+            case ApprovalRequestedEvent(request=request):
+                self.state.pending_approval = request
+            case ApprovalResolvedEvent(approval_id=approval_id):
+                if self.state.pending_approval is not None and self.state.pending_approval.approval_id == approval_id:
+                    self.state.pending_approval = None
+            case UsageUpdatedEvent(usage=usage):
+                self.state.usage = usage
+            case TurnCompletedEvent(final_text=final_text, usage=usage):
+                self.state.status = "completed"
                 self.state.pending_approval = None
-        elif isinstance(event, UsageUpdatedEvent):
-            self.state.usage = event.usage
-        elif isinstance(event, TurnCompletedEvent):
-            self.state.status = "completed"
-            self.state.pending_approval = None
-            if event.final_text:
-                self.state.assistant_text = event.final_text
-            if event.usage is not None:
-                self.state.usage = event.usage
-            self.state.error_message = ""
-        elif isinstance(event, TurnFailedEvent):
-            self.state.status = "failed"
-            self.state.pending_approval = None
-            self.state.error_message = event.message
-        elif isinstance(event, TurnInterruptedEvent):
-            self.state.status = "interrupted"
-            self.state.pending_approval = None
-            self.state.error_message = event.message
+                if final_text:
+                    self.state.assistant_text = final_text
+                if usage is not None:
+                    self.state.usage = usage
+                self.state.error_message = ""
+            case TurnFailedEvent(message=message):
+                self.state.status = "failed"
+                self.state.pending_approval = None
+                self.state.error_message = message
+            case TurnInterruptedEvent(message=message):
+                self.state.status = "interrupted"
+                self.state.pending_approval = None
+                self.state.error_message = message
+            case _:
+                pass
         return self.state
 
     def _upsert_tool(self, tool: ToolState) -> None:
