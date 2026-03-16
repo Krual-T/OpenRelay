@@ -7,6 +7,7 @@ requires-python = ">=3.12"
 dependencies = [
   "fastapi>=0.115.0,<1",
   "lark-oapi>=1.5.3",
+  "pyyaml>=6.0.3",
   "uvicorn>=0.34.0,<1",
 ]
 
