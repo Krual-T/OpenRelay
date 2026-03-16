@@ -129,6 +129,16 @@ class LiveTurnPresenter:
         snapshot["status"] = self._approval_resolution_label(decision)
         return snapshot
 
+    def with_native_session_id(self, previous: dict[str, Any], native_session_id: str) -> dict[str, Any]:
+        snapshot = dict(previous)
+        snapshot["native_session_id"] = str(native_session_id or "")
+        return snapshot
+
+    def bump_spinner(self, previous: dict[str, Any]) -> dict[str, Any]:
+        snapshot = dict(previous)
+        snapshot["spinner_frame"] = (int(previous.get("spinner_frame", 0) or 0) + 1) % 3
+        return snapshot
+
     def _history_items(self, state: LiveTurnViewModel) -> list[dict[str, Any]]:
         items: list[dict[str, Any]] = []
         if state.reasoning_text:

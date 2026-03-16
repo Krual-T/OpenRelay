@@ -220,7 +220,7 @@ class BackendTurnSession:
         state = runtime_service.turn_registry.read(event.session_id, event.turn_id) if event.turn_id else None
         if isinstance(event, SessionStartedEvent):
             await self.persist_native_thread_id(event.native_session_id)
-            self.live_state["native_session_id"] = event.native_session_id
+            self.live_state = self.presenter.with_native_session_id(self.live_state, event.native_session_id)
         if state is not None:
             self.live_state = self.presenter.build_snapshot(
                 state,
@@ -405,7 +405,7 @@ class BackendTurnSession:
                 await asyncio.wait_for(self.streaming_update_event.wait(), timeout=1.0)
                 self.streaming_update_event.clear()
             except asyncio.TimeoutError:
-                self.live_state["spinner_frame"] = (int(self.live_state.get("spinner_frame", 0) or 0) + 1) % 3
+                self.live_state = self.presenter.bump_spinner(self.live_state)
                 self.pending_streaming_states.append(copy.deepcopy(self.live_state))
             try:
                 while self.pending_streaming_states:

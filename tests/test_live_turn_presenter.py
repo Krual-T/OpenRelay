@@ -79,3 +79,12 @@ def test_live_turn_presenter_builds_approval_resolved_snapshot() -> None:
     interaction = snapshot["history_items"][0]
     assert interaction["state"] == "completed"
     assert interaction["detail"] == "Approval accepted"
+
+
+def test_live_turn_presenter_updates_native_session_and_spinner() -> None:
+    presenter = LiveTurnPresenter()
+    snapshot = presenter.with_native_session_id({"spinner_frame": 1}, "thread_2")
+    bumped = presenter.bump_spinner(snapshot)
+
+    assert snapshot["native_session_id"] == "thread_2"
+    assert bumped["spinner_frame"] == 2
