@@ -56,7 +56,6 @@ def _extract_card_commands(card: dict) -> list[str]:
 @pytest.mark.asyncio
 async def test_interaction_controller_accepts_unified_approval_request_without_provider_method() -> None:
     messenger = FakeMessenger()
-    progress_events: list[dict] = []
     text_messages: list[str] = []
     controller = RunInteractionController(
         messenger,
@@ -64,7 +63,6 @@ async def test_interaction_controller_accepts_unified_approval_request_without_p
         root_id="om_root",
         action_context={},
         reply_target_getter=lambda: "om_reply",
-        emit_progress=lambda event: _record_progress(progress_events, event),
         send_text=lambda text: _record_text(text_messages, text),
         cancel_event=None,
     )
@@ -116,12 +114,7 @@ async def test_interaction_controller_accepts_unified_approval_request_without_p
 
     assert handled is True
     assert await decision_task == ApprovalDecision(decision="accept")
-    assert [event["type"] for event in progress_events] == ["interaction.requested", "interaction.resolved"]
     assert text_messages == []
-
-
-async def _record_progress(store: list[dict], event: dict) -> None:
-    store.append(event)
 
 
 async def _record_text(store: list[str], text: str) -> None:

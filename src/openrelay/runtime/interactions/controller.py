@@ -30,7 +30,6 @@ class RunInteractionController:
         root_id: str,
         action_context: dict[str, str],
         reply_target_getter: Callable[[], str],
-        emit_progress: Callable[[dict[str, Any]], Awaitable[None]],
         send_text: Callable[[str], Awaitable[None]],
         cancel_event: asyncio.Event | None,
     ) -> None:
@@ -39,7 +38,6 @@ class RunInteractionController:
         self.root_id = root_id
         self.action_context = action_context
         self.reply_target_getter = reply_target_getter
-        self.emit_progress = emit_progress
         self.send_text = send_text
         self.cancel_event = cancel_event
         self.pending: PendingInteraction | None = None
@@ -127,17 +125,6 @@ class RunInteractionController:
 
     async def _await_pending(self, pending: PendingInteraction) -> InteractionResolution:
         self.pending = pending
-        await self.emit_progress(
-            {
-                "type": "interaction.requested",
-                "interaction": {
-                    "id": pending.interaction_id,
-                    "kind": pending.kind,
-                    "title": pending.title,
-                    "detail": pending.detail,
-                },
-            }
-        )
         try:
             await self._send_interaction_card(pending)
             if self.cancel_event is None:
@@ -152,18 +139,6 @@ class RunInteractionController:
                         resolution = pending.abort_resolution
                 finally:
                     cancel_task.cancel()
-            await self.emit_progress(
-                {
-                    "type": "interaction.resolved",
-                    "interaction": {
-                        "id": pending.interaction_id,
-                        "kind": pending.kind,
-                        "title": pending.title,
-                        "state": resolution.state,
-                        "detail": resolution.detail or resolution.label,
-                    },
-                }
-            )
             return resolution
         finally:
             if self.pending is pending:

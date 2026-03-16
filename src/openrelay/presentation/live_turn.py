@@ -48,7 +48,7 @@ class LiveTurnPresenter:
             "native_session_id": state.native_session_id,
             "cwd": format_cwd(session.cwd, session) if (session is not None and format_cwd is not None) else str(previous.get("cwd") or ""),
             "history": list(previous.get("history") or []),
-            "history_items": self._history_items(state),
+            "history_items": self._history_items(state, previous),
             "heading": heading,
             "status": status,
             "current_command": self._current_command(state),
@@ -139,7 +139,7 @@ class LiveTurnPresenter:
         snapshot["spinner_frame"] = (int(previous.get("spinner_frame", 0) or 0) + 1) % 3
         return snapshot
 
-    def _history_items(self, state: LiveTurnViewModel) -> list[dict[str, Any]]:
+    def _history_items(self, state: LiveTurnViewModel, previous: dict[str, Any] | None = None) -> list[dict[str, Any]]:
         items: list[dict[str, Any]] = []
         if state.reasoning_text:
             items.append(
@@ -175,7 +175,31 @@ class LiveTurnPresenter:
                     "detail": state.pending_approval.description,
                 }
             )
-        return items
+        return self._merge_preserved_interactions(items, previous)
+
+    def _merge_preserved_interactions(
+        self,
+        items: list[dict[str, Any]],
+        previous: dict[str, Any] | None,
+    ) -> list[dict[str, Any]]:
+        if previous is None:
+            return items
+        existing_ids = {
+            str(item.get("interaction_id") or "")
+            for item in items
+            if item.get("type") == "interaction" and str(item.get("interaction_id") or "")
+        }
+        preserved: list[dict[str, Any]] = []
+        for item in list(previous.get("history_items") or []):
+            if not isinstance(item, dict) or item.get("type") != "interaction":
+                continue
+            interaction_id = str(item.get("interaction_id") or "")
+            if interaction_id and interaction_id in existing_ids:
+                continue
+            if str(item.get("state") or "").strip() == "running":
+                continue
+            preserved.append(dict(item))
+        return preserved + items
 
     def _tool_history_item(self, tool: ToolState) -> dict[str, Any] | None:
         if tool.kind == "command":
