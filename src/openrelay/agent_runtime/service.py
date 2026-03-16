@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Protocol
 
 from .backend import AgentBackend, ListSessionsRequest, RuntimeEventSink, StartSessionRequest
@@ -116,7 +116,11 @@ class AgentRuntimeService:
     async def run_turn(self, binding: RelaySessionBinding, turn_input: TurnInput) -> LiveTurnViewModel:
         sink = _HubSink(self.event_hub)
         adapter = self._select_backend(binding.backend)
-        handle = await adapter.start_turn(binding.locator, turn_input, sink)
+        enriched_input = replace(
+            turn_input,
+            metadata={**turn_input.metadata, "relay_session_id": binding.relay_session_id},
+        )
+        handle = await adapter.start_turn(binding.locator, enriched_input, sink)
         await handle.wait()
         return self.turn_registry.read(binding.relay_session_id, handle.turn_id) or self.turn_registry.get_or_create(
             binding.relay_session_id,
