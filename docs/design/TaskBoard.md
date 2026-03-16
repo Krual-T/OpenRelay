@@ -13,7 +13,7 @@
 - **目标**：把 `openrelay` 收敛为统一的 agent runtime relay，让 Feishu 壳层、runtime 主路径、session binding、interaction 和 presentation 都围绕 backend-neutral 的运行时语义组织，而不是继续围绕 Codex 专有协议长出结构。
 - **当前关注**：
   - `codex_adapter` 内部已经拆成 transport / client / turn stream / adapter 四层，但 transport 仍是通过 `CodexAppServerClient` 间接复用旧 `src/openrelay/backends/codex.py` 的 app-server 通信实现，legacy transport 文件还没真正退出主依赖链。
-  - 现有主路径仍保留 “runtime event -> legacy progress dict -> Feishu” 的回退桥，presentation 还没有切到直接消费 `LiveTurnViewModel`。
+  - `LiveTurnPresenter` 已接入 runtime turn 主路径，但当前只在 reducer state 可读时优先走 `LiveTurnViewModel -> snapshot` 投影；spinner、即时 resolved 状态和若干过渡分支仍保留在 `runtime/live.py` / `turn.py`，legacy live bridge 还没删干净。
   - runtime approval 主路径已经切到 `ApprovalRequest -> ApprovalDecision`，但 legacy `request(method, params)` 兼容入口仍在 interaction controller 内保留，interaction 层还没有彻底删掉旧 provider-method 分支。
   - 命令、面板、live 渲染仍然直接暴露 `Codex` 用户语义，第二个 backend 还不能以同构 adapter 自然接入。
 - **关闭条件**：
@@ -59,6 +59,9 @@
   - `src/openrelay/backends/codex_adapter/mapper.py` 已把审批统一字段写入 `ApprovalRequest.payload`，包括 command / cwd / reason / permissions / questions / requested schema 等，interaction 层不再需要从 `provider_payload.method` 推断审批语义。
   - `src/openrelay/runtime/interactions/controller.py` 已新增 `request_approval(request: ApprovalRequest)`，runtime 主路径现在按 `ApprovalRequest.kind` 处理审批，不再由 `src/openrelay/runtime/turn.py` 在 turn 层把 provider response 翻回 `ApprovalDecision`。
   - 已新增 `tests/test_runtime_interactions.py`，验证在 `provider_payload={}` 的情况下统一审批入口仍能走通 command approval 交互；同时 `tests/test_codex_protocol_mapper.py` 回归通过，说明新的统一审批 payload 已被 mapper 正确生成。
+  - 已新增 `src/openrelay/presentation/live_turn.py`，引入 `LiveTurnPresenter`，把 `LiveTurnViewModel` 投影为 streaming snapshot / process text / final reply 的职责从 `src/openrelay/runtime/turn.py` 中拆出。
+  - `src/openrelay/runtime/orchestrator.py` 已装配 `LiveTurnPresenter`；`src/openrelay/runtime/turn.py` 在 reducer state 可读时，现已优先直接使用 presenter 从 `LiveTurnViewModel` 重建 live snapshot，而不是继续完全依赖 runtime event -> legacy progress dict 的桥接。
+  - 已新增 `tests/test_live_turn_presenter.py`，验证 presenter 可直接从统一 runtime state 生成含 reasoning / command / approval / plan 的 process panel 文本，说明阶段 3 已开始从事件桥接收敛到状态投影。
 
 ## 使用约定
 

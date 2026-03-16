@@ -447,6 +447,10 @@
 关闭信号：
 
 - `runtime/live.py` 不再承担主状态推进职责
+- 当前状态：
+  - 已新增 `src/openrelay/presentation/live_turn.py`，提供 `LiveTurnPresenter`
+  - `src/openrelay/runtime/turn.py` 在拿到 reducer state 时，已优先通过 presenter 把 `LiveTurnViewModel` 投影为 streaming snapshot
+  - spinner、局部 legacy progress、approval resolved 的即时展示仍暂时保留在 `turn.py + runtime/live.py`，因此阶段 3 目前完成了“presenter 建立与主路径接入”，但还没完成 legacy live bridge 删除
 
 ### 阶段 4：移除 legacy backend 主路径
 
@@ -510,3 +514,6 @@
 - `src/openrelay/runtime/interactions/controller.py` 已新增 `request_approval(...)`，并按 `ApprovalRequest.kind` + 统一 payload 处理 command / file_change / permissions / user_input 四类审批。
 - `src/openrelay/runtime/turn.py` 的 runtime approval 分支现已直接消费 `ApprovalRequest` 和 `ApprovalDecision`，删掉了 turn 层本地的 provider-response -> decision 翻译逻辑。
 - 已新增 `tests/test_runtime_interactions.py`，验证在 `provider_payload={}` 的情况下，`RunInteractionController.request_approval(...)` 仍能完成 command approval 交互，说明 runtime 主路径已不再依赖 provider method 作为审批入口。
+- `src/openrelay/presentation/live_turn.py` 已新增 `LiveTurnPresenter`，开始负责 `LiveTurnViewModel -> snapshot/process_text/final_reply` 投影，不再要求 `turn.py` 自己理解 assistant / reasoning / tool / approval 的展示组合。
+- `src/openrelay/runtime/orchestrator.py` 已装配 `LiveTurnPresenter`；`src/openrelay/runtime/turn.py` 在 runtime event 到达后，如果 reducer state 已可读，则优先直接用 presenter 基于 `LiveTurnViewModel` 重建 snapshot，只在缺少 state 的过渡时刻才回退到 `apply_runtime_event(...)`。
+- 已新增 `tests/test_live_turn_presenter.py`，验证 presenter 能从统一 `LiveTurnViewModel` 直接生成包含 reasoning / command / approval / plan 的 process panel 文本，说明阶段 3 已开始从“事件桥接”转向“状态投影”。
