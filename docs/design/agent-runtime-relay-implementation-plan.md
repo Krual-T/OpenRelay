@@ -236,7 +236,7 @@
 
 需要修改：
 
-- `request(method, params)` 改成 `request_approval(request: ApprovalRequest)`
+- `request(method, params)` 收敛为 `request_approval(request: ApprovalRequest)`
 - 主逻辑根据 `ApprovalRequest.kind` 工作，而不是 provider method
 - provider-specific 文案与 payload 解析下沉到 mapper
 - 卡片文案去掉 `Codex` 硬编码
@@ -282,7 +282,7 @@
 
 需要修改：
 
-- 删除或废弃 `apply_live_progress(...)` 主入口
+- 删除 `apply_live_progress(...)` 主入口
 - 删除 `Starting Codex`、`Connected native session` 等 provider 专属状态文案
 - 如果保留文件，只保留 process panel / markdown 辅助函数
 
@@ -428,9 +428,9 @@
 - interaction 层不再以 provider method 作为主入口
 - 当前状态：
   - `src/openrelay/backends/codex_adapter/mapper.py` 已把 command / file_change / permissions / user_input 的统一字段写入 `ApprovalRequest.payload`
-  - `src/openrelay/runtime/interactions/controller.py` 已新增 `request_approval(request: ApprovalRequest) -> ApprovalDecision`
-  - `src/openrelay/runtime/turn.py` 的 runtime approval 路径已改为直接调用统一审批接口，不再在 turn 层解析 provider method
-  - legacy `request(method, params)` 兼容入口仍保留给旧 backend context，因此阶段 2 目前完成了“runtime 主路径切换”，但还没完成 interaction 层的兼容代码清理
+  - `src/openrelay/runtime/interactions/controller.py` 已只保留 `request_approval(request: ApprovalRequest) -> ApprovalDecision`
+  - `src/openrelay/runtime/turn.py` 的 runtime approval 路径已直接调用统一审批接口，不再在 turn 层解析 provider method
+  - 阶段 2 已完成 runtime 主路径切换与 interaction 兼容入口清理
 
 ### 阶段 3：重写 live presentation 主路径
 
@@ -450,8 +450,8 @@
 - 当前状态：
   - 已新增 `src/openrelay/presentation/live_turn.py`，提供 `LiveTurnPresenter`
   - `src/openrelay/runtime/turn.py` 在拿到 reducer state 时，已优先通过 presenter 把 `LiveTurnViewModel` 投影为 streaming snapshot
-  - `src/openrelay/runtime/interactions/controller.py` 已去掉 `emit_progress` 回调；runtime approval 展示现在只走 `ApprovalRequestedEvent/ApprovalResolvedEvent + presenter`，不再回落到 `interaction.requested/resolved -> apply_live_progress(...)` 兼容桥
-  - spinner 与 `runtime/live.py` 内的 `apply_live_progress(...)` 仍保留给 legacy/兼容测试路径，因此阶段 3 目前完成了“runtime 主路径脱离 legacy progress bridge”，但还没完成 compatibility live state machine 的最终清理
+  - `src/openrelay/runtime/interactions/controller.py` 已去掉 `emit_progress` 回调；runtime approval 展示现在只走 `ApprovalRequestedEvent/ApprovalResolvedEvent + presenter`
+  - `src/openrelay/runtime/live.py` 与 `tests/test_runtime_live.py` 已删除，阶段 3 已完成 legacy live bridge 清理
 
 ### 阶段 4：移除 legacy backend 主路径
 
@@ -542,3 +542,6 @@
 - 已新增 `src/openrelay/backends/claude_adapter/` 同构目录，其中 `transport.py` / `mapper.py` / `client.py` / `backend.py` 提供最小 `ClaudeRuntimeBackend`；`src/openrelay/runtime/orchestrator.py` 默认 runtime backend 集合和 `src/openrelay/backends/registry.py` builtin descriptors 也已接入 `claude`。
 - 已新增 `tests/test_claude_runtime_backend.py`，验证 `ClaudeRuntimeBackend` 能通过统一 `AgentRuntimeService` 发布 `session.started` / `assistant.completed` / `turn.completed` 事件，同时 `tests/test_runtime_commands.py`、`tests/test_resume_reply_behavior.py`、`tests/test_runtime_help.py` 已回归通过，说明第二 backend 占位接入与 backend-neutral `/resume` 语义没有破坏当前主路径。
 - 已删除 `tests/test_runtime.py` 这份仍整体依赖 `RuntimeOrchestrator(..., backends=...)` 和 legacy `Backend.run` 主路径的遗留测试文件，避免测试层继续把已经废弃的双轨执行模型当作有效契约；当前 runtime 主路径验证已由更聚焦的 `tests/test_runtime_commands.py`、`tests/test_runtime_help.py`、`tests/test_runtime_interactions.py`、`tests/test_live_turn_presenter.py`、`tests/test_codex_protocol_mapper.py`、`tests/test_claude_runtime_backend.py` 分担。
+- 已删除 `src/openrelay/runtime/live.py` 与 `tests/test_runtime_live.py`，runtime 主路径不再保留 `apply_live_progress(...)` 兼容状态机；process panel 渲染直接回到 `openrelay.feishu.build_process_panel_text(...)`，final reply card 由 `LiveTurnPresenter` 直接生成。
+- 已删除 `src/openrelay/runtime/interactions/controller.py` 中基于 `request(method, params)` 的 legacy provider-method 入口，只保留统一 `request_approval(request: ApprovalRequest)` 语义。
+- 已把 `src/openrelay/backends/codex.py` 移入 `src/openrelay/backends/codex_adapter/app_server.py`，并删除直接覆盖 `CodexTurn/CodexAppServerClient` 旧壳行为的 `tests/test_codex_backend.py`；runtime / restart / codex adapter 现在只从 `codex_adapter/` 目录内部引用 transport/app-server 细节。

@@ -7,14 +7,14 @@ from typing import Callable
 from openrelay.agent_runtime.service import AgentRuntimeService
 from openrelay.backends import BackendDescriptor, build_builtin_backend_descriptors
 from openrelay.backends.claude_adapter import ClaudeRuntimeBackend
-from openrelay.backends.codex import CodexAppServerClient
+from openrelay.backends.codex_adapter.app_server import CodexAppServerClient
 from openrelay.backends.codex_adapter.backend import CodexRuntimeBackend
 from openrelay.core import (
     AppConfig,
     IncomingMessage,
     SessionRecord,
 )
-from openrelay.feishu import FeishuMessenger, FeishuStreamingSession, FeishuTypingManager
+from openrelay.feishu import FeishuMessenger, FeishuStreamingSession, FeishuTypingManager, build_process_panel_text
 from openrelay.presentation.live_turn import LiveTurnPresenter
 from openrelay.presentation.panel import RuntimePanelPresenter
 from openrelay.presentation.runtime_status import RuntimeStatusPresenter
@@ -36,7 +36,6 @@ from .execution import ExecutionInput, RuntimeExecutionCoordinator
 from .follow_up import QueuedFollowUp
 from .help import HelpRenderer
 from .help_service import RuntimeHelpService
-from .live import build_process_panel_text, build_reply_card
 from .panel_service import RuntimePanelService
 from .replying import ReplyRoute, RuntimeReplyPolicy
 from .restart import RuntimeRestartController
@@ -343,11 +342,7 @@ class RuntimeOrchestrator:
         if self.config.feishu.stream_mode == "card" and streaming is not None and streaming.has_started():
             try:
                 await streaming.close(
-                    build_reply_card(
-                        text,
-                        "openrelay 回复",
-                        process_text=process_text,
-                    )
+                    self.live_turn_presenter.build_reply_card(text, process_text=process_text)
                 )
                 return
             except Exception:

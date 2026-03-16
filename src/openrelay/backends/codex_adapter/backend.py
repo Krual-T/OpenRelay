@@ -16,7 +16,7 @@ from openrelay.agent_runtime import (
     StartSessionRequest,
     TurnInput,
 )
-from openrelay.backends.codex import (
+from openrelay.backends.codex_adapter.app_server import (
     DEFAULT_INTERRUPT_GRACE_SECONDS,
     DEFAULT_REQUEST_TIMEOUT_SECONDS,
     DEFAULT_RESUME_TIMEOUT_SECONDS,
