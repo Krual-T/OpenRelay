@@ -293,6 +293,18 @@ def _describe_collab_targets(item: dict[str, Any]) -> list[str]:
     return labels[:4]
 
 
+def _render_plan_step(item: dict[str, Any], step: dict[str, Any]) -> str:
+    status = normalize_inline(step.get("status")).lower() or "pending"
+    label = status if status in {"pending", "in_progress", "completed"} else "pending"
+    text = normalize_inline(step.get("step"))
+    if not text:
+        return ""
+    line = f"`{label}` {text}"
+    if label == "completed":
+        line = f"~~{line}~~"
+    return f"🟣 {line}"
+
+
 def _history_item_tone(item: dict[str, Any]) -> str:
     state = str(item.get("state") or "").strip().lower()
     if state == "running":
@@ -317,6 +329,8 @@ def _history_item_tone(item: dict[str, Any]) -> str:
 
 
 def _history_item_bullet(item: dict[str, Any], spinner_frame: int) -> str:
+    if str(item.get("type") or "").strip() == "plan":
+        return "🟣"
     tone = _history_item_tone(item)
     if tone == "running":
         frames = ("⚪", "◯", "⚪", "◯")
@@ -389,6 +403,20 @@ def _render_history_item(item: dict[str, Any], spinner_frame: int) -> list[str]:
 
     if item_type == "file_change":
         detail_entries.extend([[line] for line in _describe_file_changes(item)])
+        _append_tree_entries(lines, detail_entries)
+        return lines
+
+    if item_type == "plan":
+        steps = item.get("steps")
+        if isinstance(steps, list):
+            for step in steps:
+                if not isinstance(step, dict):
+                    continue
+                rendered_step = _render_plan_step(item, step)
+                if rendered_step:
+                    detail_entries.append([rendered_step])
+        if not detail_entries:
+            detail_entries.extend([[line] for line in _split_detail_lines(item.get("detail"))])
         _append_tree_entries(lines, detail_entries)
         return lines
 
