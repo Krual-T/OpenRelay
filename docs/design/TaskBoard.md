@@ -35,18 +35,18 @@
   - `src/openrelay/runtime/orchestrator.py` 已在未显式覆盖 backend 的情况下初始化内建 `CodexRuntimeBackend` 和 `AgentRuntimeService`；`src/openrelay/runtime/turn.py` 的 `BackendTurnSession.run(...)` 对 Codex 路径已优先走 `AgentRuntimeService.run_turn(...)`，其他 backend 仍保留旧 `Backend.run(...)` 路径。
   - `BackendTurnSession` 已在 turn 级订阅 runtime event hub，把 `SessionStartedEvent`、assistant / reasoning / plan / tool / turn 终态重新投影为现有 live progress 事件，并在 `ApprovalRequestedEvent` 时复用现有 `RunInteractionController` 完成用户决策后回调 `AgentRuntimeService.resolve_approval(...)`。
   - 已补充 `tests/test_runtime.py` 中的 runtime-service 接线测试，验证 orchestrator 在显式注入 runtime backend 时会绕过旧 backend `run(...)` 并持久化新的 native session id；同时与现有 runtime/card-stream/interaction 回归一起通过。
-  - `src/openrelay/runtime/commands.py` 的 `/resume`、`/compact` 原生 thread 操作已优先走 `AgentRuntimeService.list_sessions(...)`、`read_session(...)`、`compact_locator(...)`；旧 `CodexBackend.list_threads/read_thread/compact_thread` 只作为 fallback 保留。
+  - `src/openrelay/runtime/commands.py` 的 `/resume`、`/compact` 原生 thread 操作已优先走 `AgentRuntimeService.list_sessions(...)`、`read_session(...)`、`compact_locator(...)`；只有显式注入 legacy native-thread backend 的兼容场景才再走旧扩展方法。
   - `src/openrelay/runtime/panel_service.py` 的 `/resume` 会话卡片数据源已优先走 `AgentRuntimeService.list_sessions(...)`，使原生命令式恢复列表与新的 Codex runtime backend 共享同一 session 枚举入口。
   - 已补充 `tests/test_runtime.py` 中 runtime-service 驱动的 `/resume latest` 与 `/compact` 回归，验证在显式注入 runtime backend 时无需旧 backend 原生 thread 扩展方法也能完成会话恢复、thread 读取与 compact。
   - `src/openrelay/runtime/orchestrator.py` 现在对 backend 可用性的判断已基于“旧 backend 集合 + runtime backend 集合”的并集；`BackendTurnSession.run(...)` 也允许在只有 runtime backend、没有旧 `Backend` 实例时执行 Codex turn。
   - `/backend` 命令的可选 backend 校验已与 orchestrator 使用同一可用 backend 集合，不再要求 runtime-only backend 同时在旧 `backends` 映射里占位。
   - 已补充 `tests/test_runtime.py` 中 runtime-only 配置回归，验证在 `backends={}`、`runtime_backends={\"codex\": ...}` 的情况下仍能正常执行 Codex turn 并持久化 native session id。
-  - `src/openrelay/backends/codex.py` 已把全局 client 清理职责下沉到 `CodexAppServerClient.shutdown_all()`；`CodexBackend.shutdown_all()` 只保留为兼容委托，不再是 runtime 主层依赖的清理入口。
+  - `src/openrelay/backends/codex.py` 已把全局 client 清理职责下沉到 `CodexAppServerClient.shutdown_all()`，runtime 主层不再依赖 `CodexBackend.shutdown_all()` 这类 legacy backend 壳层入口。
   - `src/openrelay/runtime/orchestrator.py` 与 `src/openrelay/runtime/restart.py` 已改为直接调用 `CodexAppServerClient.shutdown_all()`，从而把进程级 shutdown 依赖从 legacy backend 壳层切回 transport / client 层。
   - 已调整 `tests/test_runtime.py` 中 restart 回归的 monkeypatch 目标，并与现有 runtime / restart / codex backend / runtime backend 回归一起通过，说明 transport 级清理切换未改变外部行为。
-  - `src/openrelay/runtime/orchestrator.py` 默认实例化 legacy backend 集合时已显式剔除 `codex`，使 `RuntimeOrchestrator(config, store, messenger)` 的默认 Codex 主路径只依赖 `CodexRuntimeBackend + AgentRuntimeService`，不再偷偷构建一个未使用的 `CodexBackend` 占位实例。
-  - 由于 `available_backend_names()` 已基于 legacy/runtime backend 并集，默认剔除 legacy `codex` 后对 `/backend`、health、runtime turn 选择逻辑没有行为变化；显式传入 `backends={\"codex\": ...}` 的兼容测试场景仍保持原样。
-  - `src/openrelay/backends/__init__.py` 已移除对 `CodexBackend` 的包级导出；`src/openrelay/backends/registry.py` 也已改为在需要构建 legacy codex backend 时才惰性导入 `openrelay.backends.codex`，避免普通导入链无条件拉起旧兼容壳层。
+  - `src/openrelay/runtime/orchestrator.py` 的默认 legacy backend 构造现在直接只返回真正仍有 factory 的后端；由于 builtin descriptor 里的 `codex` 只再承担展示元数据，`RuntimeOrchestrator(config, store, messenger)` 的默认 Codex 主路径完全收敛到 `CodexRuntimeBackend + AgentRuntimeService`。
+  - 由于 `available_backend_names()` 已基于 legacy/runtime backend 并集，builtin descriptor 继续保留 `codex` 名称与 transport 展示信息时，对 `/backend`、help、panel、health 和 runtime turn 选择逻辑没有行为变化；显式传入 `backends={\"codex\": ...}` 的兼容测试场景仍保持原样。
+  - `src/openrelay/backends/__init__.py` 已移除对 `CodexBackend` 的包级导出；本轮进一步删除 `src/openrelay/backends/codex.py` 内的 `CodexBackend` 兼容壳，并把 `src/openrelay/backends/registry.py` 收敛为“descriptor 可选 factory”的纯注册表，避免默认导入链和默认实例化路径继续保留无用 legacy backend 对象。
 
 ## 使用约定
 
