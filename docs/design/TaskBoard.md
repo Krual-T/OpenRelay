@@ -41,6 +41,9 @@
   - `src/openrelay/runtime/orchestrator.py` 现在对 backend 可用性的判断已基于“旧 backend 集合 + runtime backend 集合”的并集；`BackendTurnSession.run(...)` 也允许在只有 runtime backend、没有旧 `Backend` 实例时执行 Codex turn。
   - `/backend` 命令的可选 backend 校验已与 orchestrator 使用同一可用 backend 集合，不再要求 runtime-only backend 同时在旧 `backends` 映射里占位。
   - 已补充 `tests/test_runtime.py` 中 runtime-only 配置回归，验证在 `backends={}`、`runtime_backends={\"codex\": ...}` 的情况下仍能正常执行 Codex turn 并持久化 native session id。
+  - `src/openrelay/backends/codex.py` 已把全局 client 清理职责下沉到 `CodexAppServerClient.shutdown_all()`；`CodexBackend.shutdown_all()` 只保留为兼容委托，不再是 runtime 主层依赖的清理入口。
+  - `src/openrelay/runtime/orchestrator.py` 与 `src/openrelay/runtime/restart.py` 已改为直接调用 `CodexAppServerClient.shutdown_all()`，从而把进程级 shutdown 依赖从 legacy backend 壳层切回 transport / client 层。
+  - 已调整 `tests/test_runtime.py` 中 restart 回归的 monkeypatch 目标，并与现有 runtime / restart / codex backend / runtime backend 回归一起通过，说明 transport 级清理切换未改变外部行为。
 
 ## 使用约定
 

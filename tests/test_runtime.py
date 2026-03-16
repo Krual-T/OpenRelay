@@ -2519,7 +2519,7 @@ async def test_runtime_restart_process_uses_systemd_restart_when_service_managed
     monkeypatch.setattr("openrelay.runtime.restart.asyncio.sleep", fake_sleep)
     monkeypatch.setattr("openrelay.runtime.restart.is_systemd_service_process", lambda env=None, pid=None: True)
     monkeypatch.setattr(runtime.restart_controller, "_restart_systemd_service", fake_restart_systemd_service)
-    monkeypatch.setattr("openrelay.runtime.restart.CodexBackend.shutdown_all", fake_shutdown_all)
+    monkeypatch.setattr("openrelay.runtime.restart.CodexAppServerClient.shutdown_all", fake_shutdown_all)
     monkeypatch.setattr("openrelay.runtime.restart.os.execvpe", fake_execvpe)
 
     await runtime.restart_controller._restart_process()
@@ -2555,7 +2555,7 @@ async def test_runtime_restart_process_execs_and_shuts_down_backends(tmp_path: P
     monkeypatch.setattr("openrelay.runtime.restart.is_systemd_service_process", lambda env=None, pid=None: False)
     monkeypatch.setattr(runtime.restart_controller, "_restart_systemd_service", fake_restart_systemd_service)
     monkeypatch.setattr("openrelay.runtime.restart.os.execvpe", fake_execvpe)
-    monkeypatch.setattr("openrelay.runtime.restart.CodexBackend.shutdown_all", fake_shutdown_all)
+    monkeypatch.setattr("openrelay.runtime.restart.CodexAppServerClient.shutdown_all", fake_shutdown_all)
 
     await runtime.restart_controller._restart_process()
 

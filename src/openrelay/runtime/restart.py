@@ -5,7 +5,7 @@ import logging
 import os
 import sys
 
-from openrelay.backends import CodexBackend
+from openrelay.backends.codex import CodexAppServerClient
 
 DEFAULT_SYSTEMD_SERVICE_UNIT = "openrelay.service"
 
@@ -54,7 +54,7 @@ class RuntimeRestartController:
                 self.logger.exception("failed to restart %s via systemd", unit_name)
                 raise
         try:
-            await CodexBackend.shutdown_all()
+            await CodexAppServerClient.shutdown_all()
         except Exception:
             self.logger.exception("failed shutting down backends before restart")
         try:
