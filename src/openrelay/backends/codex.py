@@ -27,7 +27,7 @@ from openrelay.agent_runtime import (
     UsageUpdatedEvent,
 )
 from openrelay.backends.base import Backend, BackendContext, build_subprocess_env, safety_to_codex_approval
-from openrelay.backends.codex_adapter import CodexProtocolMapper
+from openrelay.backends.codex_adapter.mapper import CodexProtocolMapper
 from openrelay.core import BackendReply, SessionRecord
 
 

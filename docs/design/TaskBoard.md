@@ -29,6 +29,9 @@
   - 已新增 `src/openrelay/backends/codex_adapter/mapper.py` 与 `src/openrelay/backends/codex_adapter/__init__.py`，把 Codex app-server notification / server request 归约为统一 runtime event 与 `ApprovalRequest`，并内置 turn 归属、alias 去重、reasoning 聚合、tool 生命周期、usage 映射和审批响应构造。
   - 已新增 `tests/test_codex_protocol_mapper.py`，验证 `turn/started`、agent / reasoning alias 去重、reasoning summary 优先级、tool 生命周期、approval request / resolved、usage 和 turn 终态映射；并与既有 `tests/test_codex_backend.py`、`tests/test_agent_runtime.py` 一起通过。
   - 旧 `src/openrelay/backends/codex.py` 的 `CodexTurn.handle_notification(...)` 已切到消费 `CodexProtocolMapper` 输出的统一 runtime event，再翻译回现有 progress callback；现有 backend API、turn future 和交互回调保持兼容。
+  - 已新增 `src/openrelay/backends/codex_adapter/backend.py`，提供 `AgentBackend` 版 `CodexRuntimeBackend`，直接复用现有 `CodexAppServerClient` 完成 session start / list / read / compact、runtime event sink 驱动的 turn 执行，以及 pending approval 的等待与决策回写。
+  - `src/openrelay/agent_runtime/service.py` 的 `run_turn(...)` 已在 `TurnInput.metadata` 中补写 `relay_session_id`，使 backend adapter 能在不扩张接口的前提下产出带正确 relay session 归属的 runtime event。
+  - 已新增 `tests/test_codex_runtime_backend.py`，验证 `CodexRuntimeBackend` 的 session 操作、runtime turn event 流和 approval resolve；并与 `tests/test_codex_backend.py`、`tests/test_codex_protocol_mapper.py`、`tests/test_agent_runtime.py`、`tests/test_session_binding_store.py` 一起通过。
 
 ## 使用约定
 
