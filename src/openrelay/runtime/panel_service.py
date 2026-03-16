@@ -10,7 +10,6 @@ from openrelay.core import AppConfig, IncomingMessage, SessionRecord
 from openrelay.feishu import FeishuMessenger
 from openrelay.presentation.panel import RuntimePanelPresenter
 from openrelay.presentation.session import SessionPresentation, build_backend_session_list_card
-from openrelay.session import DEFAULT_SESSION_LIST_PAGE_SIZE
 from openrelay.session.browser import SessionBrowser, SessionSortMode
 from openrelay.session.shortcuts import SessionShortcutService
 from openrelay.session.workspace import SessionWorkspaceService
@@ -20,6 +19,7 @@ from .replying import RuntimeReplyPolicy
 
 
 FallbackReply = Callable[[IncomingMessage, str, str], Awaitable[None]]
+BACKEND_SESSION_CARD_PAGE_SIZE = 3
 
 
 @dataclass(slots=True)
@@ -100,7 +100,7 @@ class RuntimePanelService:
         rows, _cursor = await self.runtime_service.list_sessions(
             session.backend,
             ListSessionsRequest(
-                limit=max(DEFAULT_SESSION_LIST_PAGE_SIZE * max(page, 1) + 1, DEFAULT_SESSION_LIST_PAGE_SIZE + 1),
+                limit=max(BACKEND_SESSION_CARD_PAGE_SIZE * max(page, 1) + 1, BACKEND_SESSION_CARD_PAGE_SIZE + 1),
                 cwd=session.cwd,
             ),
         )
@@ -129,23 +129,21 @@ class RuntimePanelService:
         sessions: list[dict[str, str]],
     ) -> tuple[dict[str, object], str]:
         session_entries: list[dict[str, object]] = []
-        start = (max(page, 1) - 1) * DEFAULT_SESSION_LIST_PAGE_SIZE
-        visible_sessions = sessions[start:start + DEFAULT_SESSION_LIST_PAGE_SIZE]
+        start = (max(page, 1) - 1) * BACKEND_SESSION_CARD_PAGE_SIZE
+        visible_sessions = sessions[start:start + BACKEND_SESSION_CARD_PAGE_SIZE]
         for index, row in enumerate(visible_sessions, start=start + 1):
             session_id = str(row.get("session_id") or "").strip()
-            preview = self.session_presentation.shorten(str(row.get("preview") or ""), 96)
-            title = str(row.get("name") or preview or session_id or f"session {index}")
+            title = str(row.get("name") or row.get("preview") or session_id or f"session {index}")
             meta: list[str] = []
-            updated_at = str(row.get("updated_at") or "").strip()
+            updated_at = self._format_user_facing_time(str(row.get("updated_at") or ""))
             if updated_at:
-                meta.append(updated_at[:16].replace("T", " "))
+                meta.append(updated_at)
             status = str(row.get("status") or "").strip()
             if status:
                 meta.append(f"status={status}")
             cwd = str(row.get("cwd") or "").strip()
             if cwd:
                 meta.append(f"cwd={self.workspace.format_cwd(cwd, session)}")
-            meta.append(f"id={session_id}")
             session_entries.append(
                 {
                     "index": index,
@@ -153,7 +151,6 @@ class RuntimePanelService:
                     "active": session_id == session.native_session_id,
                     "title": self.session_presentation.shorten(title, 56),
                     "meta": " · ".join(meta),
-                    "preview": preview,
                 }
             )
 
@@ -161,7 +158,7 @@ class RuntimePanelService:
             {
                 "page": max(page, 1),
                 "has_previous": page > 1,
-                "has_next": start + DEFAULT_SESSION_LIST_PAGE_SIZE < len(sessions),
+                "has_next": start + BACKEND_SESSION_CARD_PAGE_SIZE < len(sessions),
                 "backend_name": session.backend,
                 "current_session_id": session.native_session_id,
                 "action_context": action_context,
@@ -173,9 +170,22 @@ class RuntimePanelService:
             for entry in session_entries:
                 lines.append(f"{entry['index']}. {entry['title']}")
                 lines.append(f"   {entry['meta']}")
-                if entry["preview"]:
-                    lines.append(f"   预览：{entry['preview']}")
+                lines.append(f"   id={entry['session_id']}")
         else:
             lines.append("当前没有可连接的后端会话。")
         lines.extend(["", "直接点卡片按钮即可连接；也可以手输 `/resume <session_id>`。"])
         return card, "\n".join(lines)
+
+    def _format_user_facing_time(self, value: str) -> str:
+        raw = value.strip()
+        if not raw:
+            return ""
+        try:
+            from datetime import datetime
+
+            parsed = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+        except ValueError:
+            return raw
+        if parsed.tzinfo is not None:
+            parsed = parsed.astimezone()
+        return parsed.strftime("%Y-%m-%d %H:%M:%S")

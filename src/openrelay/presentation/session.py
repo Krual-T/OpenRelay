@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import Any
 
 from openrelay.core import AppConfig, SessionRecord, format_release_channel, infer_release_channel
-from openrelay.feishu.cards import build_button, build_card_shell, build_note_bar, build_section_block, build_status_hero, divider_block
+from openrelay.feishu.cards import build_button, build_card_shell, build_note_bar, build_section_block, build_status_hero, divider_block, markdown_block
 from openrelay.storage import StateStore
 
 from openrelay.session.browser import SESSION_SORT_ACTIVE, SESSION_SORT_UPDATED, SessionListEntry, SessionListPage
@@ -107,26 +107,19 @@ def build_backend_session_list_card(info: dict[str, Any]) -> dict[str, Any]:
     has_previous = bool(info.get("has_previous"))
     has_next = bool(info.get("has_next"))
     backend_name = str(info.get("backend_name") or "runtime").strip() or "runtime"
-    current_session_id = str(info.get("current_session_id") or "").strip() or "pending"
-
-    elements: list[dict[str, Any]] = [
-        *build_status_hero(
-            "运行时会话",
-            tone="info",
-            summary="先选择一条后端会话，再在当前顶层对话里继续它。",
-            facts=[
-                ("后端", f"`{backend_name}`"),
-                ("当前绑定", f"`{current_session_id}`"),
-                ("页码", f"第 `{page}` 页"),
-            ],
-            notes=["点击某条会话后，会直接发送 `/resume <session_id>` 并把当前顶层对话绑定到它"],
-        ),
-        divider_block(),
-    ]
+    elements: list[dict[str, Any]] = []
 
     if sessions:
         for entry in sessions:
-            elements.append(build_section_block("会话条目", [_session_text(entry)], emoji="🧵"))
+            title = str(entry.get("title") or entry.get("label") or entry.get("session_id") or "未命名会话")
+            lines = [f"> **{entry.get('index', '-')}. {title}**{' · 当前' if entry.get('active') else ''}"]
+            meta = str(entry.get("meta") or "").strip()
+            if meta:
+                lines.append(f"> {meta}")
+            session_id = str(entry.get("session_id") or entry.get("resume_token") or "").strip()
+            if session_id:
+                lines.append(f"> `{session_id}`")
+            elements.append(markdown_block("\n".join(lines)))
             elements.append(
                 {
                     "tag": "action",
@@ -141,7 +134,7 @@ def build_backend_session_list_card(info: dict[str, Any]) -> dict[str, Any]:
                 }
             )
     else:
-        elements.append(build_section_block("会话条目", ["> 当前没有可连接的后端会话。"], emoji="🧵"))
+        elements.append(markdown_block("> 当前没有可连接的后端会话。"))
 
     controls: list[dict[str, Any]] = []
     if has_previous:
@@ -150,9 +143,6 @@ def build_backend_session_list_card(info: dict[str, Any]) -> dict[str, Any]:
         controls.append(build_button("下一页", build_resume_card_command(page=page + 1), "primary", action_context))
     if controls:
         elements.append({"tag": "action", "actions": controls})
-    footer_note = build_note_bar(["连接成功后，后续在当前顶层对话里的消息都会继续走对应的后端会话。"])
-    if footer_note is not None:
-        elements.append(footer_note)
     elements.append(
         {
             "tag": "action",
@@ -163,7 +153,7 @@ def build_backend_session_list_card(info: dict[str, Any]) -> dict[str, Any]:
             ],
         }
     )
-    return build_card_shell("openrelay resume", elements, tone="info")
+    return build_card_shell(f"Relay {backend_name} thread histories", elements, tone="info")
 
 
 class SessionPresentation:
