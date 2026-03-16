@@ -172,6 +172,30 @@ def test_build_streaming_content_renders_web_search_as_blue_exploration() -> Non
     assert "└ Search site:techcrunch.com AI March 11 2026" in content
 
 
+def test_build_streaming_content_renders_plan_with_static_purple_bullets_and_strikethrough() -> None:
+    content = build_streaming_content(
+        {
+            "history_items": [
+                {
+                    "type": "plan",
+                    "state": "running",
+                    "title": "Plan",
+                    "steps": [
+                        {"step": "Inspect runtime", "status": "completed"},
+                        {"step": "Adjust Feishu rendering", "status": "in_progress"},
+                        {"step": "Verify snapshot output", "status": "pending"},
+                    ],
+                }
+            ]
+        }
+    )
+
+    assert "🟣 **Plan**" in content
+    assert "├ 🟣 ~~`completed` Inspect runtime~~" in content
+    assert "├ 🟣 `in_progress` Adjust Feishu rendering" in content
+    assert "└ 🟣 `pending` Verify snapshot output" in content
+
+
 def test_build_streaming_content_renders_unexpected_backend_event_payload() -> None:
     content = build_streaming_content(
         {

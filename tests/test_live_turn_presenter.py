@@ -41,6 +41,8 @@ def test_live_turn_presenter_builds_snapshot_from_view_model() -> None:
     assert any(item["type"] == "command" for item in snapshot["history_items"])
     assert any(item["type"] == "reasoning" for item in snapshot["history_items"])
     assert any(item["type"] == "interaction" for item in snapshot["history_items"])
+    plan_item = next(item for item in snapshot["history_items"] if item["type"] == "plan")
+    assert plan_item["steps"] == [{"step": "Inspect runtime", "status": "completed"}]
     assert "Command Approval Required" in process_text
     assert "Search runtime" in process_text
 

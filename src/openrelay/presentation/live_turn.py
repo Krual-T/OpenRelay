@@ -156,13 +156,19 @@ class LiveTurnPresenter:
             if item is not None:
                 items.append(item)
         if state.plan_steps:
-            plan_lines = [f"{step.step} [{step.status}]" for step in state.plan_steps if step.step.strip()]
+            plan_steps = [
+                {"step": step.step.strip(), "status": step.status}
+                for step in state.plan_steps
+                if step.step.strip()
+            ]
+            plan_lines = [f"{entry['status']} {entry['step']}" for entry in plan_steps]
             if plan_lines:
                 items.append(
                     {
                         "type": "plan",
                         "state": "running" if state.status == "running" else "completed",
                         "title": "Plan",
+                        "steps": plan_steps,
                         "detail": "\n".join(plan_lines),
                     }
                 )
