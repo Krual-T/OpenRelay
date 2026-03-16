@@ -180,6 +180,13 @@ class RuntimePanelService:
         raw = value.strip()
         if not raw:
             return ""
+        if raw.isdigit():
+            timestamp = int(raw)
+            if timestamp > 10**12:
+                timestamp /= 1000
+            from datetime import datetime
+
+            return datetime.fromtimestamp(timestamp).astimezone().strftime("%Y-%m-%d %H:%M:%S")
         try:
             from datetime import datetime
 
