@@ -21,6 +21,9 @@
   - [ ] backend adapter、session binding、interaction、presentation 的职责边界在实现上完成最小闭环。
   - [ ] 新增或调整的实现、测试和文档证据都回写到同一任务条目。
 - **建议产物**：`docs/design/agent-runtime-relay.md`；`src/openrelay/` 下与 runtime、session、presentation、backend adapter 相关的后续实现与测试。
+- **本轮新增证据**：
+  - `docs/design/agent-runtime-relay.md` 已补充“实现补充附录”，明确第一阶段 Codex 事件映射、审批映射、binding 过渡、orchestrator 接线和测试矩阵。
+  - 附录约束以当前仓库可验证实现为证据来源：`src/openrelay/backends/codex.py`、`src/openrelay/runtime/live.py`、`src/openrelay/runtime/interactions/controller.py`、`tests/test_codex_backend.py`。
 
 ## 使用约定
 

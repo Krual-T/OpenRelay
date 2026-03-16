@@ -1173,6 +1173,200 @@ Feishu 层不关心 backend 类型，也不关心 provider method。
 
 其余事件先走可选增强。
 
+## 实现补充附录
+
+下面这些内容用于把设计文档从“架构方向”补到“可直接开工的第一阶段实现约束”。
+
+补充原则：
+
+- 不追求一次性把全部 provider 细节写成最终规范。
+- 只把 Phase 1 到 Phase 3 真正会阻塞实现的边界定死。
+- 约束以当前仓库可验证证据为准：`src/openrelay/backends/codex.py`、`src/openrelay/runtime/live.py`、`src/openrelay/runtime/interactions/controller.py`、`tests/test_codex_backend.py`。
+
+### Codex CLI 参考方式
+
+虽然本地 `codex` 安装包主体是预编译二进制，无法直接从 TypeScript 源码阅读 TUI 实现，但从 `codex app-server` 暴露的协议面以及当前仓库已经验证过的消费路径，可以得出一个稳定结论：
+
+- transport 层处理 JSON-RPC request / response / notification
+- turn 层按 `threadId + turnId` 归属事件
+- provider-specific method 会先归约成少量运行时状态变化
+- 展示层消费的是“已归约状态”或“过程时间线”，而不是原始 method 名
+
+第一阶段实现应保持这个方向，不把 Feishu 或 runtime 主层写成 app-server method switchboard。
+
+### Codex 事件映射表
+
+第一阶段 `CodexProtocolMapper` 必须至少覆盖下面这张映射表。
+
+| app-server method | 条件 / 载荷 | 统一事件 | reducer / interaction 动作 |
+| --- | --- | --- | --- |
+| `turn/started` | 提取 `turn.id` | `TurnStartedEvent` | 建立 turn reducer；补全 `turn_id` |
+| `thread/started` | 提取 `thread.id` | `SessionStartedEvent` | 更新 binding 的 `native_session_id` |
+| `item/agentMessage/delta` | `itemId + delta` | `AssistantDeltaEvent` | 追加 assistant 文本 |
+| `codex/event/agent_message_content_delta` | 旧别名；与上面去重 | `AssistantDeltaEvent` | 与 `item/agentMessage/delta` 视为同源事件 |
+| `item/reasoning/textDelta` | `itemId + contentIndex + delta` | `ReasoningDeltaEvent` | 按 item 聚合 reasoning content |
+| `codex/event/reasoning_content_delta` | 旧别名；与上面去重 | `ReasoningDeltaEvent` | 同上 |
+| `item/reasoning/summaryTextDelta` | `itemId + summaryIndex + delta` | `ReasoningDeltaEvent` | 优先进入 reasoning summary 视图 |
+| `codex/event/reasoning_summary_text_delta` | 旧别名；与上面去重 | `ReasoningDeltaEvent` | 同上 |
+| `item/reasoning/summaryPartAdded` | 只标记 reasoning item 存在 | 无单独展示事件 | 只更新 mapper 内部聚合上下文 |
+| `item/plan/delta` | 文本增量 | `BackendNoticeEvent` 或 `PlanUpdatedEvent` 前置缓冲 | 第一阶段允许只作为增量展示，不要求结构化 plan |
+| `turn/plan/updated` | `plan[] + explanation` | `PlanUpdatedEvent` | 用结构化 steps 覆盖当前 plan |
+| `item/commandExecution/outputDelta` | `itemId + delta` | `ToolProgressEvent` | 只更新 command detail，不直接发 UI 文本 |
+| `codex/event/command_output_delta` | 旧别名 | `ToolProgressEvent` | 同上 |
+| `item/commandExecution/terminalInteraction` | 终端交互请求 | `BackendNoticeEvent` | 第一阶段先保留到 `provider_payload`，不进主交互模型 |
+| `item/fileChange/outputDelta` | patch / diff 输出 | `ToolProgressEvent` | 只更新 file-change detail |
+| `item/mcpToolCall/progress` | 进度内容 | `ToolProgressEvent` | `kind="mcp"` |
+| `item/started` | `item.type` | `ToolStartedEvent` 或 `BackendNoticeEvent` | `reasoning` / `commandExecution` / `webSearch` / `fileChange` / `collabAgentToolCall` 必须映射 |
+| `codex/event/item_started` | 旧别名 | `ToolStartedEvent` 或 `BackendNoticeEvent` | 同上 |
+| `item/completed` | `item.type` | `AssistantCompletedEvent` / `ToolCompletedEvent` / `PlanUpdatedEvent` | 按 item type 收口终态 |
+| `codex/event/item_completed` | 旧别名 | 同上 | 同上 |
+| `thread/tokenUsage/updated` | `tokenUsage.last` 或 `tokenUsage.total` | `UsageUpdatedEvent` | 更新 usage snapshot |
+| `codex/event/token_count` | 旧别名 | `UsageUpdatedEvent` | 同上 |
+| `serverRequest/resolved` | `requestId` | `ApprovalResolvedEvent` | 清理 pending approval |
+| `turn/completed` | `turn.status` | `TurnCompletedEvent` / `TurnFailedEvent` / `TurnInterruptedEvent` | 统一 turn 终态出口 |
+| `codex/event/task_complete` | 旧别名；兼容 `last_agent_message` | `TurnCompletedEvent` / `TurnFailedEvent` / `TurnInterruptedEvent` | 同上 |
+| `error` | `willRetry != true` | `TurnFailedEvent` | 仅在不会重试时结束 turn |
+
+### item type 到 tool kind 的最小映射
+
+第一阶段只要求收敛下面这些 `item.type`：
+
+| item.type | ToolState.kind | 展示约束 |
+| --- | --- | --- |
+| `commandExecution` | `command` | 标题和状态来自命令生命周期；输出增量进入 `detail` |
+| `webSearch` | `web_search` | 只展示 query 摘要，不展示 provider 原始 action schema |
+| `fileChange` | `file_change` | 展示文件列表与 add / update / delete 概要 |
+| `collabAgentToolCall` | `custom` | 第一阶段保留 `tool` 和 agent 状态到 `provider_payload` |
+| `mcpToolCall` | `mcp` | 只展示进度摘要 |
+| `reasoning` | 不进入 `tools` 主列表 | reasoning 单独进入 `reasoning_text` |
+| `agentMessage` | 不进入 `tools` 主列表 | 进入 assistant 文本 |
+| `plan` | 不进入 `tools` 主列表 | 进入 `plan_steps` |
+
+### server request 到审批模型的映射
+
+第一阶段 `InteractionController` 必须覆盖下面这些 request method：
+
+| server request method | ApprovalRequest.kind | 标准决策 |
+| --- | --- | --- |
+| `item/commandExecution/requestApproval` | `command` | `accept` / `accept_for_session` / `decline` / `cancel` |
+| `item/fileChange/requestApproval` | `file_change` | `accept` / `decline` / `cancel` |
+| `item/permissions/requestApproval` | `permissions` | `accept` / `accept_for_session` / `decline` / `cancel` |
+| `item/tool/requestUserInput` | `user_input` | `custom(payload)` / `cancel` |
+| `mcpServer/elicitation/request` | `user_input` | `custom(payload)` / `cancel` |
+
+约束：
+
+- runtime 主层只能看到 `ApprovalRequest` 和 `ApprovalDecision`，不能看到原始 method 名。
+- provider-specific choice label、表单 schema、额外 payload 只保留在 `provider_payload`。
+- `serverRequest/resolved` 必须成为清理 pending approval 的唯一确认信号；仅本地发出决策不视为已 resolved。
+
+### 去重与归属规则
+
+Codex adapter 第一阶段必须显式实现下面三条规则：
+
+1. turn 归属以 `threadId + turnId` 为主，兼容旧消息里的 `conversationId + id`。
+2. `item/agentMessage/delta` 与 `codex/event/agent_message_content_delta` 必须基于 `itemId + delta` 去重。
+3. reasoning delta / summary delta 的新旧别名也必须去重，否则同一段 thinking 会重复渲染。
+
+### 展示归约规则
+
+为了贴近 Codex CLI 的实际消费方式，展示层只消费归约后的 turn 状态，不消费原始 protocol：
+
+- assistant 文本只保留“当前已累积文本”与“最终完成文本”
+- reasoning 只保留一个合并后的 `reasoning_text`
+- tool 列表只保留用户可感知的工具状态，不外露 provider item 原始 schema
+- approval 始终只有一个 `pending_approval` 主入口；如 provider 实际存在多请求，也在 interaction 层顺序化
+- usage 只保留统一 token snapshot
+
+换句话说，TUI / 卡片真正消费的是：
+
+- `assistant_text`
+- `reasoning_text`
+- `plan_steps`
+- `tools`
+- `pending_approval`
+- `usage`
+- `turn status`
+
+而不是：
+
+- `item/agentMessage/delta`
+- `item/completed`
+- `thread/tokenUsage/updated`
+- `item/fileChange/requestApproval`
+
+### SessionRecord 到 RelaySessionBinding 的过渡
+
+第一阶段不做数据库迁移工程；只做运行时收口。
+
+过渡策略定为：
+
+1. 继续复用现有 `StateStore` 持久化会话与消息。
+2. 新增 `SessionBindingStore`，先作为 `StateStore` 的薄适配层，不单独引入第二套底层存储。
+3. `RelaySessionBinding` 的最小字段来源如下：
+   - `relay_session_id <- SessionRecord.session_id`
+   - `backend <- SessionRecord.backend`
+   - `native_session_id <- SessionRecord.native_session_id`
+   - `cwd <- SessionRecord.cwd`
+   - `model <- SessionRecord.model_override`
+   - `safety_mode <- SessionRecord.safety_mode`
+   - `feishu_chat_id / feishu_thread_id <- 由当前 session scope resolver 提供`
+4. 当 `thread/started` 返回新的原生会话 id 时，只允许通过 binding store 更新，不再让 presentation 或 command service 直接写 `native_session_id`。
+
+约束：
+
+- 第一阶段不新造用户可见 session identity。
+- `/resume`、面板和状态查询仍然以 backend + native session 为最终展示身份。
+- 旧 `SessionRecord` 可以继续存在，但不能继续充当 runtime 主模型。
+
+### RuntimeOrchestrator 的接线方式
+
+第一阶段不删除现有 [src/openrelay/runtime/orchestrator.py](/home/Shaokun.Tang/Projects/openrelay/src/openrelay/runtime/orchestrator.py)，但它应退化为壳层协调器。
+
+接线顺序定为：
+
+1. `dispatch_message` 继续负责 Feishu 入站校验、去重和 scope 解析。
+2. 会话加载后，orchestrator 不再直接调用 backend `run(...)` 语义，而是调用 `AgentRuntimeService.run_turn(...)`。
+3. `AgentRuntimeService` 负责：
+   - 选择 backend adapter
+   - 建立 / 读取 session binding
+   - 创建 event sink
+   - 驱动 reducer
+   - 把 approval request 注册到 interaction controller
+4. Feishu streaming / reply card 只订阅 `LiveTurnViewModel` 或 `TurnPresentationModel`。
+
+禁止事项：
+
+- orchestrator 内部新增 provider-specific notification 分支
+- presentation 层直接读取 app-server params
+- interaction controller 直接向 Codex transport 写 JSON-RPC
+
+### 第一阶段测试矩阵
+
+第一阶段合入前，至少补齐或迁移下面这些测试：
+
+| 测试主题 | 最低要求 |
+| --- | --- |
+| turn 归属 | 新旧 `threadId` / `conversationId` 载荷都能归到同一 turn |
+| delta 去重 | agent / reasoning 新旧别名事件不会重复追加 |
+| assistant streaming | `AssistantDeltaEvent` 能驱动增量文本，`TurnCompletedEvent` 能给出最终文本 |
+| reasoning 聚合 | summary 与 content 的优先级稳定，最终只展示一份 reasoning 文本 |
+| tool 生命周期 | `item/started` + `item/completed` 能收敛为单个 `ToolState` |
+| approval 生命周期 | request -> 用户决策 -> `serverRequest/resolved` -> pending 清理 全链路成立 |
+| token usage | `thread/tokenUsage/updated` 与旧 token alias 都能映射到统一 usage |
+| turn 终态 | completed / interrupted / failed 都只能通过统一终态事件结束 reducer |
+| binding 更新 | `thread/started` 返回新 session id 后，binding 会同步更新 |
+| presenter 投影 | Feishu / runtime 展示只依赖统一 view model，不依赖 provider method |
+
+### 第一阶段完成定义
+
+满足下面四条，就可以认为文档已经足够支撑实现 Phase 1 到 Phase 3：
+
+- Codex mapper 的最小事件表已定死。
+- binding 过渡策略已定死。
+- orchestrator 到 runtime service 的接线顺序已定死。
+- 测试矩阵已定死。
+
 ## 预期结果
 
 如果按这份方案推进，系统会得到四个长期收益：
