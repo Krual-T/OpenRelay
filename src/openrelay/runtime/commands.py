@@ -419,7 +419,7 @@ class RuntimeCommandRouter:
             return raw
         if parsed.tzinfo is not None:
             parsed = parsed.astimezone()
-        return parsed.strftime("%Y-%m-%d %H:%M")
+        return parsed.strftime("%Y-%m-%d %H:%M:%S")
 
     def _format_full_cwd(self, cwd: str) -> str:
         raw = cwd.strip()
