@@ -46,6 +46,7 @@
   - 已调整 `tests/test_runtime.py` 中 restart 回归的 monkeypatch 目标，并与现有 runtime / restart / codex backend / runtime backend 回归一起通过，说明 transport 级清理切换未改变外部行为。
   - `src/openrelay/runtime/orchestrator.py` 默认实例化 legacy backend 集合时已显式剔除 `codex`，使 `RuntimeOrchestrator(config, store, messenger)` 的默认 Codex 主路径只依赖 `CodexRuntimeBackend + AgentRuntimeService`，不再偷偷构建一个未使用的 `CodexBackend` 占位实例。
   - 由于 `available_backend_names()` 已基于 legacy/runtime backend 并集，默认剔除 legacy `codex` 后对 `/backend`、health、runtime turn 选择逻辑没有行为变化；显式传入 `backends={\"codex\": ...}` 的兼容测试场景仍保持原样。
+  - `src/openrelay/backends/__init__.py` 已移除对 `CodexBackend` 的包级导出；`src/openrelay/backends/registry.py` 也已改为在需要构建 legacy codex backend 时才惰性导入 `openrelay.backends.codex`，避免普通导入链无条件拉起旧兼容壳层。
 
 ## 使用约定
 
