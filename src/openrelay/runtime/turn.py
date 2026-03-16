@@ -243,20 +243,16 @@ class BackendTurnSession:
             if self.interaction_controller is None:
                 raise RuntimeError("interaction controller is unavailable for approval")
             self._request_streaming_update()
+            decision = await self.interaction_controller.request_approval(event.request)
             await runtime_service.resolve_approval(
                 binding,
                 event.request,
-                await self.interaction_controller.request_approval(event.request),
+                decision,
             )
-            apply_live_progress(
+            self.live_state = self.presenter.build_approval_resolved_snapshot(
                 self.live_state,
-                {
-                    "type": "interaction.resolved",
-                    "interaction": {
-                        "id": event.request.approval_id,
-                        "detail": "Approval resolved",
-                    },
-                },
+                event.request,
+                decision,
             )
         self._request_streaming_update()
 

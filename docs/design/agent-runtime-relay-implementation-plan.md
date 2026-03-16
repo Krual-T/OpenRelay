@@ -518,3 +518,4 @@
 - `src/openrelay/runtime/orchestrator.py` 已装配 `LiveTurnPresenter`；`src/openrelay/runtime/turn.py` 在 runtime event 到达后，如果 reducer state 已可读，则优先直接用 presenter 基于 `LiveTurnViewModel` 重建 snapshot，只在缺少 state 的过渡时刻才回退到 `apply_runtime_event(...)`。
 - 已新增 `tests/test_live_turn_presenter.py`，验证 presenter 能从统一 `LiveTurnViewModel` 直接生成包含 reasoning / command / approval / plan 的 process panel 文本，说明阶段 3 已开始从“事件桥接”转向“状态投影”。
 - `src/openrelay/runtime/turn.py` 现已进一步移除普通 runtime event 对 `apply_runtime_event(...)` 的依赖；除 `SessionStartedEvent` 的 native session 同步和 approval resolved 的过渡提示外，runtime 展示更新已优先收敛到 “registry state -> presenter snapshot” 主路径。
+- `src/openrelay/presentation/live_turn.py` 已新增 approval resolved 过渡态投影；`src/openrelay/runtime/turn.py` 不再通过 `apply_live_progress(...)` 手工补 `interaction.resolved`，而是直接让 presenter 更新 snapshot，进一步缩小 legacy progress bridge 的剩余范围。

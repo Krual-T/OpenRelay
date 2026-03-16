@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any, Callable
 
-from openrelay.agent_runtime import LiveTurnViewModel, ToolState
+from openrelay.agent_runtime import ApprovalDecision, ApprovalRequest, LiveTurnViewModel, ToolState
 from openrelay.core import SessionRecord, utc_now
 from openrelay.feishu import build_complete_card, build_process_panel_text as build_reply_process_panel_text
 
@@ -95,6 +95,39 @@ class LiveTurnPresenter:
 
     def build_reply_card(self, text: str, *, process_text: str = "") -> dict[str, object]:
         return build_complete_card(text, panel_text=process_text, panel_title="Execution Log")
+
+    def build_approval_resolved_snapshot(
+        self,
+        previous: dict[str, Any],
+        request: ApprovalRequest,
+        decision: ApprovalDecision,
+    ) -> dict[str, Any]:
+        snapshot = dict(previous)
+        history_items = [dict(item) for item in list(previous.get("history_items") or []) if isinstance(item, dict)]
+        updated = False
+        for item in history_items:
+            if item.get("type") != "interaction":
+                continue
+            if str(item.get("interaction_id") or "") != request.approval_id:
+                continue
+            item["state"] = "completed" if decision.decision in {"accept", "accept_for_session", "custom"} else "cancelled"
+            item["detail"] = self._approval_resolution_label(decision)
+            updated = True
+            break
+        if not updated:
+            history_items.append(
+                {
+                    "type": "interaction",
+                    "state": "completed" if decision.decision in {"accept", "accept_for_session", "custom"} else "cancelled",
+                    "interaction_id": request.approval_id,
+                    "title": request.title,
+                    "detail": self._approval_resolution_label(decision),
+                }
+            )
+        snapshot["history_items"] = history_items
+        snapshot["heading"] = "Resuming"
+        snapshot["status"] = self._approval_resolution_label(decision)
+        return snapshot
 
     def _history_items(self, state: LiveTurnViewModel) -> list[dict[str, Any]]:
         items: list[dict[str, Any]] = []
@@ -205,3 +238,14 @@ class LiveTurnPresenter:
             if normalized == prefix or normalized.startswith(f"{prefix} "):
                 return "exploration"
         return "command"
+
+    def _approval_resolution_label(self, decision: ApprovalDecision) -> str:
+        if decision.decision == "accept":
+            return "Approval accepted"
+        if decision.decision == "accept_for_session":
+            return "Approved for session"
+        if decision.decision == "decline":
+            return "Approval declined"
+        if decision.decision == "cancel":
+            return "Approval cancelled"
+        return "Approval resolved"
