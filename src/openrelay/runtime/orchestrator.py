@@ -330,9 +330,7 @@ class RuntimeOrchestrator:
         }
 
     def _build_builtin_legacy_backends(self) -> dict[str, Backend]:
-        legacy = instantiate_builtin_backends(self.config, self.backend_descriptors)
-        legacy.pop("codex", None)
-        return legacy
+        return instantiate_builtin_backends(self.config, self.backend_descriptors)
 
     async def _reply_final(
         self,

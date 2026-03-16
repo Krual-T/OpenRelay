@@ -12,10 +12,8 @@ class BackendDescriptor:
     name: str
     transport: str
     summary: str
-    factory: Callable[[AppConfig], Backend]
+    factory: Callable[[AppConfig], Backend] | None = None
     experimental: bool = False
-
-
 
 def build_builtin_backend_descriptors() -> dict[str, BackendDescriptor]:
     return {
@@ -23,23 +21,13 @@ def build_builtin_backend_descriptors() -> dict[str, BackendDescriptor]:
             name="codex",
             transport="cli-app-server",
             summary="persistent CLI backend via app-server protocol",
-            factory=_build_legacy_codex_backend,
         ),
     }
 
-
-def _build_legacy_codex_backend(config: AppConfig) -> Backend:
-    from openrelay.backends.codex import CodexBackend
-
-    return CodexBackend(
-        config.backend.codex_cli_path,
-        config.backend.default_model,
-        sqlite_home=config.backend.codex_sqlite_home,
-        request_timeout_seconds=config.backend.codex_request_timeout_seconds,
-    )
-
-
-
 def instantiate_builtin_backends(config: AppConfig, descriptors: dict[str, BackendDescriptor] | None = None) -> dict[str, Backend]:
     selected = descriptors or build_builtin_backend_descriptors()
-    return {name: descriptor.factory(config) for name, descriptor in selected.items()}
+    return {
+        name: descriptor.factory(config)
+        for name, descriptor in selected.items()
+        if descriptor.factory is not None
+    }

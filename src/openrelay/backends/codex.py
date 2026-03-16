@@ -26,7 +26,7 @@ from openrelay.agent_runtime import (
     TurnStartedEvent,
     UsageUpdatedEvent,
 )
-from openrelay.backends.base import Backend, BackendContext, build_subprocess_env, safety_to_codex_approval
+from openrelay.backends.base import BackendContext, build_subprocess_env, safety_to_codex_approval
 from openrelay.backends.codex_adapter.mapper import CodexProtocolMapper
 from openrelay.core import BackendReply, SessionRecord
 
@@ -1316,77 +1316,3 @@ class CodexAppServerClient:
         for client in list(cls._instances):
             await client.shutdown()
         cls._instances.clear()
-
-
-class CodexBackend(Backend):
-    name = "codex"
-    _clients: dict[tuple[str, str, str], CodexAppServerClient] = {}
-
-    def __init__(
-        self,
-        codex_path: str,
-        default_model: str,
-        *,
-        sqlite_home: Path,
-        request_timeout_seconds: float | None = DEFAULT_REQUEST_TIMEOUT_SECONDS,
-        interrupt_grace_seconds: float = DEFAULT_INTERRUPT_GRACE_SECONDS,
-        resume_timeout_seconds: float = DEFAULT_RESUME_TIMEOUT_SECONDS,
-    ):
-        self.codex_path = codex_path
-        self.default_model = default_model
-        self.sqlite_home = sqlite_home
-        self.request_timeout_seconds = request_timeout_seconds
-        self.interrupt_grace_seconds = interrupt_grace_seconds
-        self.resume_timeout_seconds = resume_timeout_seconds
-
-    def _client_key(self, session: SessionRecord, context: BackendContext) -> tuple[str, str, str]:
-        return (
-            self.codex_path,
-            str(context.workspace_root),
-            session.session_id,
-        )
-
-    def _get_client(self, session: SessionRecord, context: BackendContext) -> CodexAppServerClient:
-        key = self._client_key(session, context)
-        client = self._clients.get(key)
-        if client is None:
-            client = CodexAppServerClient(
-                codex_path=self.codex_path,
-                workspace_root=context.workspace_root,
-                sqlite_home=self.sqlite_home,
-                model=session.model_override or self.default_model,
-                safety_mode=session.safety_mode,
-                request_timeout_seconds=self.request_timeout_seconds,
-                interrupt_grace_seconds=self.interrupt_grace_seconds,
-                resume_timeout_seconds=self.resume_timeout_seconds,
-            )
-            self._clients[key] = client
-        return client
-
-    async def run(self, session: SessionRecord, prompt: str, context: BackendContext) -> BackendReply:
-        client = self._get_client(session, context)
-        return await client.run_turn(session, prompt, context)
-
-    async def list_threads(self, session: SessionRecord, context: BackendContext, limit: int = 20) -> tuple[list[CodexThreadSummary], str]:
-        client = self._get_client(session, context)
-        return await client.list_threads(limit=limit)
-
-    async def read_thread(
-        self,
-        session: SessionRecord,
-        context: BackendContext,
-        thread_id: str,
-        *,
-        include_turns: bool = True,
-    ) -> CodexThreadDetails:
-        client = self._get_client(session, context)
-        return await client.read_thread(thread_id, include_turns=include_turns)
-
-    async def compact_thread(self, session: SessionRecord, context: BackendContext, thread_id: str) -> dict[str, Any]:
-        client = self._get_client(session, context)
-        return await client.compact_thread(thread_id)
-
-    @classmethod
-    async def shutdown_all(cls) -> None:
-        await CodexAppServerClient.shutdown_all()
-        cls._clients.clear()
