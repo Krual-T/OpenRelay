@@ -4,6 +4,7 @@ import logging
 import pytest
 
 from openrelay.agent_runtime import SessionLocator, SessionSummary, SessionTranscript
+from openrelay.agent_runtime.backend import BackendCapabilities
 from openrelay.agent_runtime.models import TranscriptMessage
 from openrelay.core import AppConfig, BackendConfig, FeishuConfig, IncomingMessage
 from openrelay.presentation.runtime_status import RuntimeStatusPresenter
@@ -34,7 +35,7 @@ class FakeNativeMessage:
 
 class FakeRuntimeService:
     def __init__(self, cwd: str) -> None:
-        self.backends = {"codex": object()}
+        self.backends = {"codex": _RuntimeBackendStub(supports_session_list=True, supports_compact=True)}
         self.threads = [
             FakeNativeThread(
                 "thread_latest",
@@ -87,6 +88,17 @@ class FakeRuntimeService:
 
     async def compact_locator(self, locator: SessionLocator):
         return {"compactId": f"compact_for_{locator.native_session_id}"}
+
+
+class _RuntimeBackendStub:
+    def __init__(self, *, supports_session_list: bool = False, supports_compact: bool = False) -> None:
+        self._capabilities = BackendCapabilities(
+            supports_session_list=supports_session_list,
+            supports_compact=supports_compact,
+        )
+
+    def capabilities(self) -> BackendCapabilities:
+        return self._capabilities
 
 
 class FakeHooks:
@@ -215,10 +227,10 @@ async def test_resume_success_text_is_thread_focused(tmp_path: Path) -> None:
     await router.handle(make_message("/resume latest", suffix="resume_text"), session.base_key, session)
 
     text = str(hooks.replies[-1]["text"])
-    assert "thread_id=thread_latest" in text
+    assert "session_id=thread_latest" in text
     assert "cwd=~/Projects/openrelay" in text
     assert "最近更新：" in text
     assert "最近历史：" not in text
-    assert "已在当前 thread 中 connected；接下来直接继续发消息即可。" in text
+    assert "已在当前顶层对话中连接；接下来直接继续发消息即可。" in text
     assert hooks.replies[-1]["kwargs"]["command_name"] == "/resume"
     store.close()

@@ -468,6 +468,11 @@
 关闭信号：
 
 - runtime turn 完全不再依赖 legacy `Backend`
+- 当前状态：
+  - `src/openrelay/presentation/session.py` 已把 `build_native_thread_list_card(...)` 收敛为 backend-neutral 的 `build_backend_session_list_card(...)`
+  - `src/openrelay/runtime/commands.py` 已把 `NativeThreadSummary/Message/Details` 改为通用 runtime session DTO，并把 `/resume`、`/compact` 的用户可见语义从 `thread/Codex` 收敛为 `session/backend`
+  - `src/openrelay/runtime/panel_service.py` 已改为基于 backend capability 判断是否暴露 session list，而不是简单按 backend 名称分支
+  - 旧 `Backend.run` 测试注入接口仍在 `tests/test_runtime.py` 中残留，但 runtime 默认装配路径已经继续向 runtime backend 主线收敛
 
 ### 阶段 5：补 Claude 同构 adapter
 
@@ -484,6 +489,13 @@
 关闭信号：
 
 - 第二个 backend 可以不走 legacy path 运行
+- 当前状态：
+  - 已新增 `src/openrelay/backends/claude_adapter/transport.py`
+  - 已新增 `src/openrelay/backends/claude_adapter/mapper.py`
+  - 已新增 `src/openrelay/backends/claude_adapter/client.py`
+  - 已新增 `src/openrelay/backends/claude_adapter/backend.py`
+  - `src/openrelay/runtime/orchestrator.py` 与 `src/openrelay/backends/registry.py` 已把 `claude` runtime backend / descriptor 接入默认装配
+  - 当前实现只提供最小 turn 执行能力，不支持 session list/read/compact/approval；这些缺口通过 `BackendCapabilities` 显式暴露，避免错误进入 `/resume` `/compact` 主路径
 
 ## 完成判定
 
@@ -525,3 +537,7 @@
 - `src/openrelay/runtime/live.py` 已删除无调用的 `apply_runtime_event(...)` 桥接函数，并把 `create_live_reply_state(...)`、`build_reply_card(...)` 收敛为委托 `LiveTurnPresenter` 的兼容入口；当前文件主要只剩 `apply_live_progress(...)` 和 process panel / reply card 格式化兼容逻辑。
 - `src/openrelay/runtime/interactions/controller.py` 现已删除 runtime 主路径不再需要的 `emit_progress` 依赖；`src/openrelay/runtime/turn.py` 也已去掉 `on_progress(...) -> apply_live_progress(...)` 入口，说明 approval 交互展示已完全切到统一 runtime event + presenter 投影。
 - `src/openrelay/presentation/live_turn.py` 已补充对已 resolved approval interaction 的保留逻辑；即使 reducer state 在 `approval.resolved` 后清空 `pending_approval`，streaming snapshot 仍能稳定显示 “Resuming / Approval accepted” 这一过渡结果，而不必再借助 legacy progress event 维持 UI。
+- `src/openrelay/presentation/session.py` 已把 `/resume` 卡片收敛为 backend-neutral 的 `build_backend_session_list_card(...)`；`src/openrelay/runtime/commands.py` 也已把 `NativeThread*` DTO 和用户文案改为通用 runtime session 语义，避免 presentation / command 主路径继续暴露 `Codex thread` 身份。
+- `src/openrelay/runtime/commands.py` 与 `src/openrelay/runtime/panel_service.py` 现已按 `BackendCapabilities` 判断 session list / compact 能力，说明 `/resume` `/compact` 主路径不再把 “backend 已注册” 错当作 “支持原生会话管理”。
+- 已新增 `src/openrelay/backends/claude_adapter/` 同构目录，其中 `transport.py` / `mapper.py` / `client.py` / `backend.py` 提供最小 `ClaudeRuntimeBackend`；`src/openrelay/runtime/orchestrator.py` 默认 runtime backend 集合和 `src/openrelay/backends/registry.py` builtin descriptors 也已接入 `claude`。
+- 已新增 `tests/test_claude_runtime_backend.py`，验证 `ClaudeRuntimeBackend` 能通过统一 `AgentRuntimeService` 发布 `session.started` / `assistant.completed` / `turn.completed` 事件，同时 `tests/test_runtime_commands.py`、`tests/test_resume_reply_behavior.py`、`tests/test_runtime_help.py` 已回归通过，说明第二 backend 占位接入与 backend-neutral `/resume` 语义没有破坏当前主路径。

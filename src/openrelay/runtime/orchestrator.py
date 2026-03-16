@@ -6,6 +6,7 @@ from typing import Callable
 
 from openrelay.agent_runtime.service import AgentRuntimeService
 from openrelay.backends import BackendDescriptor, build_builtin_backend_descriptors
+from openrelay.backends.claude_adapter import ClaudeRuntimeBackend
 from openrelay.backends.codex import CodexAppServerClient
 from openrelay.backends.codex_adapter.backend import CodexRuntimeBackend
 from openrelay.core import (
@@ -322,7 +323,12 @@ class RuntimeOrchestrator:
                 workspace_root=self.config.workspace_root,
                 sqlite_home=self.config.backend.codex_sqlite_home,
                 request_timeout_seconds=self.config.backend.codex_request_timeout_seconds,
-            )
+            ),
+            "claude": ClaudeRuntimeBackend(
+                self.config.backend.claude_cli_path,
+                workspace_root=self.config.workspace_root,
+                default_model=self.config.backend.default_model,
+            ),
         }
 
     async def _reply_final(

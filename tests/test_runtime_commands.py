@@ -4,6 +4,7 @@ from pathlib import Path
 import pytest
 
 from openrelay.agent_runtime import SessionLocator, SessionSummary, SessionTranscript
+from openrelay.agent_runtime.backend import BackendCapabilities
 from openrelay.agent_runtime.models import TranscriptMessage
 from openrelay.core import AppConfig, BackendConfig, FeishuConfig, IncomingMessage
 from openrelay.presentation.runtime_status import RuntimeStatusPresenter
@@ -55,7 +56,7 @@ class FakeRuntimeService:
         self.list_calls: list[int] = []
         self.read_calls: list[str] = []
         self.compact_calls: list[str] = []
-        self.backends = {"codex": object()}
+        self.backends = {"codex": _RuntimeBackendStub(supports_session_list=True, supports_compact=True)}
         self.threads = []
         for index in range(1, 16):
             thread_id = "thread_latest" if index == 1 else "thread_older" if index == 2 else f"thread_{index}"
@@ -117,6 +118,17 @@ class FakeRuntimeService:
     async def compact_locator(self, locator: SessionLocator):
         self.compact_calls.append(locator.native_session_id)
         return {"compactId": "compact_1"}
+
+
+class _RuntimeBackendStub:
+    def __init__(self, *, supports_session_list: bool = False, supports_compact: bool = False) -> None:
+        self._capabilities = BackendCapabilities(
+            supports_session_list=supports_session_list,
+            supports_compact=supports_compact,
+        )
+
+    def capabilities(self) -> BackendCapabilities:
+        return self._capabilities
 
 
 class FakeHooks:
@@ -336,7 +348,7 @@ async def test_runtime_command_router_rejects_legacy_resume_list_alias(tmp_path:
     await router.handle(make_message("/resume list", suffix="resume_legacy_list"), session.base_key, session)
 
     assert hooks.session_list_calls == []
-    assert hooks.replies[-1]["text"] == "resume 参数无效：`list` 已移除；直接使用 /resume\n使用 /resume 打开 Codex 会话卡片，或 /resume [latest|<序号>|<thread_id>|<local_session_id>] 直接连接。"
+    assert hooks.replies[-1]["text"] == "resume 参数无效：`list` 已移除；直接使用 /resume\n使用 /resume 打开后端会话卡片，或 /resume [latest|<序号>|<session_id>|<local_session_id>] 直接连接。"
     store.close()
 
 
@@ -363,7 +375,7 @@ async def test_runtime_command_router_rejects_resume_inside_thread(tmp_path: Pat
 
     assert handled is True
     assert hooks.session_list_calls == []
-    assert hooks.replies[-1]["text"] == "`/resume` 只允许在私聊顶层使用；子 thread 会固定绑定当前 Codex 会话。"
+    assert hooks.replies[-1]["text"] == "`/resume` 只允许在私聊顶层使用；子 thread 会固定绑定当前后端会话。"
     store.close()
 
 
@@ -378,8 +390,8 @@ async def test_runtime_command_router_resume_latest_binds_native_thread_and_retu
     assert rebound is not None
     assert rebound.session_id == session.session_id
     assert rebound.native_session_id == "thread_latest"
-    assert "thread_id=thread_latest" in str(hooks.replies[-1]["text"])
-    assert "已在当前 thread 中 connected；接下来直接继续发消息即可。" in str(hooks.replies[-1]["text"])
+    assert "session_id=thread_latest" in str(hooks.replies[-1]["text"])
+    assert "已在当前顶层对话中连接；接下来直接继续发消息即可。" in str(hooks.replies[-1]["text"])
     store.close()
 
 
@@ -396,7 +408,7 @@ async def test_runtime_command_router_resume_local_session_id_maps_to_native_thr
     assert rebound is not None
     assert rebound.session_id == original.session_id
     assert rebound.native_session_id == "thread_older"
-    assert "thread_id=thread_older" in str(hooks.replies[-1]["text"])
+    assert "session_id=thread_older" in str(hooks.replies[-1]["text"])
     store.close()
 
 
@@ -409,7 +421,7 @@ async def test_runtime_command_router_compact_current_native_thread(tmp_path: Pa
 
     await router.handle(make_message("/compact", suffix="compact"), session.base_key, session)
 
-    assert hooks.replies[-1]["text"] == "已发起 Codex compact：thread_latest\ncompact_id=compact_1"
+    assert hooks.replies[-1]["text"] == "已发起 codex compact：thread_latest\ncompact_id=compact_1"
     store.close()
 
 

@@ -9,7 +9,7 @@ from openrelay.backends import BackendDescriptor
 from openrelay.core import AppConfig, IncomingMessage, SessionRecord
 from openrelay.feishu import FeishuMessenger
 from openrelay.presentation.panel import RuntimePanelPresenter
-from openrelay.presentation.session import SessionPresentation, build_native_thread_list_card
+from openrelay.presentation.session import SessionPresentation, build_backend_session_list_card
 from openrelay.session import DEFAULT_SESSION_LIST_PAGE_SIZE
 from openrelay.session.browser import SessionBrowser, SessionSortMode
 from openrelay.session.shortcuts import SessionShortcutService
@@ -61,7 +61,7 @@ class RuntimePanelService:
     ) -> None:
         _ = session_key, sort_mode
         action_context = self.reply_policy.build_card_action_context(message, session_key)
-        card, fallback_text = await self._build_native_thread_list_payload(message, session, page, action_context)
+        card, fallback_text = await self._build_backend_session_list_payload(message, session, page, action_context)
         try:
             await self.messenger.send_interactive_card(
                 message.chat_id,
@@ -74,7 +74,7 @@ class RuntimePanelService:
         except Exception:
             await self.reply_fallback(message, fallback_text, "/resume")
 
-    async def _build_native_thread_list_payload(
+    async def _build_backend_session_list_payload(
         self,
         message: IncomingMessage,
         session: SessionRecord,
@@ -82,9 +82,20 @@ class RuntimePanelService:
         action_context: dict[str, str],
     ) -> tuple[dict[str, object], str]:
         _ = message
-        if self.runtime_service is None or session.backend not in self.runtime_service.backends:
+        backend = None if self.runtime_service is None else self.runtime_service.backends.get(session.backend)
+        if backend is None or not backend.capabilities().supports_session_list:
             fallback = "当前后端不支持 `/resume` 原生命令。"
-            return build_native_thread_list_card({"action_context": action_context, "page": max(page, 1), "current_thread_id": session.native_session_id}), fallback
+            return (
+                build_backend_session_list_card(
+                    {
+                        "action_context": action_context,
+                        "page": max(page, 1),
+                        "backend_name": session.backend,
+                        "current_session_id": session.native_session_id,
+                    }
+                ),
+                fallback,
+            )
 
         rows, _cursor = await self.runtime_service.list_sessions(
             session.backend,
@@ -93,13 +104,13 @@ class RuntimePanelService:
                 cwd=session.cwd,
             ),
         )
-        return self._build_thread_list_card_from_rows(
+        return self._build_session_list_card_from_rows(
             session,
             page,
             action_context,
             [
                 {
-                    "thread_id": row.native_session_id,
+                    "session_id": row.native_session_id,
                     "preview": row.preview,
                     "cwd": row.cwd,
                     "updated_at": row.updated_at,
@@ -110,20 +121,20 @@ class RuntimePanelService:
             ],
         )
 
-    def _build_thread_list_card_from_rows(
+    def _build_session_list_card_from_rows(
         self,
         session: SessionRecord,
         page: int,
         action_context: dict[str, str],
-        threads: list[dict[str, str]],
+        sessions: list[dict[str, str]],
     ) -> tuple[dict[str, object], str]:
-        thread_entries: list[dict[str, object]] = []
+        session_entries: list[dict[str, object]] = []
         start = (max(page, 1) - 1) * DEFAULT_SESSION_LIST_PAGE_SIZE
-        visible_threads = threads[start:start + DEFAULT_SESSION_LIST_PAGE_SIZE]
-        for index, row in enumerate(visible_threads, start=start + 1):
-            thread_id = str(row.get("thread_id") or "").strip()
+        visible_sessions = sessions[start:start + DEFAULT_SESSION_LIST_PAGE_SIZE]
+        for index, row in enumerate(visible_sessions, start=start + 1):
+            session_id = str(row.get("session_id") or "").strip()
             preview = self.session_presentation.shorten(str(row.get("preview") or ""), 96)
-            title = str(row.get("name") or preview or thread_id or f"thread {index}")
+            title = str(row.get("name") or preview or session_id or f"session {index}")
             meta: list[str] = []
             updated_at = str(row.get("updated_at") or "").strip()
             if updated_at:
@@ -134,36 +145,37 @@ class RuntimePanelService:
             cwd = str(row.get("cwd") or "").strip()
             if cwd:
                 meta.append(f"cwd={self.workspace.format_cwd(cwd, session)}")
-            meta.append(f"id={thread_id}")
-            thread_entries.append(
+            meta.append(f"id={session_id}")
+            session_entries.append(
                 {
                     "index": index,
-                    "thread_id": thread_id,
-                    "active": thread_id == session.native_session_id,
+                    "session_id": session_id,
+                    "active": session_id == session.native_session_id,
                     "title": self.session_presentation.shorten(title, 56),
                     "meta": " · ".join(meta),
                     "preview": preview,
                 }
             )
 
-        card = build_native_thread_list_card(
+        card = build_backend_session_list_card(
             {
                 "page": max(page, 1),
                 "has_previous": page > 1,
-                "has_next": start + DEFAULT_SESSION_LIST_PAGE_SIZE < len(threads),
-                "current_thread_id": session.native_session_id,
+                "has_next": start + DEFAULT_SESSION_LIST_PAGE_SIZE < len(sessions),
+                "backend_name": session.backend,
+                "current_session_id": session.native_session_id,
                 "action_context": action_context,
-                "threads": thread_entries,
+                "sessions": session_entries,
             }
         )
-        lines = [f"Codex 会话列表（第 {max(page, 1)} 页）："]
-        if thread_entries:
-            for entry in thread_entries:
+        lines = [f"{session.backend} 会话列表（第 {max(page, 1)} 页）："]
+        if session_entries:
+            for entry in session_entries:
                 lines.append(f"{entry['index']}. {entry['title']}")
                 lines.append(f"   {entry['meta']}")
                 if entry["preview"]:
                     lines.append(f"   预览：{entry['preview']}")
         else:
-            lines.append("当前没有可连接的 Codex 会话。")
-        lines.extend(["", "直接点卡片按钮即可连接；也可以手输 `/resume <thread_id>`。"])
+            lines.append("当前没有可连接的后端会话。")
+        lines.extend(["", "直接点卡片按钮即可连接；也可以手输 `/resume <session_id>`。"])
         return card, "\n".join(lines)

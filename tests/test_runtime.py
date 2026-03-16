@@ -794,8 +794,8 @@ async def test_runtime_resume_and_compact_use_agent_runtime_when_configured(tmp_
     await runtime.dispatch_message(make_message("/compact", event_suffix="runtime_compact"))
 
     assert resumed.native_session_id == "runtime_native_1"
-    assert "已连接 Codex 会话" in messenger.messages[-2]
-    assert messenger.messages[-1] == "已发起 Codex compact：runtime_native_1\ncompact_id=compact:runtime_native_1"
+    assert "已连接 codex 会话" in messenger.messages[-2]
+    assert messenger.messages[-1] == "已发起 codex compact：runtime_native_1\ncompact_id=compact:runtime_native_1"
     assert runtime_backend.compacted == ["runtime_native_1"]
     await runtime.shutdown()
 
@@ -997,7 +997,7 @@ async def test_runtime_resume_list_sends_paginated_sortable_card(tmp_path: Path)
     first_card = messenger.cards[-1]
     first_text = extract_card_text(first_card)
     first_commands = extract_card_commands(first_card)
-    assert "Codex 会话" in first_text
+    assert "运行时会话" in first_text
     assert "id=native_old" in first_text
     assert "/resume native_old" in first_commands
     assert messenger.card_calls[-1]["force_new_message"] is True
@@ -1018,8 +1018,8 @@ async def test_runtime_resume_list_sends_paginated_sortable_card(tmp_path: Path)
     assert "第 `2` 页" in extract_card_text(messenger.cards[-1])
 
     await runtime.dispatch_message(make_message(f"/resume {older.session_id}", event_suffix="resume_old"))
-    assert messenger.messages[-1].startswith("已连接 Codex 会话：name native_old")
-    assert "thread_id=native_old" in messenger.messages[-1]
+    assert messenger.messages[-1].startswith("已连接 codex 会话：name native_old")
+    assert "session_id=native_old" in messenger.messages[-1]
     await runtime.shutdown()
 
 
@@ -1583,7 +1583,7 @@ async def test_runtime_card_stream_rolls_over_to_new_card_in_same_thread_before_
         {"receive_id": "oc_1", "reply_to_message_id": "om_stream_rollover", "root_id": "om_root_existing"}
     ]
     assert sessions[0].needs_rollover() is True
-    assert sessions[0].updates[-1]["freeze_notice"] == "此卡已停止流式更新，请继续查看当前 thread 中的新卡。"
+    assert sessions[0].updates[-1]["freeze_notice"] == "此卡已停止流式更新，请继续查看当前顶层对话中的新卡。"
     assert sessions[1].start_calls == [
         {"receive_id": "oc_1", "reply_to_message_id": "om_stream_rollover", "root_id": "om_root_existing"}
     ]
@@ -2127,7 +2127,7 @@ async def test_runtime_resume_card_action_connects_thread_to_native_session(tmp_
 
     await runtime.dispatch_message(connect_action.message)
 
-    assert messenger.messages[-1].startswith("已连接 Codex 会话：name native_old")
+    assert messenger.messages[-1].startswith("已连接 codex 会话：name native_old")
     assert messenger.text_calls[-1]["reply_to_message_id"] == "om_resume_card"
     assert messenger.text_calls[-1]["force_new_message"] is False
 
@@ -2369,7 +2369,7 @@ async def test_runtime_top_level_resume_list_is_not_blocked_by_active_thread_run
     await runtime.dispatch_message(make_message("/resume", event_suffix="resume_lock_list"))
 
     assert messenger.cards
-    assert "Codex 会话" in extract_card_text(messenger.cards[-1])
+    assert "运行时会话" in extract_card_text(messenger.cards[-1])
     assert all("已收到补充" not in message for message in messenger.messages)
 
     await runtime.dispatch_message(make_message("/stop", event_suffix="resume_lock_stop"))
