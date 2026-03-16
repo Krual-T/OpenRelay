@@ -138,7 +138,7 @@
 
 ### [x] OR-TASK-008 运行时模块边界收敛
 - **当前状态**：本轮已收敛。
-- **已完成证据**：`docs/design/runtime-modularization.md`、`src/openrelay/help_renderer.py`、`src/openrelay/session_browser.py`、`src/openrelay/runtime_commands.py`、`src/openrelay/runtime.py`、`src/openrelay/session_ux.py`、`tests/test_help_renderer.py`、`tests/test_session_browser.py`、`tests/test_runtime_commands.py`。
+- **已完成证据**：`docs/archived/runtime-modularization.md`、`src/openrelay/help_renderer.py`、`src/openrelay/session_browser.py`、`src/openrelay/runtime_commands.py`、`src/openrelay/runtime.py`、`src/openrelay/session_ux.py`、`tests/test_help_renderer.py`、`tests/test_session_browser.py`、`tests/test_runtime_commands.py`。
 - **本轮已收敛**：
   - [x] `/help` 展示逻辑从 `runtime.py` 抽成独立模块，并保持现有行为。
   - [x] 会话列表查询 / 恢复与展示格式化拆层，为 `/resume` 卡片分页排序预留稳定接口。
