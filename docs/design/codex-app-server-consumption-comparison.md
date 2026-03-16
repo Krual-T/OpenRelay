@@ -24,23 +24,23 @@
 ### 调用关系
 
 ```mermaid
-flowchart LR
-  A[Feishu IncomingMessage] --> B[RuntimeOrchestrator.dispatch_message]
-  B --> C[BackendTurnSession.run_with_agent_runtime]
-  C --> D[AgentRuntimeService.run_turn]
-  D --> E[CodexRuntimeBackend.start_turn]
-  E --> F[CodexSessionClient.start_turn]
-  F --> G[CodexRpcTransport.request]
-  G --> H[codex app-server RPC<br/>thread/start|resume + turn/start]
+flowchart TD
+  A[Feishu IncomingMessage]
+  B[RuntimeOrchestrator<br/>dispatch_message]
+  C[BackendTurnSession<br/>run_with_agent_runtime]
+  D[AgentRuntimeService<br/>run_turn]
+  E[CodexRuntimeBackend<br/>start_turn]
+  F[CodexSessionClient +<br/>CodexRpcTransport]
+  G[codex app-server RPC<br/>thread/start|resume<br/>turn/start]
+  H[notifications + server requests<br/>thread/started turn/started item/*]
+  I[CodexTurnStream +<br/>CodexProtocolMapper]
+  J[Unified RuntimeEvent]
+  K[event_hub + turn_registry<br/>LiveTurnViewModel]
+  L[LiveTurnPresenter]
+  M[Feishu streaming card<br/>final reply]
 
-  H --> I[app-server notifications<br/>thread/started turn/started item/*]
-  I --> J[CodexTurnStream.handle_notification]
-  J --> K[CodexProtocolMapper.map_notification]
-  K --> L[Unified RuntimeEvent]
-  L --> M[AgentRuntimeService event_hub + turn_registry]
-  M --> N[LiveTurnViewModel]
-  N --> O[LiveTurnPresenter.build_snapshot]
-  O --> P[Feishu streaming card / final reply]
+  A --> B --> C --> D --> E --> F --> G
+  G --> H --> I --> J --> K --> L --> M
 ```
 
 ### 分层解释
@@ -138,23 +138,33 @@ flowchart LR
 ### 调用关系
 
 ```mermaid
-flowchart LR
-  A[Terminal input] --> B[App::run]
-  B --> C[InProcessAppServerClient.next_event]
-  C --> D[handle_app_server_event]
-  D --> D1[ServerNotification: ignore]
-  D --> D2[LegacyNotification: ignore]
-  D --> D3[ServerRequest: reject]
+flowchart TD
+  A[Terminal input]
+  B[App::run]
 
-  B --> E[ChatWidget / App uses direct-core Op/Event]
-  E --> F[ThreadManager / thread creation]
-  F --> G[thread.next_event listener tasks]
-  G --> H[AppEvent::ThreadEvent]
-  H --> I[App / ChatWidget state]
-  I --> J[TUI render]
+  C[InProcessAppServerClient<br/>next_event]
+  D[handle_app_server_event]
+  D1[ServerNotification<br/>ignore]
+  D2[LegacyNotification<br/>ignore]
+  D3[ServerRequest<br/>reject]
 
-  C -. migration path only .-> D
-  G -. current primary event path .-> H
+  E[ChatWidget / App<br/>direct-core Op/Event]
+  F[ThreadManager /<br/>thread creation]
+  G[thread.next_event<br/>listener tasks]
+  H[AppEvent::ThreadEvent]
+  I[App / ChatWidget state]
+  J[TUI render]
+
+  A --> B
+  B --> C --> D
+  D --> D1
+  D --> D2
+  D --> D3
+
+  B --> E --> F --> G --> H --> I --> J
+
+  D -. migration path only .-> I
+  G -. current primary event path .-> I
 ```
 
 ### 分层解释
