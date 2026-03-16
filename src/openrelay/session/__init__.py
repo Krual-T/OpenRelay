@@ -13,9 +13,11 @@ from .browser import (
     SessionSortMode,
 )
 from .lifecycle import SessionLifecycleResolver
+from .models import RelayScope, RelaySessionBinding
 from .mutations import SessionMutationService
 from .shortcuts import SessionShortcutService
 from .scope import SessionScopeResolver
+from .store import SessionBindingStore
 from .workspace import SessionWorkspaceService
 
 __all__ = [
@@ -27,6 +29,7 @@ __all__ = [
     "SESSION_SORT_MODES",
     "SESSION_SORT_UPDATED",
     "SessionBrowser",
+    "SessionBindingStore",
     "SessionLifecycleResolver",
     "SessionListEntry",
     "SessionListPage",
@@ -36,4 +39,6 @@ __all__ = [
     "SessionMutationService",
     "SessionShortcutService",
     "SessionWorkspaceService",
+    "RelayScope",
+    "RelaySessionBinding",
 ]
