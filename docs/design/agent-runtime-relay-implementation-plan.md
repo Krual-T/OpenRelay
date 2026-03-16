@@ -521,3 +521,4 @@
 - `src/openrelay/presentation/live_turn.py` 已新增 approval resolved 过渡态投影；`src/openrelay/runtime/turn.py` 不再通过 `apply_live_progress(...)` 手工补 `interaction.resolved`，而是直接让 presenter 更新 snapshot，进一步缩小 legacy progress bridge 的剩余范围。
 - `src/openrelay/runtime/turn.py` 已移除 runtime 主路径中的 `run.started` 进度注入和未使用的 `on_partial_text(...)` 直写逻辑；assistant partial 现在完全依赖 reducer state + presenter snapshot 投影，legacy live-state 直接写入点继续减少。
 - `src/openrelay/presentation/live_turn.py` 现已接管 `native_session_id` 同步和 spinner 帧推进的 snapshot 变换；`src/openrelay/runtime/turn.py` 不再直接写 `live_state[\"native_session_id\"]` 或 `live_state[\"spinner_frame\"]`，剩余的 live-state 管理已基本集中到 presenter。
+- `src/openrelay/runtime/live.py` 已删除无调用的 `apply_runtime_event(...)` 桥接函数，并把 `create_live_reply_state(...)`、`build_reply_card(...)` 收敛为委托 `LiveTurnPresenter` 的兼容入口；当前文件主要只剩 `apply_live_progress(...)` 和 process panel / reply card 格式化兼容逻辑。
