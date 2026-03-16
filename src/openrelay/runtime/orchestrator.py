@@ -14,6 +14,7 @@ from openrelay.core import (
     SessionRecord,
 )
 from openrelay.feishu import FeishuMessenger, FeishuStreamingSession, FeishuTypingManager
+from openrelay.presentation.live_turn import LiveTurnPresenter
 from openrelay.presentation.panel import RuntimePanelPresenter
 from openrelay.presentation.runtime_status import RuntimeStatusPresenter
 from openrelay.presentation.session import SessionPresentation
@@ -72,6 +73,7 @@ class RuntimeOrchestrator:
         self.typing_manager = typing_manager or FeishuTypingManager(messenger)
         self.session_browser = SessionBrowser(config, store)
         self.session_presentation = SessionPresentation(config, store)
+        self.live_turn_presenter = LiveTurnPresenter()
         self.session_workspace = SessionWorkspaceService(config)
         self.session_shortcuts = SessionShortcutService(config, store, self.session_workspace)
         self.session_mutations = SessionMutationService(config, store, self.session_presentation)
@@ -307,6 +309,7 @@ class RuntimeOrchestrator:
             build_session_key=self.session_scope.build_session_key,
             remember_outbound_aliases=self.session_scope.remember_outbound_aliases,
             reply_final=self._reply_final,
+            live_turn_presenter=self.live_turn_presenter,
             binding_store=self.binding_store,
             runtime_service=self.agent_runtime,
         )

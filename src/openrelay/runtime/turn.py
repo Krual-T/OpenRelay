@@ -28,11 +28,12 @@ from openrelay.feishu import (
     STREAMING_ROLLOVER_NOTICE,
     build_streaming_content,
 )
+from openrelay.presentation.live_turn import LiveTurnPresenter
 from openrelay.session import RelaySessionBinding, SessionBindingStore
 from openrelay.storage import StateStore
 
 from .interactions import RunInteractionController
-from .live import apply_live_progress, apply_runtime_event, create_live_reply_state
+from .live import apply_live_progress, apply_runtime_event
 from .replying import ReplyRoute
 
 
@@ -66,6 +67,7 @@ class TurnRuntimeContext:
     build_session_key: Callable[[IncomingMessage], str]
     remember_outbound_aliases: Callable[[IncomingMessage, str, list[tuple[str, ...]]], None]
     reply_final: Callable[[IncomingMessage, str, FeishuStreamingSession | None, dict[str, Any] | None], Awaitable[None]]
+    live_turn_presenter: LiveTurnPresenter | None = None
     binding_store: SessionBindingStore | None = None
     runtime_service: AgentRuntimeService | None = None
 
@@ -85,10 +87,8 @@ class BackendTurnSession:
         self.spinner_task: asyncio.Task[None] | None = None
         self.streaming_update_event = asyncio.Event()
         self.pending_streaming_states: deque[dict[str, Any]] = deque()
-        self.live_state = create_live_reply_state(session, runtime.session_ux.format_cwd)
-        if session.backend != "codex":
-            self.live_state["heading"] = "Generating reply"
-            self.live_state["status"] = "Waiting for streamed output"
+        self.presenter = runtime.live_turn_presenter or LiveTurnPresenter()
+        self.live_state = self.presenter.create_initial_snapshot(session, runtime.session_ux.format_cwd)
 
     async def run(self, message_summary: str, backend_prompt: str) -> None:
         try:
@@ -229,11 +229,19 @@ class BackendTurnSession:
         state = runtime_service.turn_registry.read(event.session_id, event.turn_id) if event.turn_id else None
         if isinstance(event, SessionStartedEvent):
             await self.persist_native_thread_id(event.native_session_id)
-        apply_runtime_event(
-            self.live_state,
-            event,
-            assistant_text=state.assistant_text if state is not None else "",
-        )
+        if state is not None:
+            self.live_state = self.presenter.build_snapshot(
+                state,
+                previous=self.live_state,
+                session=self.session,
+                format_cwd=self.runtime.session_ux.format_cwd,
+            )
+        else:
+            apply_runtime_event(
+                self.live_state,
+                event,
+                assistant_text="",
+            )
         if isinstance(event, AssistantDeltaEvent) and state is not None:
             self.last_live_text = ""
         if isinstance(event, ApprovalRequestedEvent):

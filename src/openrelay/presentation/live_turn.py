@@ -1,0 +1,207 @@
+from __future__ import annotations
+
+from typing import Any, Callable
+
+from openrelay.agent_runtime import LiveTurnViewModel, ToolState
+from openrelay.core import SessionRecord, utc_now
+from openrelay.feishu import build_complete_card, build_process_panel_text as build_reply_process_panel_text
+
+
+class LiveTurnPresenter:
+    def create_initial_snapshot(
+        self,
+        session: SessionRecord,
+        format_cwd: Callable[[str, SessionRecord | None, str | None], str],
+    ) -> dict[str, Any]:
+        return {
+            "session_id": session.session_id,
+            "native_session_id": session.native_session_id,
+            "cwd": format_cwd(session.cwd, session),
+            "history": [],
+            "history_items": [],
+            "heading": "Generating reply",
+            "status": "Waiting for streamed output",
+            "current_command": "",
+            "last_command": None,
+            "commands": [],
+            "last_reasoning": "",
+            "reasoning_text": "",
+            "reasoning_started_at": "",
+            "reasoning_elapsed_ms": 0,
+            "partial_text": "",
+            "spinner_frame": 0,
+            "started_at": utc_now(),
+        }
+
+    def build_snapshot(
+        self,
+        state: LiveTurnViewModel,
+        *,
+        previous: dict[str, Any] | None = None,
+        session: SessionRecord | None = None,
+        format_cwd: Callable[[str, SessionRecord | None, str | None], str] | None = None,
+    ) -> dict[str, Any]:
+        previous = previous or {}
+        heading, status = self.build_status_heading(state)
+        snapshot = {
+            "session_id": state.session_id,
+            "native_session_id": state.native_session_id,
+            "cwd": format_cwd(session.cwd, session) if (session is not None and format_cwd is not None) else str(previous.get("cwd") or ""),
+            "history": list(previous.get("history") or []),
+            "history_items": self._history_items(state),
+            "heading": heading,
+            "status": status,
+            "current_command": self._current_command(state),
+            "last_command": previous.get("last_command"),
+            "commands": [],
+            "last_reasoning": state.reasoning_text,
+            "reasoning_text": state.reasoning_text,
+            "reasoning_started_at": previous.get("reasoning_started_at") or "",
+            "reasoning_elapsed_ms": previous.get("reasoning_elapsed_ms") or 0,
+            "partial_text": state.assistant_text,
+            "spinner_frame": int(previous.get("spinner_frame") or 0),
+            "started_at": previous.get("started_at") or utc_now(),
+            "committed_partial_text": previous.get("committed_partial_text") or "",
+        }
+        if state.reasoning_text and not snapshot["reasoning_started_at"]:
+            snapshot["reasoning_started_at"] = previous.get("started_at") or utc_now()
+        return snapshot
+
+    def build_process_text(self, state: dict[str, Any] | LiveTurnViewModel) -> str:
+        snapshot = state if isinstance(state, dict) else self.build_snapshot(state)
+        return build_reply_process_panel_text(snapshot)
+
+    def build_final_reply(self, state: LiveTurnViewModel) -> str:
+        return state.assistant_text
+
+    def build_status_heading(self, state: LiveTurnViewModel) -> tuple[str, str]:
+        if state.pending_approval is not None:
+            return ("Waiting for approval", state.pending_approval.title or "Waiting for user input")
+        if state.status == "completed":
+            return ("Finishing up", "Wrapping up output")
+        if state.status == "failed":
+            return ("Run failed", state.error_message or "The run failed")
+        if state.status == "interrupted":
+            return ("Interrupted", state.error_message or "The run was interrupted")
+        if state.tools:
+            active_tool = self._active_tool(state)
+            if active_tool is not None:
+                return self._tool_status(active_tool)
+        if state.reasoning_text:
+            return ("Thinking", "Working through the task")
+        if state.assistant_text:
+            return ("Generating reply", "Streaming output")
+        return ("Generating reply", "Waiting for streamed output")
+
+    def build_reply_card(self, text: str, *, process_text: str = "") -> dict[str, object]:
+        return build_complete_card(text, panel_text=process_text, panel_title="Execution Log")
+
+    def _history_items(self, state: LiveTurnViewModel) -> list[dict[str, Any]]:
+        items: list[dict[str, Any]] = []
+        if state.reasoning_text:
+            items.append(
+                {
+                    "type": "reasoning",
+                    "state": "running" if state.status == "running" else "completed",
+                    "title": "Thinking" if state.status == "running" else "Thought",
+                    "text": state.reasoning_text,
+                }
+            )
+        for tool in state.tools:
+            item = self._tool_history_item(tool)
+            if item is not None:
+                items.append(item)
+        if state.plan_steps:
+            plan_lines = [f"{step.step} [{step.status}]" for step in state.plan_steps if step.step.strip()]
+            if plan_lines:
+                items.append(
+                    {
+                        "type": "plan",
+                        "state": "running" if state.status == "running" else "completed",
+                        "title": "Plan",
+                        "detail": "\n".join(plan_lines),
+                    }
+                )
+        if state.pending_approval is not None:
+            items.append(
+                {
+                    "type": "interaction",
+                    "state": "running",
+                    "interaction_id": state.pending_approval.approval_id,
+                    "title": state.pending_approval.title,
+                    "detail": state.pending_approval.description,
+                }
+            )
+        return items
+
+    def _tool_history_item(self, tool: ToolState) -> dict[str, Any] | None:
+        if tool.kind == "command":
+            return {
+                "type": "command",
+                "state": "running" if tool.status == "running" else "completed",
+                "mode": self._command_mode(tool.preview or tool.title),
+                "title": "Running shell command" if tool.status == "running" else "Ran shell command",
+                "command_id": tool.tool_id,
+                "command": tool.preview or tool.title,
+                "exit_code": tool.exit_code,
+                "output_preview": tool.detail,
+            }
+        if tool.kind == "web_search":
+            return {
+                "type": "web_search",
+                "state": "running" if tool.status == "running" else "completed",
+                "title": "Searching web" if tool.status == "running" else "Searched web",
+                "search_id": tool.tool_id,
+                "query": tool.preview,
+                "queries": [tool.preview] if tool.preview else [],
+            }
+        if tool.kind == "file_change":
+            return {
+                "type": "file_change",
+                "state": "running" if tool.status == "running" else "completed",
+                "title": "Updating files" if tool.status == "running" else "Updated files",
+                "file_change_id": tool.tool_id,
+                "changes": tool.provider_payload.get("changes") if isinstance(tool.provider_payload.get("changes"), list) else [],
+            }
+        if tool.kind == "custom":
+            return {
+                "type": "collab",
+                "state": "running" if tool.status == "running" else "completed",
+                "title": tool.title or "Updating agent",
+                "collab_id": tool.tool_id,
+                "tool": tool.title,
+                "prompt": tool.preview,
+                "receiver_thread_ids": list(tool.provider_payload.get("receiverThreadIds") or []),
+                "agents": tool.provider_payload.get("agentsStates") if isinstance(tool.provider_payload.get("agentsStates"), dict) else {},
+            }
+        return None
+
+    def _active_tool(self, state: LiveTurnViewModel) -> ToolState | None:
+        for tool in reversed(state.tools):
+            if tool.status == "running":
+                return tool
+        return None
+
+    def _tool_status(self, tool: ToolState) -> tuple[str, str]:
+        if tool.kind == "command":
+            return ("Running shell command", tool.preview or tool.title or "Executing command")
+        if tool.kind == "web_search":
+            return ("Searching web", tool.preview or "Running web search")
+        if tool.kind == "file_change":
+            return ("Updating files", tool.preview or "Applying file changes")
+        return (tool.title or "Running tool", tool.preview or tool.title or "Running tool")
+
+    def _current_command(self, state: LiveTurnViewModel) -> str:
+        active_tool = self._active_tool(state)
+        if active_tool is None or active_tool.kind != "command":
+            return ""
+        return active_tool.preview or active_tool.title
+
+    def _command_mode(self, command_text: str) -> str:
+        normalized = " ".join(str(command_text or "").split()).strip().lower()
+        if not normalized:
+            return "command"
+        for prefix in ("rg", "grep", "cat", "sed", "find", "fd", "ls", "tree", "pwd", "git status", "git diff", "git show", "git log"):
+            if normalized == prefix or normalized.startswith(f"{prefix} "):
+                return "exploration"
+        return "command"
