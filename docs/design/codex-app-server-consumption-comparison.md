@@ -1,6 +1,6 @@
 # Codex 应用服务消费链路对比
 
-更新时间：2026-03-16
+更新时间：2026-03-17
 
 ## 这份文档要解决什么问题
 
@@ -151,6 +151,27 @@ flowchart TD
 
 ## Openrelay：从入口到请求发出
 
+先看主请求链的纵向图，再读下面的代码说明会更快。
+
+```mermaid
+flowchart TD
+  A[飞书消息进入 RuntimeOrchestrator]
+  B[BackendTurnSession.run_with_agent_runtime]
+  C[AgentRuntimeService.run_turn]
+  D[CodexRuntimeBackend.start_turn]
+  E[CodexSessionClient._ensure_thread]
+  F{已有 native_session_id?}
+  G[thread/resume]
+  H[thread/start]
+  I[CodexProtocolMapper.build_turn_start_params]
+  J[turn/start]
+
+  A --> B --> C --> D --> E --> F
+  F -->|是| G --> I
+  F -->|否| H --> I
+  I --> J
+```
+
 ### 第一个业务入口
 
 用户消息先进入：
@@ -223,6 +244,25 @@ flowchart TD
 这一步很重要，因为后续 stop、resume、read transcript 都依赖这个标识。
 
 ## Openrelay：事件是怎么回来的
+
+这一段最容易口头化，建议直接对着下面这张图看。
+
+```mermaid
+flowchart TD
+  A[app-server 通知 notification]
+  B[CodexSessionClient 注册订阅]
+  C[CodexTurnStream.handle_notification]
+  D[CodexProtocolMapper.map_notification]
+  E[统一运行时事件 RuntimeEvent]
+  F[RuntimeEventHub.publish]
+  G[AgentRuntimeService._on_runtime_event]
+  H[LiveTurnRegistry.apply]
+  I[LiveTurnViewModel]
+  J[LiveTurnPresenter.build_snapshot]
+  K[飞书卡片刷新]
+
+  A --> B --> C --> D --> E --> F --> G --> H --> I --> J --> K
+```
 
 ### 事件订阅在哪里挂上去
 
@@ -630,6 +670,26 @@ flowchart TD
 
 ### 6. 命令审批请求从应用服务来到 Feishu，中间经过了哪些对象
 
+先看闭环图，下面再看每一层各做什么。
+
+```mermaid
+flowchart TD
+  A[item/commandExecution/requestApproval]
+  B[CodexTurnStream.handle_server_request]
+  C[CodexProtocolMapper.map_server_request]
+  D[ApprovalRequestedEvent]
+  E[BackendTurnSession._handle_runtime_event]
+  F[RunInteractionController.request_approval]
+  G[用户在飞书点同意或拒绝]
+  H[AgentRuntimeService.resolve_approval]
+  I[CodexSessionClient.resolve_approval]
+  J[CodexTurnStream.resolve_approval]
+  K[transport.send_result]
+  L[app-server 继续执行并回推后续事件]
+
+  A --> B --> C --> D --> E --> F --> G --> H --> I --> J --> K --> L
+```
+
 #### openrelay
 
 这条链已经闭环，而且对象边界很清楚：
@@ -713,6 +773,25 @@ flowchart TD
 `openrelay` 这条闭环已经成立，而且还补了“先 stop、后拿到 turn id”这种竞态场景。
 
 ### 9. 终端界面当前到底有没有真正把 `ServerNotification` 转成 UI 状态
+
+可以直接把官方 TUI 当前状态理解成下面这张“双轨图”。
+
+```mermaid
+flowchart TD
+  A[TUI 主循环 select]
+
+  A --> B[app_server.next_event]
+  B --> C[handle_app_server_event]
+  C --> D[ServerNotification 忽略]
+  C --> E[LegacyNotification 忽略]
+  C --> F[ServerRequest 直接拒绝]
+
+  A --> G[thread_manager.subscribe_thread_created]
+  G --> H[self.server.get_thread]
+  H --> I[thread.next_event]
+  I --> J[AppEvent::ThreadEvent]
+  J --> K[App 或 ChatWidget 状态更新]
+```
 
 #### 结论
 
