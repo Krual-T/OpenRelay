@@ -73,6 +73,7 @@
   - `src/openrelay/runtime/commands.py`、`src/openrelay/runtime/panel_service.py` 已改为按 `BackendCapabilities` 判断 session list / compact 能力，不再把 “runtime backend 已注册” 直接等同于 “支持原生会话管理”。
   - 已新增 `src/openrelay/backends/claude_adapter/transport.py`、[`client.py`](/home/Shaokun.Tang/Projects/openrelay/src/openrelay/backends/claude_adapter/client.py)、[`mapper.py`](/home/Shaokun.Tang/Projects/openrelay/src/openrelay/backends/claude_adapter/mapper.py)、[`backend.py`](/home/Shaokun.Tang/Projects/openrelay/src/openrelay/backends/claude_adapter/backend.py)；`src/openrelay/runtime/orchestrator.py` 默认 runtime backend 集合与 `src/openrelay/backends/registry.py` builtin descriptor 也已接入 `claude`。
   - 已新增 `tests/test_claude_runtime_backend.py`，并与 `tests/test_runtime_commands.py`、`tests/test_resume_reply_behavior.py`、`tests/test_runtime_help.py` 一起通过，说明第二 backend 已能通过统一 `AgentBackend` 主路径执行最小 turn，同时不再污染 `/resume` `/compact` 的 capability 边界。
+  - 已删除 [`tests/test_runtime.py`](/home/Shaokun.Tang/Projects/openrelay/tests/test_runtime.py) 这份仍整体依赖 `RuntimeOrchestrator(..., backends=...)` 与 legacy `Backend.run` 双轨模型的遗留测试，避免过期测试继续要求主线回退；当前 runtime 主路径验证已由更聚焦的 runtime/presenter/interaction/adapter 测试接管。
 
 ## 使用约定
 
