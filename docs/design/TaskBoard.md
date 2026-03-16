@@ -44,6 +44,8 @@
   - `src/openrelay/backends/codex.py` 已把全局 client 清理职责下沉到 `CodexAppServerClient.shutdown_all()`；`CodexBackend.shutdown_all()` 只保留为兼容委托，不再是 runtime 主层依赖的清理入口。
   - `src/openrelay/runtime/orchestrator.py` 与 `src/openrelay/runtime/restart.py` 已改为直接调用 `CodexAppServerClient.shutdown_all()`，从而把进程级 shutdown 依赖从 legacy backend 壳层切回 transport / client 层。
   - 已调整 `tests/test_runtime.py` 中 restart 回归的 monkeypatch 目标，并与现有 runtime / restart / codex backend / runtime backend 回归一起通过，说明 transport 级清理切换未改变外部行为。
+  - `src/openrelay/runtime/orchestrator.py` 默认实例化 legacy backend 集合时已显式剔除 `codex`，使 `RuntimeOrchestrator(config, store, messenger)` 的默认 Codex 主路径只依赖 `CodexRuntimeBackend + AgentRuntimeService`，不再偷偷构建一个未使用的 `CodexBackend` 占位实例。
+  - 由于 `available_backend_names()` 已基于 legacy/runtime backend 并集，默认剔除 legacy `codex` 后对 `/backend`、health、runtime turn 选择逻辑没有行为变化；显式传入 `backends={\"codex\": ...}` 的兼容测试场景仍保持原样。
 
 ## 使用约定
 

@@ -60,7 +60,7 @@ class RuntimeOrchestrator:
         self.store = store
         self.messenger = messenger
         self.backend_descriptors = backend_descriptors or build_builtin_backend_descriptors()
-        self.backends = backends or instantiate_builtin_backends(config, self.backend_descriptors)
+        self.backends = backends if backends is not None else self._build_builtin_legacy_backends()
         self.binding_store = SessionBindingStore(store)
         self.runtime_backends = runtime_backends if runtime_backends is not None else (
             self._build_builtin_runtime_backends() if backends is None else {}
@@ -328,6 +328,11 @@ class RuntimeOrchestrator:
                 request_timeout_seconds=self.config.backend.codex_request_timeout_seconds,
             )
         }
+
+    def _build_builtin_legacy_backends(self) -> dict[str, Backend]:
+        legacy = instantiate_builtin_backends(self.config, self.backend_descriptors)
+        legacy.pop("codex", None)
+        return legacy
 
     async def _reply_final(
         self,
