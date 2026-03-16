@@ -131,6 +131,10 @@ class BackendTurnSession:
 
     async def cancel(self, _reason: str) -> None:
         self.cancel_event.set()
+        self.pending_streaming_states.clear()
+        self.streaming_update_event.clear()
+        self._stop_spinner_task()
+        await self._close_streaming_for_cancel()
         if self.interaction_controller is not None:
             await self.interaction_controller.shutdown()
 
@@ -358,7 +362,7 @@ class BackendTurnSession:
         self.spinner_task = None
 
     def _request_streaming_update(self) -> None:
-        if self.runtime.config.feishu.stream_mode != "card" or self.streaming_broken:
+        if self.runtime.config.feishu.stream_mode != "card" or self.streaming_broken or self.cancel_event.is_set():
             return
         self.pending_streaming_states.append(copy.deepcopy(self.live_state))
         self.streaming_update_event.set()
@@ -409,3 +413,14 @@ class BackendTurnSession:
                 self._stop_spinner_task()
                 LOGGER.exception("streaming tick failed for execution_key=%s", self.execution_key)
                 return
+
+    async def _close_streaming_for_cancel(self) -> None:
+        if self.runtime.config.feishu.stream_mode != "card":
+            return
+        if self.streaming is None or not self.streaming.has_started():
+            return
+        try:
+            process_text = self.presenter.build_process_text(self.live_state)
+            await self.streaming.close(self.presenter.build_reply_card("已停止当前回复。", process_text=process_text))
+        except Exception:
+            LOGGER.exception("streaming cancel close failed for execution_key=%s", self.execution_key)
