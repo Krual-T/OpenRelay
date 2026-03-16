@@ -182,6 +182,8 @@ def test_codex_mapper_maps_server_request_and_resolution() -> None:
     assert requested.request.kind == "command"
     assert requested.request.options == ("accept", "accept_for_session", "decline", "cancel")
     assert "pytest -q" in requested.request.description
+    assert requested.request.payload["command"] == "pytest -q"
+    assert requested.request.payload["cwd"] == "/repo"
     assert len(resolved) == 1 and isinstance(resolved[0], ApprovalResolvedEvent)
     assert resolved[0].approval_id == "42"
     assert response == {"decision": "acceptForSession"}

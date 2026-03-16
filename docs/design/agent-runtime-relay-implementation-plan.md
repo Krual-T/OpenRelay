@@ -426,6 +426,11 @@
 关闭信号：
 
 - interaction 层不再以 provider method 作为主入口
+- 当前状态：
+  - `src/openrelay/backends/codex_adapter/mapper.py` 已把 command / file_change / permissions / user_input 的统一字段写入 `ApprovalRequest.payload`
+  - `src/openrelay/runtime/interactions/controller.py` 已新增 `request_approval(request: ApprovalRequest) -> ApprovalDecision`
+  - `src/openrelay/runtime/turn.py` 的 runtime approval 路径已改为直接调用统一审批接口，不再在 turn 层解析 provider method
+  - legacy `request(method, params)` 兼容入口仍保留给旧 backend context，因此阶段 2 目前完成了“runtime 主路径切换”，但还没完成 interaction 层的兼容代码清理
 
 ### 阶段 3：重写 live presentation 主路径
 
@@ -501,3 +506,7 @@
 - `src/openrelay/backends/codex_adapter/turn_stream.py` 已新增 `CodexTurnStream`，把 turn 生命周期、终态 future 和 pending approval 移出 `CodexRuntimeBackend`。
 - `src/openrelay/backends/codex_adapter/mapper.py` 已新增 `CodexTurnState`，并把 `agent_text_by_id`、reasoning 聚合、tool output 聚合、`usage`、`final_text` 等 turn 内状态移出 mapper 实例。
 - `tests/test_codex_protocol_mapper.py`、`tests/test_codex_runtime_backend.py` 已迁移到新结构；`tests/test_runtime.py`、`tests/test_agent_runtime.py` 回归通过，说明 adapter 内部拆层未改变 runtime 主路径外部行为。
+- `src/openrelay/backends/codex_adapter/mapper.py` 现已把审批所需的统一字段下沉到 `ApprovalRequest.payload`，包括 `command`、`cwd`、`reason`、`permissions`、`questions`、`requested_schema` 等，interaction 层不再需要从 `provider_payload.method` 反推语义。
+- `src/openrelay/runtime/interactions/controller.py` 已新增 `request_approval(...)`，并按 `ApprovalRequest.kind` + 统一 payload 处理 command / file_change / permissions / user_input 四类审批。
+- `src/openrelay/runtime/turn.py` 的 runtime approval 分支现已直接消费 `ApprovalRequest` 和 `ApprovalDecision`，删掉了 turn 层本地的 provider-response -> decision 翻译逻辑。
+- 已新增 `tests/test_runtime_interactions.py`，验证在 `provider_payload={}` 的情况下，`RunInteractionController.request_approval(...)` 仍能完成 command approval 交互，说明 runtime 主路径已不再依赖 provider method 作为审批入口。
