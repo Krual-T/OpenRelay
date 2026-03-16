@@ -161,14 +161,6 @@ class BackendTurnSession:
             try_handle_input=self.interaction_controller.try_handle_message if self.interaction_controller is not None else None,
         )
 
-    async def on_partial_text(self, partial_text: str) -> None:
-        if not partial_text.strip():
-            return
-        self.live_state["heading"] = "Generating reply"
-        self.live_state["status"] = "Streaming output"
-        self.live_state["partial_text"] = partial_text
-        self._request_streaming_update()
-
     async def on_progress(self, event: dict[str, Any]) -> None:
         apply_live_progress(self.live_state, event)
         self._request_streaming_update()
@@ -179,7 +171,6 @@ class BackendTurnSession:
         if runtime_service is None or binding_store is None:
             raise RuntimeError("agent runtime service is unavailable")
         binding = self._ensure_binding(binding_store)
-        await self.on_progress({"type": "run.started"})
 
         async def handle_runtime_event(event: RuntimeEvent) -> None:
             if event.session_id != self.session.session_id:
