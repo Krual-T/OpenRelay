@@ -478,30 +478,308 @@ flowchart TD
 | 审批是否闭环 | 是 | 当前适配层不是闭环，而是拒绝请求 |
 | 主界面事实来源 | 应用服务协议翻译后的统一状态 | 仍偏向直接核心事件流 |
 
-## 如果你后面还想继续深挖，最值得问的 10 个具体问题
+## 把前面 10 个问题全部调查清楚
 
-下面这些问题都比“调用链是什么”更容易落到代码。
+下面不再只给“该问什么”，而是直接给“现在代码里的答案是什么”。
 
-1. 新会话和旧会话分别在哪一行代码决定走 `thread/start` 还是 `thread/resume`？
-2. `turn/start` 的 `input` 是怎么从用户消息拼出来的？
-3. 图片输入在进入应用服务前有没有被重写？
-4. 哪一种原始协议方法会变成“界面上的部分回复”？
-5. 哪一种原始协议方法会变成“工具执行中”？
-6. 命令审批请求从应用服务来到 Feishu，中间经过了哪些对象？
-7. 用户点同意以后，结果是在哪一层写回应用服务的？
-8. stop 命令是只停本地任务，还是会发 `turn/interrupt`？
-9. 终端界面当前到底有没有真正把 `ServerNotification` 转成 UI 状态？
-10. 哪些地方现在看起来像“兼容过渡层”，以后应该删掉？
+为了方便你继续追代码，每个问题都按同一结构写：
 
-如果后面你说不清需求，可以直接用这种句式问：
+- `openrelay` 现在怎么做
+- 官方 `codex cli` 终端界面（TUI，Text User Interface，文本用户界面）现在是什么状态
+- 这件事真正说明了什么
 
-- “我想看 `turn/start` 的参数是谁拼的”
-- “我想看审批请求从应用服务到 Feishu 的完整路径”
-- “我想看终端界面现在为什么还不算真正消费了应用服务”
-- “我想看 stop 命令最终是不是发了 `turn/interrupt`”
-- “我想看实时回复文本是由哪几个原始事件拼起来的”
+### 1. 新会话和旧会话分别在哪一行代码决定走 `thread/start` 还是 `thread/resume`
 
-这样问题就会立刻从“空泛架构讨论”变成“可验证的代码追踪”。
+#### openrelay
+
+决定点在 `CodexSessionClient._ensure_thread()`：
+
+- 有 `native_session_id` 就发 `thread/resume`
+- 没有就发 `thread/start`
+
+也就是说，会不会新建线程，不是在展示层决定，也不是在运行时主循环里临时判断，而是在 Codex 会话客户端（`CodexSessionClient`）里集中收口。
+
+你追代码时，最关键的是看这两个位置：
+
+- `src/openrelay/backends/codex_adapter/client.py` 中 `_ensure_thread()`
+- `src/openrelay/backends/codex_adapter/client.py` 中 `start_turn()` 先调 `_ensure_thread()`，再调 `turn/start`
+
+#### codex cli TUI
+
+截至 2026-03-16，官方 TUI 主启动路径仍主要直接走核心线程管理器（`ThreadManager`）：
+
+- `StartFresh` 用 `ChatWidget::new(..., thread_manager.clone())`
+- `Resume` 用 `thread_manager.resume_thread_from_rollout(...)`
+- `Fork` 用 `thread_manager.fork_thread(...)`
+
+也就是说，当前主启动路径里，并没有一个对称的“先看有没有 thread id，再决定 `thread/start` / `thread/resume`”的 TUI 应用服务调用点。  
+这也是为什么相关迁移 PR 还在开着。
+
+#### 说明
+
+`openrelay` 已经把“线程生命周期入口”收敛到了应用服务消费层；官方 TUI 这件事还没有完全收敛，仍有直接核心路径。
+
+### 2. `turn/start` 的 `input` 是怎么从用户消息拼出来的
+
+#### openrelay
+
+这条链分三段：
+
+1. `BackendTurnSession.run_with_agent_runtime()` 把当前消息装成回合输入（`TurnInput`）
+2. `CodexSessionClient.start_turn()` 调 `mapper.build_turn_start_params(...)`
+3. `CodexProtocolMapper._build_turn_input()` 把 `TurnInput` 转成应用服务的 `input`
+
+最终拼出来的是一个列表：
+
+- 有文本就放 `{ "type": "text", "text": ... }`
+- 每张本地图片就放 `{ "type": "localImage", "path": ... }`
+
+所以 `turn/start` 参数并不是在业务层零散拼出来的，而是先归一成 `TurnInput`，再在协议映射器（`CodexProtocolMapper`）里统一出线上的协议结构。
+
+#### codex cli TUI
+
+当前 TUI 主路径里，终端界面确实会持有初始文本和初始图片：
+
+- `initial_prompt`
+- `initial_images`
+- `create_initial_user_message(...)`
+
+但这些数据当前主要还是进入直接核心线程路径，而不是一个明确可追的 TUI 应用服务 `turn/start` 组包点。  
+所以如果你的问题是“官方 TUI 里到底谁在拼 app-server 的 `turn/start.input`”，当前主路径答案仍然是不够完整，迁移还没收口。
+
+#### 说明
+
+`openrelay` 这件事已经可定位到单一组包函数；官方 TUI 当前还没有一个同样清晰的应用服务输入装配边界。
+
+### 3. 图片输入在进入应用服务前有没有被重写
+
+#### openrelay
+
+有，而且分成两次重写：
+
+1. 飞书图片先在事件分发器（`FeishuEventDispatcher`）里从远端图片键（`remote_image_keys`）下载为本地文件路径（`local_image_paths`）
+2. 如果消息几乎只有图片，没有明确文字，运行时编排器（`RuntimeOrchestrator`）会把后端提示词改成默认图片提示词
+3. 最后协议映射器把这些本地文件路径输出成 `localImage`
+
+所以对 `app-server` 来说，它并没有直接收到“飞书图片 key”，而是收到“本地图片路径 + 可能被补过的默认文本提示”。
+
+#### codex cli TUI
+
+终端界面当前只有“本地图片文件列表”这个输入事实，主路径并没有暴露一个等价于 `openrelay` 的“远端图片转本地路径，再转 `localImage`”过程，因为它本来就不是飞书入口。
+
+但从应用服务协议定义看，`userMessage.content` 支持 `text`、`image`、`localImage` 三类输入，说明长期目标依然是统一落到应用服务输入结构。
+
+#### 说明
+
+`openrelay` 的图片链路不是简单透传，而是“平台素材归一化”后再进应用服务。
+
+### 4. 哪一种原始协议方法会变成“界面上的部分回复”
+
+#### openrelay
+
+最直接的是：
+
+- `item/agentMessage/delta`
+
+它在 `CodexProtocolMapper._map_agent_delta()` 里被翻译成 `assistant.delta`，再由 `LiveTurnReducer` 追加到 `LiveTurnViewModel.assistant_text`。
+
+如果最后还有完整 `agentMessage`，`item/completed` 会在 `_map_item_completed()` 里再补一个 `assistant.completed`，把最终文本收敛成最终态。
+
+#### codex cli TUI
+
+如果只看应用服务协议，官方 README 也明确说 `item/agentMessage/delta` 就是“把增量 `delta` 依次拼起来，还原完整回复”。
+
+但当前 TUI 主界面并没有把应用服务 `ServerNotification` 真正转成 UI 状态；当前界面上的流式文本主要仍来自直接核心线程事件（`thread.next_event()` -> `AppEvent::ThreadEvent`）。
+
+#### 说明
+
+协议层和 UI 主路径要区分开看：
+
+- 协议上：增量回复就是 `item/agentMessage/delta`
+- 当前官方 TUI 实现上：还没把这条应用服务通知真正接入主 UI 状态归约
+
+### 5. 哪一种原始协议方法会变成“工具执行中”
+
+#### openrelay
+
+“工具执行中”不是靠一条事件完成，而是至少两类事件配合：
+
+- `item/started`：进入 `_map_item_started()`，如果条目类型是 `commandExecution`、`fileChange`、`webSearch`、`mcpToolCall` 等，会产出 `tool.started`
+- `item/commandExecution/outputDelta` / `item/fileChange/outputDelta` / `item/mcpToolCall/progress`：分别产出 `tool.progress`
+- `item/completed`：再产出 `tool.completed`
+
+所以界面上的“工具开始了 / 正在跑 / 跑完了”其实是一个三段式状态，而不是单条通知。
+
+#### codex cli TUI
+
+应用服务协议已经把这三段定义得很清楚：
+
+- `item/started`
+- 若干 `item/*/delta`
+- `item/completed`
+
+但当前 TUI 的主 UI 状态仍主要吃直接核心事件，不是吃应用服务适配层里的 `ServerNotification`。
+
+#### 说明
+
+如果以后要查“为什么工具卡片一直显示运行中”，你要同时看：
+
+- 有没有收到 `item/started`
+- 有没有持续 `outputDelta`
+- 有没有最终 `item/completed`
+
+### 6. 命令审批请求从应用服务来到 Feishu，中间经过了哪些对象
+
+#### openrelay
+
+这条链已经闭环，而且对象边界很清楚：
+
+1. `CodexTurnStream.handle_server_request()` 收到服务端请求（`ServerRequest`，服务端主动请求）
+2. `CodexProtocolMapper.map_server_request()` 把 `item/commandExecution/requestApproval` 翻成 `ApprovalRequestedEvent`
+3. `AgentRuntimeService._on_runtime_event()` 把这个审批请求写进运行时状态，并交给交互跟踪器（如果有）
+4. `BackendTurnSession._handle_runtime_event()` 收到 `ApprovalRequestedEvent`
+5. `RunInteractionController.request_approval()` 真正向 Feishu 发审批交互
+
+也就是说：
+
+- 协议层只负责“把请求翻译成统一审批对象”
+- Feishu 壳层只负责“把统一审批对象展示给用户”
+
+#### codex cli TUI
+
+当前应用服务适配层一旦收到 `ServerRequest`，会直接拒绝，不会进入真正的 UI 审批流程。
+
+所以官方 TUI 当前不是“审批还没接完一半”，而是“应用服务审批请求现在根本不会进入现有主 UI 状态机”。
+
+#### 说明
+
+这是两边最本质的分水岭之一：
+
+- `openrelay`：审批请求已经是正式主路径
+- 官方 TUI：审批请求对应用服务路径来说仍被视为过渡期未接入能力
+
+### 7. 用户点同意以后，结果是在哪一层写回应用服务的
+
+#### openrelay
+
+写回点也已经集中收敛：
+
+1. `RunInteractionController` 取得用户决策
+2. `BackendTurnSession._handle_runtime_event()` 调 `runtime_service.resolve_approval(...)`
+3. `AgentRuntimeService.resolve_approval()` 下发到 backend
+4. `CodexSessionClient.resolve_approval()` 找到对应中的 `CodexTurnStream`
+5. `CodexTurnStream.resolve_approval()` 调 `mapper.build_approval_response(...)`
+6. `CodexTurnStream.handle_server_request()` 等到这个结果后，再用 `transport.send_result(...)` 写回应用服务
+
+这意味着“用户决策”不会直接从 Feishu 壳层打到协议层，而是始终通过统一运行时服务转发。
+
+#### codex cli TUI
+
+当前适配层不会处理应用服务审批请求，所以也就不存在“用户点同意后写回 app-server”的现行主路径。
+
+#### 说明
+
+如果以后要改审批策略，最稳的改动点是：
+
+- 改 `mapper.build_approval_response()`：协议响应形状
+- 改交互控制器：用户怎么选
+
+而不是让展示层直接拼 JSON-RPC（JSON 远程过程调用）响应。
+
+### 8. stop 命令是只停本地任务，还是会发 `turn/interrupt`
+
+#### openrelay
+
+会，而且有两种时机：
+
+- 如果当前已经知道 `turn_id`，`CodexTurnStream.interrupt()` 立即发 `turn/interrupt`
+- 如果用户 stop 得很早，回合 id 还没绑定，`CodexTurnStream.bind_started_turn()` 会在拿到 `turn_id` 后补发 `turn/interrupt`
+
+`CodexSessionClient.interrupt_turn()` 也明确优先走活跃流对象；只有找不到活跃流时，才直接请求 `turn/interrupt`。
+
+这说明 stop 不是“本地协程取消一下就算了”，而是尽量向应用服务发真实中断。
+
+#### codex cli TUI
+
+从应用服务协议定义看，`turn/interrupt` 的契约很明确：
+
+- 请求成功后，最终应等 `turn/completed`
+- 且 `turn.status` 为 `interrupted`
+
+但当前官方 TUI 主路径还没有把“停止行为”统一收敛到应用服务中断路径上，因为主路径本身还主要走直接核心事件。
+
+#### 说明
+
+`openrelay` 这条闭环已经成立，而且还补了“先 stop、后拿到 turn id”这种竞态场景。
+
+### 9. 终端界面当前到底有没有真正把 `ServerNotification` 转成 UI 状态
+
+#### 结论
+
+没有。
+
+#### 证据
+
+当前官方 `app_server_adapter.rs` 的逻辑非常直接：
+
+- `ServerNotification`：忽略
+- `LegacyNotification`：忽略
+- `ServerRequest`：拒绝
+
+与此同时，主循环虽然确实监听 `app_server.next_event()`，但真正更新界面的主要还是另一条路：
+
+- `thread_manager.subscribe_thread_created()`
+- `self.server.get_thread(thread_id)`
+- `thread.next_event().await`
+- `AppEvent::ThreadEvent`
+
+#### 说明
+
+所以不能只因为“主循环里出现了 `app_server.next_event()`”就判断 TUI 已经消费了应用服务。  
+真正判断标准应该是：
+
+- 这些通知有没有进入状态归约
+- 状态归约有没有驱动 `ChatWidget` / `App`
+
+按这个标准，当前答案是否定的。
+
+### 10. 哪些地方现在看起来像“兼容过渡层”，以后应该删掉
+
+#### 官方 TUI 里最明显的 4 处
+
+1. `tui/src/app/app_server_adapter.rs`
+   这个文件头注释已经明说它是“混合迁移期临时适配层”，未来应该缩小直至消失。
+
+2. `App::run()` 里同时监听两条事实来源
+   一边监听 `app_server.next_event()`，一边监听直接核心线程事件；这说明现在是双轨，不是单轨。
+
+3. `SessionSelection::Resume` / `Fork` 直接调用 `ThreadManager`
+   这说明线程生命周期还没有统一回收进应用服务入口。
+
+4. `handle_thread_created()` 再次附着到直接核心线程对象，并开 `thread.next_event()` 监听任务
+   只要这条路径还是主 UI 事实来源，TUI 就还没有真正变成 app-server-first。
+
+#### openrelay 里有没有类似过渡层
+
+相对少很多。  
+`openrelay` 现在更像是已经完成“协议层 -> 统一运行时事件 -> 统一视图模型”收敛，主要剩下的是能力扩展，不是双轨迁移清理。
+
+#### 说明
+
+如果你后面要继续盯官方迁移进度，最有价值的观察点不是“又加没加 app-server 相关代码”，而是下面这三个问题：
+
+- 直接核心线程监听有没有删掉
+- `ServerNotification` 有没有开始进入 UI 状态归约
+- `ServerRequest` 有没有不再被直接拒绝
+
+## 现在可以得出的更硬结论
+
+把上面 10 个问题全部查完以后，结论可以收敛成 4 句：
+
+1. `openrelay` 现在已经不是“表面上接了 app-server”，而是请求入口、事件回流、审批闭环、停止闭环都已经建立。
+2. `openrelay` 的展示层消费的不是原始协议，而是统一运行时事件（`RuntimeEvent`）归约后的实时视图模型（`LiveTurnViewModel`）。
+3. 官方 `codex cli` TUI 截至 2026-03-16 仍处在混合迁移态：应用服务客户端已经进主循环，但通知和服务端请求还没有进入主 UI 状态路径。
+4. 判断“是否真正消费 app-server”的标准，不是有没有 `app_server.next_event()`，而是“请求是否由 app-server 发起、通知是否进入状态归约、服务端请求是否形成交互闭环”。
 
 ## 证据
 
