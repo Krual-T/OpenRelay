@@ -12,8 +12,8 @@
 - **优先级**：P0
 - **目标**：把 `openrelay` 收敛为统一的 agent runtime relay，让 Feishu 壳层、runtime 主路径、session binding、interaction 和 presentation 都围绕 backend-neutral 的运行时语义组织，而不是继续围绕 Codex 专有协议长出结构。
 - **当前关注**：
-  - 现有主路径虽然已经接上 `agent_runtime`，但仍保留 “runtime event -> legacy progress dict -> Feishu” 的回退桥。
-  - `CodexRuntimeBackend`、`CodexProtocolMapper`、旧 `src/openrelay/backends/codex.py` 之间仍存在职责重叠，Codex adapter 还没有按 transport / client / turn stream / adapter 四层拆开。
+  - `codex_adapter` 内部已经拆成 transport / client / turn stream / adapter 四层，但 transport 仍是通过 `CodexAppServerClient` 间接复用旧 `src/openrelay/backends/codex.py` 的 app-server 通信实现，legacy transport 文件还没真正退出主依赖链。
+  - 现有主路径仍保留 “runtime event -> legacy progress dict -> Feishu” 的回退桥，presentation 还没有切到直接消费 `LiveTurnViewModel`。
   - 命令、交互、面板、live 渲染仍然直接暴露 `Codex` 用户语义，第二个 backend 还不能以同构 adapter 自然接入。
 - **关闭条件**：
   - [ ] `docs/design/agent-runtime-relay.md` 继续作为唯一主线 design note，并保持和代码现状一致。
@@ -51,6 +51,10 @@
   - 由于 `available_backend_names()` 已基于 legacy/runtime backend 并集，builtin descriptor 继续保留 `codex` 名称与 transport 展示信息时，对 `/backend`、help、panel、health 和 runtime turn 选择逻辑没有行为变化；显式传入 `backends={\"codex\": ...}` 的兼容测试场景仍保持原样。
   - `src/openrelay/backends/__init__.py` 已移除对 `CodexBackend` 的包级导出；本轮进一步删除 `src/openrelay/backends/codex.py` 内的 `CodexBackend` 兼容壳，并把 `src/openrelay/backends/registry.py` 收敛为“descriptor 可选 factory”的纯注册表，避免默认导入链和默认实例化路径继续保留无用 legacy backend 对象。
   - 当前 design note 继续保留为 `docs/design/agent-runtime-relay.md`；新增实施文档只负责回答“接下来具体怎么改”，不再把实施细节继续堆回主设计文档，避免目标层与落地层混写。
+  - 已新增 `src/openrelay/backends/codex_adapter/transport.py`、`src/openrelay/backends/codex_adapter/client.py`、`src/openrelay/backends/codex_adapter/turn_stream.py`，把 app-server transport、session API、turn lifecycle 三层从 `src/openrelay/backends/codex_adapter/backend.py` 内部拆出。
+  - `src/openrelay/backends/codex_adapter/backend.py` 已收敛为薄 `AgentBackend` adapter，只再负责按 scope 获取 `CodexSessionClient` 并转发 session / turn / approval 调用。
+  - `src/openrelay/backends/codex_adapter/mapper.py` 已新增 `CodexTurnState`，把 assistant text、reasoning 聚合、tool output 聚合、usage、final_text 等 turn 内状态从 mapper 实例移到 `CodexTurnStream` 持有的 turn state。
+  - 已补充并迁移 `tests/test_codex_protocol_mapper.py`、`tests/test_codex_runtime_backend.py`，并跑通 `tests/test_runtime.py`、`tests/test_agent_runtime.py`，说明 adapter 内部拆层没有改变 runtime 主路径可见行为。
 
 ## 使用约定
 

@@ -402,6 +402,13 @@
 关闭信号：
 
 - `src/openrelay/backends/codex.py` 不再被 runtime 主路径引用
+- 当前状态：
+  - 已落地 `src/openrelay/backends/codex_adapter/transport.py`
+  - 已落地 `src/openrelay/backends/codex_adapter/client.py`
+  - 已落地 `src/openrelay/backends/codex_adapter/turn_stream.py`
+  - `src/openrelay/backends/codex_adapter/backend.py` 已收敛为薄 adapter
+  - `src/openrelay/backends/codex_adapter/mapper.py` 已移出 turn 内聚合状态
+  - runtime 主路径仍暂时通过 `CodexAppServerClient` 间接复用 `src/openrelay/backends/codex.py` 的 transport 实现，因此阶段 1 已完成“内部拆层”，但还没有达到“可删除 legacy transport 文件”的收尾状态
 
 ### 阶段 2：收敛 mapper 与 interaction
 
@@ -489,3 +496,8 @@
 - 本文：`docs/design/agent-runtime-relay-implementation-plan.md`
 - 主设计文档：`docs/design/agent-runtime-relay.md`
 - 任务板：`docs/design/TaskBoard.md`
+- `src/openrelay/backends/codex_adapter/transport.py` 已新增 `CodexRpcTransport`，把 app-server client 生命周期、request、notification 分发和 server request 分发收敛为独立 transport 层。
+- `src/openrelay/backends/codex_adapter/client.py` 已新增 `CodexSessionClient`，承接 session list/read/compact、thread start/resume 和 turn 启动逻辑。
+- `src/openrelay/backends/codex_adapter/turn_stream.py` 已新增 `CodexTurnStream`，把 turn 生命周期、终态 future 和 pending approval 移出 `CodexRuntimeBackend`。
+- `src/openrelay/backends/codex_adapter/mapper.py` 已新增 `CodexTurnState`，并把 `agent_text_by_id`、reasoning 聚合、tool output 聚合、`usage`、`final_text` 等 turn 内状态移出 mapper 实例。
+- `tests/test_codex_protocol_mapper.py`、`tests/test_codex_runtime_backend.py` 已迁移到新结构；`tests/test_runtime.py`、`tests/test_agent_runtime.py` 回归通过，说明 adapter 内部拆层未改变 runtime 主路径外部行为。

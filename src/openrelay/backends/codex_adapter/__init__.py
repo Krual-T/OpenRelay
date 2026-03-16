@@ -1,3 +1,3 @@
-from .mapper import CodexProtocolMapper
+from .mapper import CodexProtocolMapper, CodexTurnState
 
-__all__ = ["CodexProtocolMapper"]
+__all__ = ["CodexProtocolMapper", "CodexTurnState"]
