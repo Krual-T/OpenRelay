@@ -33,7 +33,7 @@ from openrelay.session import RelaySessionBinding, SessionBindingStore
 from openrelay.storage import StateStore
 
 from .interactions import RunInteractionController
-from .live import apply_live_progress, apply_runtime_event
+from .live import apply_live_progress
 from .replying import ReplyRoute
 
 
@@ -229,18 +229,13 @@ class BackendTurnSession:
         state = runtime_service.turn_registry.read(event.session_id, event.turn_id) if event.turn_id else None
         if isinstance(event, SessionStartedEvent):
             await self.persist_native_thread_id(event.native_session_id)
+            self.live_state["native_session_id"] = event.native_session_id
         if state is not None:
             self.live_state = self.presenter.build_snapshot(
                 state,
                 previous=self.live_state,
                 session=self.session,
                 format_cwd=self.runtime.session_ux.format_cwd,
-            )
-        else:
-            apply_runtime_event(
-                self.live_state,
-                event,
-                assistant_text="",
             )
         if isinstance(event, AssistantDeltaEvent) and state is not None:
             self.last_live_text = ""
