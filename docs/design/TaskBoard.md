@@ -14,7 +14,8 @@
 - **当前关注**：
   - `codex_adapter` 内部已经拆成 transport / client / turn stream / adapter 四层，但 transport 仍是通过 `CodexAppServerClient` 间接复用旧 `src/openrelay/backends/codex.py` 的 app-server 通信实现，legacy transport 文件还没真正退出主依赖链。
   - 现有主路径仍保留 “runtime event -> legacy progress dict -> Feishu” 的回退桥，presentation 还没有切到直接消费 `LiveTurnViewModel`。
-  - 命令、交互、面板、live 渲染仍然直接暴露 `Codex` 用户语义，第二个 backend 还不能以同构 adapter 自然接入。
+  - runtime approval 主路径已经切到 `ApprovalRequest -> ApprovalDecision`，但 legacy `request(method, params)` 兼容入口仍在 interaction controller 内保留，interaction 层还没有彻底删掉旧 provider-method 分支。
+  - 命令、面板、live 渲染仍然直接暴露 `Codex` 用户语义，第二个 backend 还不能以同构 adapter 自然接入。
 - **关闭条件**：
   - [ ] `docs/design/agent-runtime-relay.md` 继续作为唯一主线 design note，并保持和代码现状一致。
   - [ ] runtime 主层只依赖统一 agent runtime 模型，不再把 provider-specific method / item type 暴露为主路径语义。
@@ -55,6 +56,9 @@
   - `src/openrelay/backends/codex_adapter/backend.py` 已收敛为薄 `AgentBackend` adapter，只再负责按 scope 获取 `CodexSessionClient` 并转发 session / turn / approval 调用。
   - `src/openrelay/backends/codex_adapter/mapper.py` 已新增 `CodexTurnState`，把 assistant text、reasoning 聚合、tool output 聚合、usage、final_text 等 turn 内状态从 mapper 实例移到 `CodexTurnStream` 持有的 turn state。
   - 已补充并迁移 `tests/test_codex_protocol_mapper.py`、`tests/test_codex_runtime_backend.py`，并跑通 `tests/test_runtime.py`、`tests/test_agent_runtime.py`，说明 adapter 内部拆层没有改变 runtime 主路径可见行为。
+  - `src/openrelay/backends/codex_adapter/mapper.py` 已把审批统一字段写入 `ApprovalRequest.payload`，包括 command / cwd / reason / permissions / questions / requested schema 等，interaction 层不再需要从 `provider_payload.method` 推断审批语义。
+  - `src/openrelay/runtime/interactions/controller.py` 已新增 `request_approval(request: ApprovalRequest)`，runtime 主路径现在按 `ApprovalRequest.kind` 处理审批，不再由 `src/openrelay/runtime/turn.py` 在 turn 层把 provider response 翻回 `ApprovalDecision`。
+  - 已新增 `tests/test_runtime_interactions.py`，验证在 `provider_payload={}` 的情况下统一审批入口仍能走通 command approval 交互；同时 `tests/test_codex_protocol_mapper.py` 回归通过，说明新的统一审批 payload 已被 mapper 正确生成。
 
 ## 使用约定
 

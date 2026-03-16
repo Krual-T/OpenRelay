@@ -5,6 +5,7 @@ import json
 import uuid
 from typing import Any, Awaitable, Callable
 
+from openrelay.agent_runtime import ApprovalDecision, ApprovalRequest
 from openrelay.feishu.cards import build_button, build_card_shell, build_section_block, build_status_hero, divider_block
 from openrelay.core import IncomingMessage
 
@@ -52,6 +53,18 @@ class RunInteractionController:
         self.pending = None
         if pending is not None and not pending.future.done():
             pending.future.set_result(pending.abort_resolution)
+
+    async def request_approval(self, request: ApprovalRequest) -> ApprovalDecision:
+        async with self._request_lock:
+            if request.kind == "command":
+                return await self._request_command_approval_decision(request)
+            if request.kind == "file_change":
+                return await self._request_file_change_approval_decision(request)
+            if request.kind == "permissions":
+                return await self._request_permissions_approval_decision(request)
+            if request.kind == "user_input":
+                return await self._request_user_input_decision(request)
+            raise NotImplementedError(request.kind)
 
     async def request(self, method: str, params: dict[str, object]) -> dict[str, object]:
         async with self._request_lock:
@@ -230,6 +243,132 @@ class RunInteractionController:
                 )
             )
         return chunk_actions(actions)
+
+    async def _request_command_approval_decision(self, request: ApprovalRequest) -> ApprovalDecision:
+        payload = request.payload
+        command = shorten(payload.get("command") or "unknown command", 240)
+        cwd = normalize_text(payload.get("cwd"))
+        reason = normalize_text(payload.get("reason"))
+        detail_lines = [f"Command: `{command}`"]
+        if cwd:
+            detail_lines.append(f"CWD: `{cwd}`")
+        detail_lines.extend(format_command_actions(payload.get("command_actions")))
+        if reason:
+            detail_lines.append(f"Reason: {reason}")
+        pending = PendingInteraction(
+            interaction_id=uuid.uuid4().hex[:12],
+            kind="command_approval",
+            title=request.title or "Command Approval Required",
+            detail="\n".join(detail_lines) or request.description,
+            prompt_text="Choose one of the approval buttons, or reply with: accept / session / decline / cancel.",
+            future=asyncio.get_running_loop().create_future(),
+            abort_resolution=InteractionResolution({"decision": "cancel"}, "Cancelled", state="cancelled"),
+            text_handler=self._decision_text_handler(
+                {
+                    "accept": InteractionResolution({"decision": "accept"}, "Accept once"),
+                    "acceptForSession": InteractionResolution({"decision": "acceptForSession"}, "Accept for session"),
+                    "decline": InteractionResolution({"decision": "decline"}, "Decline", state="cancelled"),
+                    "cancel": InteractionResolution({"decision": "cancel"}, "Cancel turn", state="cancelled"),
+                }
+            ),
+            command_resolutions={
+                "accept": InteractionResolution({"decision": "accept"}, "Allow once"),
+                "accept_session": InteractionResolution({"decision": "acceptForSession"}, "Allow for session"),
+                "decline": InteractionResolution({"decision": "decline"}, "Decline", state="cancelled"),
+                "cancel": InteractionResolution({"decision": "cancel"}, "Cancel turn", state="cancelled"),
+            },
+        )
+        return self._decision_from_provider_response((await self._await_pending(pending)).response)
+
+    async def _request_file_change_approval_decision(self, request: ApprovalRequest) -> ApprovalDecision:
+        payload = request.payload
+        reason = normalize_text(payload.get("reason"))
+        grant_root = normalize_text(payload.get("grant_root"))
+        detail_lines = ["The backend wants permission to apply file changes."]
+        if grant_root:
+            detail_lines.append(f"Grant root: `{grant_root}`")
+        if reason:
+            detail_lines.append(f"Reason: {reason}")
+        pending = PendingInteraction(
+            interaction_id=uuid.uuid4().hex[:12],
+            kind="file_change_approval",
+            title=request.title or "File Change Approval Required",
+            detail="\n".join(detail_lines) or request.description,
+            prompt_text="Choose one of the approval buttons, or reply with: accept / session / decline / cancel.",
+            future=asyncio.get_running_loop().create_future(),
+            abort_resolution=InteractionResolution({"decision": "cancel"}, "Cancelled", state="cancelled"),
+            text_handler=self._decision_text_handler(
+                {
+                    "accept": InteractionResolution({"decision": "accept"}, "Accept once"),
+                    "acceptForSession": InteractionResolution({"decision": "acceptForSession"}, "Accept for session"),
+                    "decline": InteractionResolution({"decision": "decline"}, "Decline", state="cancelled"),
+                    "cancel": InteractionResolution({"decision": "cancel"}, "Cancel turn", state="cancelled"),
+                }
+            ),
+            command_resolutions={
+                "accept": InteractionResolution({"decision": "accept"}, "Allow once"),
+                "accept_session": InteractionResolution({"decision": "acceptForSession"}, "Allow for session"),
+                "decline": InteractionResolution({"decision": "decline"}, "Decline", state="cancelled"),
+                "cancel": InteractionResolution({"decision": "cancel"}, "Cancel turn", state="cancelled"),
+            },
+        )
+        return self._decision_from_provider_response((await self._await_pending(pending)).response)
+
+    async def _request_permissions_approval_decision(self, request: ApprovalRequest) -> ApprovalDecision:
+        payload = request.payload
+        permissions = payload.get("permissions") if isinstance(payload.get("permissions"), dict) else {}
+        reason = normalize_text(payload.get("reason"))
+        detail_lines = format_permissions(permissions)
+        if reason:
+            detail_lines.append(f"Reason: {reason}")
+        if not detail_lines:
+            detail_lines.append(request.description or "No additional permission details were provided.")
+        pending = PendingInteraction(
+            interaction_id=uuid.uuid4().hex[:12],
+            kind="permissions_approval",
+            title=request.title or "Additional Permissions Requested",
+            detail="\n".join(detail_lines),
+            prompt_text="Choose Accept or Decline, or reply with: accept / session / decline / cancel.",
+            future=asyncio.get_running_loop().create_future(),
+            abort_resolution=InteractionResolution({"decision": "cancel"}, "Cancelled", state="cancelled"),
+            text_handler=self._decision_text_handler(
+                {
+                    "accept": InteractionResolution({"decision": "accept"}, "Accepted requested permissions"),
+                    "acceptForSession": InteractionResolution({"decision": "acceptForSession"}, "Accepted for session"),
+                    "decline": InteractionResolution({"decision": "decline"}, "Declined", state="cancelled"),
+                    "cancel": InteractionResolution({"decision": "cancel"}, "Cancelled", state="cancelled"),
+                }
+            ),
+            command_resolutions={
+                "accept": InteractionResolution({"decision": "accept"}, "Accept"),
+                "accept_session": InteractionResolution({"decision": "acceptForSession"}, "Accept for session"),
+                "decline": InteractionResolution({"decision": "decline"}, "Decline", state="cancelled"),
+                "cancel": InteractionResolution({"decision": "cancel"}, "Cancel", state="cancelled"),
+            },
+        )
+        return self._decision_from_provider_response((await self._await_pending(pending)).response)
+
+    async def _request_user_input_decision(self, request: ApprovalRequest) -> ApprovalDecision:
+        payload = request.payload
+        input_kind = str(payload.get("input_kind") or "").strip()
+        if input_kind == "tool_questions":
+            response = await self._request_tool_user_input({"questions": payload.get("questions")})
+            if response == {"answers": {}}:
+                return ApprovalDecision(decision="cancel")
+            return ApprovalDecision(decision="custom", payload=response)
+        if input_kind == "mcp_elicitation":
+            response = await self._request_mcp_elicitation(
+                {
+                    "mode": payload.get("mode"),
+                    "message": payload.get("message"),
+                    "url": payload.get("url"),
+                    "requestedSchema": payload.get("requested_schema"),
+                }
+            )
+            if response in ({"action": "cancel"}, {"action": "decline"}):
+                return ApprovalDecision(decision="cancel")
+            return ApprovalDecision(decision="custom", payload=response)
+        raise NotImplementedError(input_kind or request.kind)
 
     async def _request_command_approval(self, params: dict[str, object]) -> dict[str, object]:
         command = shorten(params.get("command") or "unknown command", 240)
@@ -477,3 +616,11 @@ class RunInteractionController:
             return None
 
         return handler
+
+    def _decision_from_provider_response(self, response: dict[str, Any]) -> ApprovalDecision:
+        decision = str(response.get("decision") or "")
+        if decision == "acceptForSession":
+            return ApprovalDecision(decision="accept_for_session")
+        if decision in {"accept", "decline", "cancel"}:
+            return ApprovalDecision(decision=decision)  # type: ignore[arg-type]
+        return ApprovalDecision(decision="custom", payload=response)

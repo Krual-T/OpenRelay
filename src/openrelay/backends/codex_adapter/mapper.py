@@ -261,6 +261,13 @@ class CodexProtocolMapper:
                 lines.append(f"Reason: {reason}")
             description = "\n".join(lines)
             options = ("accept", "accept_for_session", "decline", "cancel")
+            payload = {
+                "request_id": request_id,
+                "command": command,
+                "cwd": cwd,
+                "reason": reason,
+                "command_actions": params.get("commandActions"),
+            }
         elif method == "item/fileChange/requestApproval":
             kind = "file_change"
             title = "File Change Approval Required"
@@ -272,6 +279,11 @@ class CodexProtocolMapper:
             if reason:
                 lines.append(f"Reason: {reason}")
             description = "\n".join(lines)
+            payload = {
+                "request_id": request_id,
+                "grant_root": grant_root,
+                "reason": reason,
+            }
         elif method == "item/permissions/requestApproval":
             kind = "permissions"
             title = "Additional Permissions Requested"
@@ -281,16 +293,36 @@ class CodexProtocolMapper:
             if reason:
                 description = f"{description}\nReason: {reason}".strip()
             options = ("accept", "accept_for_session", "decline", "cancel")
+            payload = {
+                "request_id": request_id,
+                "reason": reason,
+                "permissions": permissions,
+            }
         elif method == "item/tool/requestUserInput":
             kind = "user_input"
             title = "User Input Requested"
             description = _flatten_text(params.get("questions"))
             options = ("custom", "cancel")
+            payload = {
+                "request_id": request_id,
+                "input_kind": "tool_questions",
+                "questions": params.get("questions") if isinstance(params.get("questions"), list) else [],
+            }
         elif method == "mcpServer/elicitation/request":
             kind = "user_input"
             title = "External Input Requested"
             description = _flatten_text(params.get("message")) or _flatten_text(params.get("requestedSchema"))
             options = ("custom", "cancel")
+            payload = {
+                "request_id": request_id,
+                "input_kind": "mcp_elicitation",
+                "mode": str(params.get("mode") or ""),
+                "message": params.get("message"),
+                "url": params.get("url"),
+                "requested_schema": params.get("requestedSchema"),
+            }
+        else:
+            payload = {"request_id": request_id}
 
         return self._event(
             ApprovalRequestedEvent,
@@ -302,7 +334,7 @@ class CodexProtocolMapper:
                 kind=kind,
                 title=title,
                 description=description,
-                payload={"request_id": request_id},
+                payload=payload,
                 options=options,
                 provider_payload={"method": method, "params": params},
             ),
