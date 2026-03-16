@@ -15,7 +15,6 @@ from openrelay.core import (
     IncomingMessage,
     SessionRecord,
     format_release_channel,
-    get_session_workspace_root,
 )
 from openrelay.presentation.runtime_status import RuntimeStatusPresenter
 from openrelay.presentation.session import SessionPresentation
@@ -131,7 +130,6 @@ class RuntimeCommandRouter:
         help_renderer: HelpRenderer,
         release_commands: ReleaseCommandService,
         status_presenter: RuntimeStatusPresenter,
-        backends: dict[str, object],
         hooks: RuntimeCommandHooks,
         runtime_service: AgentRuntimeService | None = None,
     ):
@@ -146,7 +144,6 @@ class RuntimeCommandRouter:
         self.help_renderer = help_renderer
         self.release_commands = release_commands
         self.status_presenter = status_presenter
-        self.backends = backends
         self.runtime_service = runtime_service
         self.hooks = hooks
 
@@ -263,18 +260,17 @@ class RuntimeCommandRouter:
             return True
 
         scope_key = self._top_level_thread_scope_key(message)
-        backend = self._native_thread_backend(session)
-        if backend is None:
+        if not self._uses_runtime_native_threads(session):
             await self.hooks.reply(message, "当前后端不支持 `/resume` 原生命令。", command_reply=True, command_name="/resume")
             return True
         if not args.target:
             await self.hooks.send_session_list(message, session_key, session, args.page, args.sort_mode)
             return True
-        target_thread_id = await self._resolve_resume_thread_id(session_key, session, backend, args.target, args.page)
+        target_thread_id = await self._resolve_resume_thread_id(session_key, session, args.target, args.page)
         if not target_thread_id:
             await self.hooks.reply(message, "没有找到可连接的 Codex 会话。先发 `/resume` 看可用 thread。", command_reply=True, command_name="/resume")
             return True
-        thread = await self._read_native_thread(session, backend, target_thread_id)
+        thread = await self._read_native_thread(session, target_thread_id)
         resumed_session = self.session_mutations.bind_native_thread(
             scope_key,
             session,
@@ -286,18 +282,17 @@ class RuntimeCommandRouter:
         return True
 
     async def _handle_compact(self, message: IncomingMessage, session_key: str, session: SessionRecord, arg_text: str) -> bool:
-        backend = self._native_thread_backend(session)
-        if backend is None:
+        if not self._uses_runtime_native_threads(session):
             await self.hooks.reply(message, "当前后端不支持 `/compact` 原生命令。", command_reply=True, command_name="/compact")
             return True
         target = arg_text.strip()
         thread_id = session.native_session_id
         if target:
-            thread_id = await self._resolve_resume_thread_id(session_key, session, backend, target, page=1)
+            thread_id = await self._resolve_resume_thread_id(session_key, session, target, page=1)
         if not thread_id:
             await self.hooks.reply(message, "当前没有可 compact 的 Codex thread。先恢复一个 thread，或先发一条真实消息创建 thread。", command_reply=True, command_name="/compact")
             return True
-        result = await self._compact_native_thread(session, backend, thread_id)
+        result = await self._compact_native_thread(session, thread_id)
         compact_id = str(result.get("compactId") or result.get("id") or "").strip()
         lines = [f"已发起 Codex compact：{thread_id}"]
         if compact_id:
@@ -311,98 +306,48 @@ class RuntimeCommandRouter:
     def _top_level_thread_scope_key(self, message: IncomingMessage) -> str:
         return self.session_scope.top_level_thread_scope_key(message)
 
-    def _native_thread_backend(self, session: SessionRecord) -> object | None:
-        if self._uses_runtime_native_threads(session):
-            return object()
-        backend = self.backends.get(session.backend)
-        if backend is None:
-            return None
-        required = ("list_threads", "read_thread", "compact_thread")
-        if all(callable(getattr(backend, name, None)) for name in required):
-            return backend
-        return None
-
-    def _build_native_backend_context(self, session: SessionRecord):
-        from openrelay.backends import BackendContext
-
-        return BackendContext(workspace_root=get_session_workspace_root(self.config, session))
-
-    async def _list_native_threads(self, session: SessionRecord, backend: object, limit: int) -> list[NativeThreadSummary]:
-        if self._uses_runtime_native_threads(session):
-            assert self.runtime_service is not None
-            rows, _cursor = await self.runtime_service.list_sessions(
-                session.backend,
-                ListSessionsRequest(limit=limit, cwd=session.cwd),
+    async def _list_native_threads(self, session: SessionRecord, limit: int) -> list[NativeThreadSummary]:
+        assert self.runtime_service is not None
+        rows, _cursor = await self.runtime_service.list_sessions(
+            session.backend,
+            ListSessionsRequest(limit=limit, cwd=session.cwd),
+        )
+        return [
+            NativeThreadSummary(
+                thread_id=row.native_session_id,
+                preview=row.preview,
+                cwd=row.cwd,
+                updated_at=row.updated_at,
+                status=row.status,
+                name=row.title,
             )
-            return [
-                NativeThreadSummary(
-                    thread_id=row.native_session_id,
-                    preview=row.preview,
-                    cwd=row.cwd,
-                    updated_at=row.updated_at,
-                    status=row.status,
-                    name=row.title,
-                )
-                for row in rows
-            ]
-        rows, _next_cursor = await getattr(backend, "list_threads")(session, self._build_native_backend_context(session), limit)
-        threads: list[NativeThreadSummary] = []
-        for row in rows:
-            threads.append(
-                NativeThreadSummary(
-                    thread_id=str(getattr(row, "thread_id", "") or ""),
-                    preview=str(getattr(row, "preview", "") or ""),
-                    cwd=str(getattr(row, "cwd", "") or ""),
-                    updated_at=str(getattr(row, "updated_at", "") or ""),
-                    status=str(getattr(row, "status", "") or ""),
-                    name=str(getattr(row, "name", "") or ""),
-                )
-            )
-        return threads
+            for row in rows
+        ]
 
-    async def _read_native_thread(self, session: SessionRecord, backend: object, thread_id: str) -> NativeThreadDetails:
-        if self._uses_runtime_native_threads(session):
-            assert self.runtime_service is not None
-            transcript = await self.runtime_service.read_session(
-                SessionLocator(backend=session.backend, native_session_id=thread_id)  # type: ignore[arg-type]
-            )
-            return NativeThreadDetails(
-                thread_id=transcript.summary.native_session_id,
-                preview=transcript.summary.preview,
-                cwd=transcript.summary.cwd,
-                updated_at=transcript.summary.updated_at,
-                status=transcript.summary.status,
-                name=transcript.summary.title,
-                messages=tuple(
-                    NativeThreadMessage(role=item.role, text=item.text)
-                    for item in transcript.messages
-                    if item.text.strip()
-                ),
-            )
-        thread = await getattr(backend, "read_thread")(session, self._build_native_backend_context(session), thread_id, include_turns=True)
-        messages = tuple(
-            NativeThreadMessage(role=str(getattr(item, "role", "") or ""), text=str(getattr(item, "text", "") or ""))
-            for item in tuple(getattr(thread, "messages", ()) or ())
-            if str(getattr(item, "text", "") or "").strip()
+    async def _read_native_thread(self, session: SessionRecord, thread_id: str) -> NativeThreadDetails:
+        assert self.runtime_service is not None
+        transcript = await self.runtime_service.read_session(
+            SessionLocator(backend=session.backend, native_session_id=thread_id)  # type: ignore[arg-type]
         )
         return NativeThreadDetails(
-            thread_id=str(getattr(thread, "thread_id", "") or ""),
-            preview=str(getattr(thread, "preview", "") or ""),
-            cwd=str(getattr(thread, "cwd", "") or ""),
-            updated_at=str(getattr(thread, "updated_at", "") or ""),
-            status=str(getattr(thread, "status", "") or ""),
-            name=str(getattr(thread, "name", "") or ""),
-            messages=messages,
+            thread_id=transcript.summary.native_session_id,
+            preview=transcript.summary.preview,
+            cwd=transcript.summary.cwd,
+            updated_at=transcript.summary.updated_at,
+            status=transcript.summary.status,
+            name=transcript.summary.title,
+            messages=tuple(
+                NativeThreadMessage(role=item.role, text=item.text)
+                for item in transcript.messages
+                if item.text.strip()
+            ),
         )
 
-    async def _compact_native_thread(self, session: SessionRecord, backend: object, thread_id: str) -> dict[str, object]:
-        if self._uses_runtime_native_threads(session):
-            assert self.runtime_service is not None
-            return await self.runtime_service.compact_locator(
-                SessionLocator(backend=session.backend, native_session_id=thread_id)  # type: ignore[arg-type]
-            )
-        result = await getattr(backend, "compact_thread")(session, self._build_native_backend_context(session), thread_id)
-        return result if isinstance(result, dict) else {}
+    async def _compact_native_thread(self, session: SessionRecord, thread_id: str) -> dict[str, object]:
+        assert self.runtime_service is not None
+        return await self.runtime_service.compact_locator(
+            SessionLocator(backend=session.backend, native_session_id=thread_id)  # type: ignore[arg-type]
+        )
 
     def _uses_runtime_native_threads(self, session: SessionRecord) -> bool:
         return self.runtime_service is not None and session.backend in self.runtime_service.backends
@@ -411,14 +356,13 @@ class RuntimeCommandRouter:
         self,
         session_key: str,
         session: SessionRecord,
-        backend: object,
         target: str,
         page: int,
     ) -> str:
         normalized = target.strip()
         if not normalized:
             return ""
-        threads = await self._list_native_threads(session, backend, max(DEFAULT_SESSION_LIST_PAGE_SIZE * max(page, 1), 20))
+        threads = await self._list_native_threads(session, max(DEFAULT_SESSION_LIST_PAGE_SIZE * max(page, 1), 20))
         lowered = normalized.lower()
         if lowered in {"latest", "prev", "previous"}:
             return threads[0].thread_id if threads else ""

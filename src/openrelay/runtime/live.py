@@ -3,6 +3,17 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any, Callable
 
+from openrelay.agent_runtime import (
+    ApprovalRequestedEvent,
+    AssistantDeltaEvent,
+    PlanUpdatedEvent,
+    ReasoningDeltaEvent,
+    RuntimeEvent,
+    SessionStartedEvent,
+    ToolCompletedEvent,
+    ToolStartedEvent,
+    TurnCompletedEvent,
+)
 from openrelay.feishu import (
     build_complete_card,
     build_process_panel_text as build_reply_process_panel_text,
@@ -517,6 +528,116 @@ def finalize_reasoning_timing(state: LiveReplyState) -> None:
 
 def build_process_panel_text(state: LiveReplyState | dict[str, Any] | None) -> str:
     return build_reply_process_panel_text(state if isinstance(state, dict) else None)
+
+
+def apply_runtime_event(state: LiveReplyState, event: RuntimeEvent, *, assistant_text: str = "") -> None:
+    if isinstance(event, SessionStartedEvent):
+        apply_live_progress(state, {"type": "thread.started", "threadId": event.native_session_id})
+        return
+    if isinstance(event, AssistantDeltaEvent):
+        text = assistant_text or event.delta
+        if text.strip():
+            apply_live_progress(state, {"type": "assistant.partial", "text": text})
+        return
+    if isinstance(event, ReasoningDeltaEvent):
+        apply_live_progress(
+            state,
+            {
+                "type": "reasoning.completed" if event.provider_payload.get("completed") else "reasoning.delta",
+                "text": event.text,
+            },
+        )
+        return
+    if isinstance(event, PlanUpdatedEvent):
+        apply_live_progress(
+            state,
+            {
+                "type": "plan.updated",
+                "plan": [{"step": step.step, "status": step.status} for step in event.steps],
+                "explanation": event.explanation,
+            },
+        )
+        return
+    if isinstance(event, ToolStartedEvent):
+        _apply_runtime_tool_event(state, "started", event.tool)
+        return
+    if isinstance(event, ToolCompletedEvent):
+        _apply_runtime_tool_event(state, "completed", event.tool)
+        return
+    if isinstance(event, ApprovalRequestedEvent):
+        apply_live_progress(
+            state,
+            {
+                "type": "interaction.requested",
+                "interaction": {
+                    "id": event.request.approval_id,
+                    "title": event.request.title,
+                    "detail": event.request.description,
+                },
+            },
+        )
+        return
+    if isinstance(event, TurnCompletedEvent):
+        apply_live_progress(state, {"type": "turn.completed"})
+
+
+def _apply_runtime_tool_event(state: LiveReplyState, phase: str, tool: Any) -> None:
+    if tool.kind == "command":
+        apply_live_progress(
+            state,
+            {
+                "type": f"command.{phase}",
+                "command": {
+                    "id": tool.tool_id,
+                    "command": tool.title if tool.title != "Command" else tool.preview,
+                    "outputPreview": tool.detail,
+                    "exitCode": tool.exit_code,
+                },
+            },
+        )
+        return
+    if tool.kind == "web_search":
+        apply_live_progress(
+            state,
+            {
+                "type": f"web_search.{phase}",
+                "search": {
+                    "id": tool.tool_id,
+                    "query": tool.preview,
+                    "action": tool.provider_payload.get("action") if isinstance(tool.provider_payload, dict) else {},
+                },
+            },
+        )
+        return
+    if tool.kind == "file_change":
+        apply_live_progress(
+            state,
+            {
+                "type": f"file_change.{phase}",
+                "file_change": {
+                    "id": tool.tool_id,
+                    "status": str(tool.provider_payload.get("status") or ""),
+                    "changes": tool.provider_payload.get("changes") if isinstance(tool.provider_payload.get("changes"), list) else [],
+                },
+            },
+        )
+        return
+    if tool.kind == "custom":
+        apply_live_progress(
+            state,
+            {
+                "type": f"collab.{phase}",
+                "collab": {
+                    "id": tool.tool_id,
+                    "tool": tool.title,
+                    "status": str(tool.provider_payload.get("status") or ""),
+                    "prompt": tool.preview,
+                    "senderThreadId": str(tool.provider_payload.get("senderThreadId") or ""),
+                    "receiverThreadIds": list(tool.provider_payload.get("receiverThreadIds") or []),
+                    "agentsStates": tool.provider_payload.get("agentsStates") if isinstance(tool.provider_payload.get("agentsStates"), dict) else {},
+                },
+            },
+        )
 
 
 def apply_live_progress(state: LiveReplyState, event: dict[str, Any] | None) -> None:

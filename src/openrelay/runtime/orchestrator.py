@@ -5,7 +5,7 @@ from typing import Any
 from typing import Callable
 
 from openrelay.agent_runtime.service import AgentRuntimeService
-from openrelay.backends import Backend, BackendDescriptor, build_builtin_backend_descriptors, instantiate_builtin_backends
+from openrelay.backends import BackendDescriptor, build_builtin_backend_descriptors
 from openrelay.backends.codex import CodexAppServerClient
 from openrelay.backends.codex_adapter.backend import CodexRuntimeBackend
 from openrelay.core import (
@@ -50,7 +50,6 @@ class RuntimeOrchestrator:
         config: AppConfig,
         store: StateStore,
         messenger: FeishuMessenger,
-        backends: dict[str, Backend] | None = None,
         runtime_backends: dict[str, object] | None = None,
         backend_descriptors: dict[str, BackendDescriptor] | None = None,
         streaming_session_factory: Callable[[FeishuMessenger], FeishuStreamingSession] | None = None,
@@ -60,11 +59,8 @@ class RuntimeOrchestrator:
         self.store = store
         self.messenger = messenger
         self.backend_descriptors = backend_descriptors or build_builtin_backend_descriptors()
-        self.backends = backends if backends is not None else self._build_builtin_legacy_backends()
         self.binding_store = SessionBindingStore(store)
-        self.runtime_backends = runtime_backends if runtime_backends is not None else (
-            self._build_builtin_runtime_backends() if backends is None else {}
-        )
+        self.runtime_backends = runtime_backends if runtime_backends is not None else self._build_builtin_runtime_backends()
         self.agent_runtime = (
             AgentRuntimeService(self.runtime_backends, self.binding_store) if self.runtime_backends else None
         )
@@ -102,7 +98,6 @@ class RuntimeOrchestrator:
         self.panel_service = RuntimePanelService(
             config,
             messenger,
-            self.backends,
             self.backend_descriptors,
             self.session_browser,
             self.session_presentation,
@@ -125,7 +120,6 @@ class RuntimeOrchestrator:
             self.help_renderer,
             self.release_command_service,
             self.status_presenter,
-            self.backends,
             RuntimeCommandHooks(
                 reply=self._reply,
                 send_help=self.help_service.send_help,
@@ -266,15 +260,14 @@ class RuntimeOrchestrator:
         await self._run_backend_turn(message, execution_key, session)
 
     async def _run_backend_turn(self, message: IncomingMessage, execution_key: str, session: SessionRecord) -> None:
-        backend = self.backends.get(session.backend)
-        if backend is None and not self._supports_runtime_backend(session.backend):
+        if not self._supports_runtime_backend(session.backend):
             await self._reply(message, f"Unsupported backend: {session.backend}")
             return
 
         message_summary = self._message_summary_text(message)
         backend_prompt = self._build_backend_prompt(message)
         turn = BackendTurnSession(self._build_turn_runtime_context(), message, execution_key, session)
-        await turn.run(backend, message_summary, backend_prompt)
+        await turn.run(message_summary, backend_prompt)
 
     async def _handle_command(self, message: IncomingMessage, session_key: str, session: SessionRecord) -> bool:
         return await self.command_router.handle(message, session_key, session)
@@ -329,9 +322,6 @@ class RuntimeOrchestrator:
             )
         }
 
-    def _build_builtin_legacy_backends(self) -> dict[str, Backend]:
-        return instantiate_builtin_backends(self.config, self.backend_descriptors)
-
     async def _reply_final(
         self,
         message: IncomingMessage,
@@ -367,7 +357,7 @@ class RuntimeOrchestrator:
         await self._reply(message, text, command_reply=True, command_name=command_name)
 
     def available_backend_names(self) -> list[str]:
-        return sorted(set(self.backends) | set(self.runtime_backends))
+        return sorted(set(self.runtime_backends))
 
     def _supports_runtime_backend(self, backend: str) -> bool:
         return self.agent_runtime is not None and backend in self.runtime_backends

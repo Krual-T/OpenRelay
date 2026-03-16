@@ -27,7 +27,6 @@ flowchart TB
 
     AgentRuntime[AgentRuntimeService\n统一会话 / turn / approval 语义]
     RuntimeBackend[CodexRuntimeBackend\napp-server runtime adapter]
-    LegacyBackend[Legacy Backend Descriptor\n兼容旧 Backend 抽象]
     Codex[CodexAppServerClient\ncodex app-server]
 
     User --> Feishu
@@ -44,14 +43,12 @@ flowchart TB
     Runtime --> Storage
     Runtime --> Binding
     Runtime --> AgentRuntime
-    Runtime --> LegacyBackend
 
     SessionLayer --> Storage
     Presentation --> Storage
     AgentRuntime --> Binding
     AgentRuntime --> RuntimeBackend
     RuntimeBackend --> Codex
-    LegacyBackend --> Codex
     Reply --> Messenger
     Runtime --> Messenger
     Messenger --> Feishu
@@ -101,7 +98,7 @@ sequenceDiagram
 - `runtime` 层是主调度中枢，负责命令分流、执行串行化、follow-up 合并、回复策略、流式状态和重启/帮助/panel 等产品行为。
 - `session` + `storage` 层负责本地状态：session 指针、消息摘要、scope alias、目录快捷方式，以及 relay session 到 backend native session 的绑定关系。
 - `agent_runtime` 层把 provider-specific 协议收敛成统一的 session / turn / approval 语义；当前内置实现是 `CodexRuntimeBackend`。
-- `backends` 层目前仍保留一条历史兼容抽象；`RuntimeOrchestrator` 同时持有 legacy backend 和 runtime backend，两者底层都通过 `CodexAppServerClient` 对接 `codex app-server`。
+- `backends` 层现在主要承担 provider transport / adapter 职责；当前默认执行路径已经统一收敛到 `CodexRuntimeBackend -> CodexAppServerClient`。
 - `presentation` 层只负责把 session、panel、status 等状态投影成 Feishu 卡片或文本，不直接理解底层 provider 协议。
 
 ## 关键目录
@@ -118,7 +115,7 @@ sequenceDiagram
 ## 当前结构特征
 
 - 对外产品入口已经统一成 `Feishu -> RuntimeOrchestrator`。
-- 对内 provider 接入正向 `agent runtime` 抽象收敛，但仓库里仍存在 legacy backend 路径，因此目前是双轨并存，而不是完全单轨。
+- 对内 provider 接入已经以 `agent runtime` 为唯一主路径收敛。
 - 持久化分成两类：
   - `StateStore` 保存本地产品状态与轻量上下文。
   - `SessionBindingStore` 保存 relay session 与 backend native session 的绑定。

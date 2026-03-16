@@ -1,10 +1,6 @@
 from __future__ import annotations
 
-from collections.abc import Callable
 from dataclasses import dataclass
-
-from openrelay.backends.base import Backend
-from openrelay.core import AppConfig
 
 
 @dataclass(slots=True)
@@ -12,7 +8,6 @@ class BackendDescriptor:
     name: str
     transport: str
     summary: str
-    factory: Callable[[AppConfig], Backend] | None = None
     experimental: bool = False
 
 def build_builtin_backend_descriptors() -> dict[str, BackendDescriptor]:
@@ -22,12 +17,4 @@ def build_builtin_backend_descriptors() -> dict[str, BackendDescriptor]:
             transport="cli-app-server",
             summary="persistent CLI backend via app-server protocol",
         ),
-    }
-
-def instantiate_builtin_backends(config: AppConfig, descriptors: dict[str, BackendDescriptor] | None = None) -> dict[str, Backend]:
-    selected = descriptors or build_builtin_backend_descriptors()
-    return {
-        name: descriptor.factory(config)
-        for name, descriptor in selected.items()
-        if descriptor.factory is not None
     }

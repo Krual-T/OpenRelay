@@ -8,7 +8,6 @@ from dataclasses import dataclass
 from typing import Any, Awaitable, Callable, Protocol
 
 from openrelay.agent_runtime import (
-    ApprovalDecision,
     ApprovalRequestedEvent,
     AssistantDeltaEvent,
     PlanUpdatedEvent,
@@ -21,8 +20,7 @@ from openrelay.agent_runtime import (
     TurnInput,
 )
 from openrelay.agent_runtime.service import AgentRuntimeService
-from openrelay.backends import Backend, BackendContext
-from openrelay.core import ActiveRun, AppConfig, BackendReply, IncomingMessage, SessionRecord, get_session_workspace_root, utc_now
+from openrelay.core import ActiveRun, AppConfig, BackendReply, IncomingMessage, SessionRecord, utc_now
 from openrelay.feishu import (
     FeishuMessenger,
     FeishuStreamingSession,
@@ -34,7 +32,7 @@ from openrelay.session import RelaySessionBinding, SessionBindingStore
 from openrelay.storage import StateStore
 
 from .interactions import RunInteractionController
-from .live import apply_live_progress, create_live_reply_state
+from .live import apply_live_progress, apply_runtime_event, create_live_reply_state
 from .replying import ReplyRoute
 
 
@@ -92,21 +90,14 @@ class BackendTurnSession:
             self.live_state["heading"] = "Generating reply"
             self.live_state["status"] = "Waiting for streamed output"
 
-    async def run(self, backend: Backend | None, message_summary: str, backend_prompt: str) -> None:
+    async def run(self, message_summary: str, backend_prompt: str) -> None:
         try:
             await self.prepare(message_summary)
             self.build_interaction_controller()
             self.runtime.execution_coordinator.start_run(self.execution_key, self.activate_run(message_summary))
-            if self._should_use_agent_runtime():
-                reply = await self.run_with_agent_runtime(backend_prompt)
-            else:
-                if backend is None:
-                    raise RuntimeError(f"Unsupported backend: {self.session.backend}")
-                reply = await backend.run(
-                    self.session,
-                    backend_prompt,
-                    self.build_backend_context(),
-                )
+            if not self._should_use_agent_runtime():
+                raise RuntimeError(f"Unsupported backend: {self.session.backend}")
+            reply = await self.run_with_agent_runtime(backend_prompt)
             await self.save_reply(reply)
             await self.reply_final(reply.text or "(empty reply)")
         except Exception as exc:
@@ -170,17 +161,6 @@ class BackendTurnSession:
             try_handle_input=self.interaction_controller.try_handle_message if self.interaction_controller is not None else None,
         )
 
-    def build_backend_context(self) -> BackendContext:
-        return BackendContext(
-            workspace_root=get_session_workspace_root(self.runtime.config, self.session),
-            local_image_paths=self.message.local_image_paths,
-            cancel_event=self.cancel_event,
-            on_partial_text=self.on_partial_text,
-            on_progress=self.on_progress,
-            on_thread_started=self.persist_native_thread_id,
-            on_server_request=self.interaction_controller.request if self.interaction_controller is not None else None,
-        )
-
     async def on_partial_text(self, partial_text: str) -> None:
         if not partial_text.strip():
             return
@@ -204,9 +184,7 @@ class BackendTurnSession:
         async def handle_runtime_event(event: RuntimeEvent) -> None:
             if event.session_id != self.session.session_id:
                 return
-            legacy = await self._handle_runtime_event(binding, event)
-            if legacy is not None:
-                await self.on_progress(legacy)
+            await self._handle_runtime_event(binding, event)
 
         runtime_service.event_hub.subscribe(handle_runtime_event)
         try:
@@ -244,112 +222,40 @@ class BackendTurnSession:
         self,
         binding: RelaySessionBinding,
         event: RuntimeEvent,
-    ) -> dict[str, Any] | None:
+    ) -> None:
         runtime_service = self.runtime.runtime_service
         if runtime_service is None:
-            return None
+            return
         state = runtime_service.turn_registry.read(event.session_id, event.turn_id) if event.turn_id else None
         if isinstance(event, SessionStartedEvent):
             await self.persist_native_thread_id(event.native_session_id)
-            return {"type": "thread.started", "threadId": event.native_session_id}
-        if isinstance(event, AssistantDeltaEvent):
-            if state is not None:
-                await self.on_partial_text(state.assistant_text)
-            return None
-        if isinstance(event, ReasoningDeltaEvent):
-            return {
-                "type": "reasoning.completed" if event.provider_payload.get("completed") else "reasoning.delta",
-                "text": event.text,
-            }
-        if isinstance(event, PlanUpdatedEvent):
-            return {
-                "type": "plan.updated",
-                "plan": [{"step": step.step, "status": step.status} for step in event.steps],
-                "explanation": event.explanation,
-            }
-        if isinstance(event, ToolStartedEvent):
-            return self._runtime_tool_event("started", event.tool)
-        if isinstance(event, ToolCompletedEvent):
-            return self._runtime_tool_event("completed", event.tool)
+        apply_runtime_event(
+            self.live_state,
+            event,
+            assistant_text=state.assistant_text if state is not None else "",
+        )
+        if isinstance(event, AssistantDeltaEvent) and state is not None:
+            self.last_live_text = ""
         if isinstance(event, ApprovalRequestedEvent):
             if self.interaction_controller is None:
                 raise RuntimeError("interaction controller is unavailable for approval")
-            response = await self.interaction_controller.request(
-                str(event.request.provider_payload.get("method") or ""),
-                event.request.provider_payload.get("params") if isinstance(event.request.provider_payload.get("params"), dict) else {},
-            )
+            self._request_streaming_update()
             await runtime_service.resolve_approval(
                 binding,
                 event.request,
-                self._approval_decision(event.request, response),
+                await self.interaction_controller.request_approval(event.request),
             )
-            return None
-        if isinstance(event, TurnCompletedEvent):
-            return {"type": "turn.completed"}
-        return None
-
-    def _runtime_tool_event(self, phase: str, tool: Any) -> dict[str, Any] | None:
-        if tool.kind == "command":
-            return {
-                "type": f"command.{phase}",
-                "command": {
-                    "id": tool.tool_id,
-                    "command": tool.title if tool.title != "Command" else tool.preview,
-                    "outputPreview": tool.detail,
-                    "exitCode": tool.exit_code,
+            apply_live_progress(
+                self.live_state,
+                {
+                    "type": "interaction.resolved",
+                    "interaction": {
+                        "id": event.request.approval_id,
+                        "detail": "Approval resolved",
+                    },
                 },
-            }
-        if tool.kind == "web_search":
-            return {
-                "type": f"web_search.{phase}",
-                "search": {
-                    "id": tool.tool_id,
-                    "query": tool.preview,
-                    "action": tool.provider_payload.get("action") if isinstance(tool.provider_payload, dict) else {},
-                },
-            }
-        if tool.kind == "file_change":
-            return {
-                "type": f"file_change.{phase}",
-                "file_change": {
-                    "id": tool.tool_id,
-                    "status": str(tool.provider_payload.get("status") or ""),
-                    "changes": tool.provider_payload.get("changes") if isinstance(tool.provider_payload.get("changes"), list) else [],
-                },
-            }
-        if tool.kind == "custom":
-            return {
-                "type": f"collab.{phase}",
-                "collab": {
-                    "id": tool.tool_id,
-                    "tool": tool.title,
-                    "status": str(tool.provider_payload.get("status") or ""),
-                    "prompt": tool.preview,
-                    "senderThreadId": str(tool.provider_payload.get("senderThreadId") or ""),
-                    "receiverThreadIds": list(tool.provider_payload.get("receiverThreadIds") or []),
-                    "agentsStates": tool.provider_payload.get("agentsStates") if isinstance(tool.provider_payload.get("agentsStates"), dict) else {},
-                },
-            }
-        return None
-
-    def _approval_decision(self, request: Any, response: dict[str, Any]) -> ApprovalDecision:
-        method = str(request.provider_payload.get("method") or "")
-        if method in {
-            "item/commandExecution/requestApproval",
-            "item/fileChange/requestApproval",
-            "item/permissions/requestApproval",
-        }:
-            decision = str(response.get("decision") or "")
-            if decision == "acceptForSession":
-                return ApprovalDecision(decision="accept_for_session")
-            if decision in {"accept", "decline", "cancel"}:
-                return ApprovalDecision(decision=decision)  # type: ignore[arg-type]
-            return ApprovalDecision(decision="custom", payload=response)
-        if method in {"item/tool/requestUserInput", "mcpServer/elicitation/request"}:
-            if response in ({}, {"action": "cancel"}, {"answers": {}}):
-                return ApprovalDecision(decision="cancel")
-            return ApprovalDecision(decision="custom", payload=response)
-        return ApprovalDecision(decision="custom", payload=response)
+            )
+        self._request_streaming_update()
 
     def _ensure_binding(self, binding_store: SessionBindingStore) -> RelaySessionBinding:
         existing = binding_store.get(self.session.session_id)

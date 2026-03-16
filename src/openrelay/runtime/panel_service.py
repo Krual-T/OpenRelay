@@ -5,8 +5,8 @@ from typing import Awaitable, Callable
 
 from openrelay.agent_runtime import ListSessionsRequest
 from openrelay.agent_runtime.service import AgentRuntimeService
-from openrelay.backends import BackendContext, BackendDescriptor
-from openrelay.core import AppConfig, IncomingMessage, SessionRecord, get_session_workspace_root
+from openrelay.backends import BackendDescriptor
+from openrelay.core import AppConfig, IncomingMessage, SessionRecord
 from openrelay.feishu import FeishuMessenger
 from openrelay.presentation.panel import RuntimePanelPresenter
 from openrelay.presentation.session import SessionPresentation, build_native_thread_list_card
@@ -26,7 +26,6 @@ FallbackReply = Callable[[IncomingMessage, str, str], Awaitable[None]]
 class RuntimePanelService:
     config: AppConfig
     messenger: FeishuMessenger
-    backends: dict[str, object]
     backend_descriptors: dict[str, BackendDescriptor]
     session_browser: SessionBrowser
     session_presentation: SessionPresentation
@@ -83,40 +82,16 @@ class RuntimePanelService:
         action_context: dict[str, str],
     ) -> tuple[dict[str, object], str]:
         _ = message
-        if self.runtime_service is not None and session.backend in self.runtime_service.backends:
-            rows, _cursor = await self.runtime_service.list_sessions(
-                session.backend,
-                ListSessionsRequest(
-                    limit=max(DEFAULT_SESSION_LIST_PAGE_SIZE * max(page, 1) + 1, DEFAULT_SESSION_LIST_PAGE_SIZE + 1),
-                    cwd=session.cwd,
-                ),
-            )
-            return self._build_thread_list_card_from_rows(
-                session,
-                page,
-                action_context,
-                [
-                    {
-                        "thread_id": row.native_session_id,
-                        "preview": row.preview,
-                        "cwd": row.cwd,
-                        "updated_at": row.updated_at,
-                        "status": row.status,
-                        "name": row.title,
-                    }
-                    for row in rows
-                ],
-            )
-        backend = self.backends.get(session.backend)
-        if backend is None or not callable(getattr(backend, "list_threads", None)):
+        if self.runtime_service is None or session.backend not in self.runtime_service.backends:
             fallback = "当前后端不支持 `/resume` 原生命令。"
             return build_native_thread_list_card({"action_context": action_context, "page": max(page, 1), "current_thread_id": session.native_session_id}), fallback
 
-        limit = max(DEFAULT_SESSION_LIST_PAGE_SIZE * max(page, 1) + 1, DEFAULT_SESSION_LIST_PAGE_SIZE + 1)
-        rows, _next_cursor = await getattr(backend, "list_threads")(
-            session,
-            BackendContext(workspace_root=get_session_workspace_root(self.config, session)),
-            limit,
+        rows, _cursor = await self.runtime_service.list_sessions(
+            session.backend,
+            ListSessionsRequest(
+                limit=max(DEFAULT_SESSION_LIST_PAGE_SIZE * max(page, 1) + 1, DEFAULT_SESSION_LIST_PAGE_SIZE + 1),
+                cwd=session.cwd,
+            ),
         )
         return self._build_thread_list_card_from_rows(
             session,
@@ -124,14 +99,14 @@ class RuntimePanelService:
             action_context,
             [
                 {
-                    "thread_id": str(getattr(row, "thread_id", "") or "").strip(),
-                    "preview": str(getattr(row, "preview", "") or ""),
-                    "cwd": str(getattr(row, "cwd", "") or "").strip(),
-                    "updated_at": str(getattr(row, "updated_at", "") or "").strip(),
-                    "status": str(getattr(row, "status", "") or "").strip(),
-                    "name": str(getattr(row, "name", "") or ""),
+                    "thread_id": row.native_session_id,
+                    "preview": row.preview,
+                    "cwd": row.cwd,
+                    "updated_at": row.updated_at,
+                    "status": row.status,
+                    "name": row.title,
                 }
-                for row in list(rows or [])
+                for row in rows
             ],
         )
 
