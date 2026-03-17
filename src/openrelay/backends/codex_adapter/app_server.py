@@ -14,9 +14,13 @@ from openrelay.agent_runtime import (
     AssistantDeltaEvent,
     BackendNoticeEvent,
     PlanUpdatedEvent,
+    RateLimitsUpdatedEvent,
     ReasoningDeltaEvent,
     RuntimeEvent,
     SessionStartedEvent,
+    SkillsUpdatedEvent,
+    ThreadDiffUpdatedEvent,
+    ThreadStatusUpdatedEvent,
     ToolCompletedEvent,
     ToolProgressEvent,
     ToolStartedEvent,
@@ -489,6 +493,37 @@ class CodexTurn:
                 "total_tokens": event.usage.total_tokens,
                 "model_context_window": event.usage.context_window,
             }
+            return
+        if isinstance(event, ThreadStatusUpdatedEvent):
+            await self._emit_progress({"type": "thread.status", "status": event.status, "threadId": self.thread_id})
+            return
+        if isinstance(event, RateLimitsUpdatedEvent):
+            await self._emit_progress(
+                {
+                    "type": "rate_limits.updated",
+                    "rateLimits": dict(event.rate_limits),
+                    "threadId": self.thread_id,
+                }
+            )
+            return
+        if isinstance(event, SkillsUpdatedEvent):
+            await self._emit_progress(
+                {
+                    "type": "skills.updated",
+                    "version": event.version,
+                    "skills": list(event.skills),
+                    "threadId": self.thread_id,
+                }
+            )
+            return
+        if isinstance(event, ThreadDiffUpdatedEvent):
+            await self._emit_progress(
+                {
+                    "type": "thread.diff.updated",
+                    "diffId": event.diff_id,
+                    "threadId": self.thread_id,
+                }
+            )
             return
         if isinstance(event, TurnCompletedEvent):
             self.done = True

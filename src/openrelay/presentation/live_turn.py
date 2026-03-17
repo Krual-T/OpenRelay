@@ -172,6 +172,7 @@ class LiveTurnPresenter:
                         "detail": "\n".join(plan_lines),
                     }
                 )
+        items.extend(self._system_history_items(state))
         for backend_event in state.backend_events:
             items.append(
                 {
@@ -226,6 +227,55 @@ class LiveTurnPresenter:
         if isinstance(raw_event, dict) and raw_event:
             blocks.append(json.dumps(raw_event, ensure_ascii=False, indent=2, sort_keys=True))
         return "\n\n".join(blocks).strip()
+
+    def _system_history_items(self, state: LiveTurnViewModel) -> list[dict[str, Any]]:
+        items: list[dict[str, Any]] = []
+        if state.thread_status:
+            items.append(
+                {
+                    "type": "system",
+                    "state": "running" if state.status == "running" else "completed",
+                    "title": "Thread status",
+                    "detail": state.thread_status,
+                }
+            )
+        if state.rate_limits:
+            limit_id = str(state.rate_limits.get("limitId") or "").strip()
+            primary = state.rate_limits.get("primary") if isinstance(state.rate_limits.get("primary"), dict) else {}
+            used_percent = primary.get("usedPercent")
+            label = limit_id or "rate limits"
+            detail = f"{label}: {used_percent}%" if used_percent is not None else label
+            items.append(
+                {
+                    "type": "system",
+                    "state": "completed",
+                    "title": "Rate limits",
+                    "detail": detail,
+                }
+            )
+        if state.skills_version or state.available_skills:
+            skill_text = ", ".join(skill for skill in state.available_skills if skill) or "updated"
+            detail = skill_text
+            if state.skills_version:
+                detail = f"{state.skills_version}: {skill_text}"
+            items.append(
+                {
+                    "type": "system",
+                    "state": "completed",
+                    "title": "Available skills",
+                    "detail": detail,
+                }
+            )
+        if state.last_diff_id:
+            items.append(
+                {
+                    "type": "system",
+                    "state": "completed",
+                    "title": "Thread diff",
+                    "detail": state.last_diff_id,
+                }
+            )
+        return items
 
     def _tool_history_item(self, tool: ToolState) -> dict[str, Any] | None:
         if tool.kind == "command":
