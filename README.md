@@ -3,9 +3,9 @@
 
 # openrelay
 
-### Your coding agent, relayed into Feishu.
+### 把你的 coding agent，接进飞书。
 
-Remote control `Codex` from Feishu with real session continuity, thread-aware follow-ups, workspace switching, and streaming replies that feel like a real terminal instead of a toy bot.
+让 `Codex` 真正以“远程工作台”的方式进入飞书：保留原生 session、支持 thread 内连续追问、可切换工作区，并把流式执行过程稳定投影回聊天界面。
 
 <p>
   <img alt="Python 3.12+" src="https://img.shields.io/badge/python-3.12%2B-111111?style=flat-square&logo=python&logoColor=white">
@@ -15,81 +15,85 @@ Remote control `Codex` from Feishu with real session continuity, thread-aware fo
 </p>
 </div>
 
-## Why this exists
+## 这项目是干什么的
 
-Most “chat to code” bots break the moment the task becomes real:
+大多数“聊天接代码”的工具，一旦任务变复杂，就会迅速露出原形：
 
-- they lose session state
-- they hide the agent runtime behind fake chat abstractions
-- they can't switch workspaces cleanly
-- they make long-running work unreadable inside messaging apps
+- session 不是真续接，只是在重复喂 prompt
+- 聊天壳和 agent runtime 混在一起，行为不可控
+- 切目录、切工作区后，上下文很容易乱掉
+- 长任务在 IM 里几乎不可读，也不可追踪
 
-`openrelay` takes the opposite path.
+`openrelay` 想做的是另一条路：
 
-It turns Feishu into a serious remote cockpit for local coding-agent sessions:
+把飞书变成一个真正可用的 coding-agent 远程控制面板，而不是一个演示味很重的“问答机器人”。
 
-- resume real backend threads instead of replaying prompts
-- keep session scope stable across Feishu threads
-- switch between `main` and `develop` workspaces on demand
-- stream progress and final answers back into Feishu cards
-- keep the runtime backend-neutral so the product is not welded to one provider forever
+它当前的主线能力是：
 
-Today, the main production path is `Codex app-server`. A minimal `Claude` adapter is already wired into the same runtime shape for future expansion.
+- 直接续接真实 backend thread，而不是伪造“上下文连续”
+- 让 Feishu thread 和本地 agent session 形成稳定绑定
+- 在 `main` / `develop` 工作区之间明确切换
+- 把运行中状态、流式输出、最终答复投影回飞书
+- 在内部保持 backend-neutral runtime，不把产品绑死在单一 provider 上
 
-## What makes it feel different
+目前主线路径是 `Codex app-server`；`Claude` 适配器已经接进同一套 runtime 形状，但还只是最小实现。
 
-### 1. Real session continuity
-`/resume` binds Feishu back to native backend sessions. `openrelay` does not pretend a fresh prompt is the same thing as continuing a real agent thread.
+## 为什么它会和别的 bot 不一样
 
-### 2. Thread-first remote workflow
-In Feishu, you can stay inside a thread, send follow-ups while a run is still active, stop the current run, and keep the task moving without dropping context.
+### 1. 它真的尊重 session
+`/resume` 绑定的是 backend 原生会话，不是“再发一遍历史消息”。
 
-### 3. Workspace-aware execution
-Use `/main`, `/stable`, `/develop`, `/cwd`, and directory shortcuts to move the agent between working trees without turning session state into spaghetti.
+这意味着 `openrelay` 的连续性不是文案层面的连续，而是运行时层面的连续。
 
-### 4. Backend-neutral runtime core
-Feishu transport, runtime orchestration, agent runtime semantics, backend adapters, and persistence are separated cleanly. That means the product can evolve without rewriting everything around one CLI.
+### 2. 它以 thread-first 方式工作
+在飞书里，你可以直接在线程里继续追问、补充信息、停止当前运行，再让下一轮 follow-up 接着处理，而不是每次都从头开聊。
 
-### 5. Built for actual long tasks
-Streaming, typing, session locking, follow-up merging, command routing, and local state persistence are all first-class parts of the design.
+### 3. 它把工作区切换当成一等能力
+通过 `/main`、`/stable`、`/develop`、`/cwd` 和快捷目录，agent 可以在不同工作树之间切换，而不会把 session 状态搅成一团。
 
-## What you get
+### 4. 它的 runtime 是分层的
+`feishu`、`runtime`、`agent_runtime`、`backends`、`storage/session` 职责分离，后续演进不会因为某个 CLI 变化而整套产品一起塌。
 
-- Feishu webhook mode and WebSocket mode
-- streaming card replies with final answer convergence
-- session panel for sessions, directories, commands, and status
-- session binding between relay sessions and native backend sessions
-- image message forwarding into the coding-agent input pipeline
-- local SQLite state for sessions, aliases, dedup, shortcuts, and bindings
-- health endpoint at `/health`
+### 5. 它是按“长任务真的能跑”来设计的
+流式回复、typing、session 串行、follow-up 合并、命令分流、本地状态持久化，都是主路径，不是补丁功能。
 
-## Architecture in one screen
+## 你能直接拿到什么
 
-`openrelay` is structured around five layers:
+- Feishu webhook / WebSocket 两种接入模式
+- 流式卡片回复与最终态收口
+- `/panel` 总入口，统一查看 sessions / directories / commands / status
+- relay session 到 backend native session 的绑定能力
+- 飞书图片消息转发进 coding-agent 输入链路
+- 基于 SQLite 的本地状态存储：sessions、aliases、dedup、shortcuts、bindings
+- `/health` 健康检查接口
 
-1. `feishu/` - platform ingress, cards, typing, streaming
-2. `runtime/` - command routing, session orchestration, execution flow
-3. `agent_runtime/` - backend-neutral turn, event, approval, transcript semantics
-4. `backends/` - provider adapters such as Codex and Claude
-5. `storage/` + `session/` - SQLite state and relay-to-backend bindings
+## 架构一眼看懂
 
-If you want the full breakdown, see `docs/architecture.md`.
+`openrelay` 当前可以概括为五层：
 
-## Quick start
+1. `feishu/`：平台接入、卡片、typing、streaming
+2. `runtime/`：命令分流、会话编排、执行主路径
+3. `agent_runtime/`：backend-neutral 的 turn / event / approval / transcript 语义
+4. `backends/`：Codex、Claude 等 provider adapter
+5. `storage/` + `session/`：SQLite 状态与 relay-to-backend 绑定
 
-### 1. Install dependencies
+完整拆解可看 `docs/architecture.md`。
+
+## 快速开始
+
+### 1. 安装依赖
 
 ```bash
 uv sync --extra dev
 ```
 
-### 2. Create your env file
+### 2. 复制环境变量
 
 ```bash
 cp .env.example .env
 ```
 
-Start with these fields:
+最少先配这些：
 
 ```env
 PORT=3000
@@ -110,44 +114,44 @@ CODEX_SANDBOX=workspace-write
 CODEX_SESSIONS_DIR=~/.codex/sessions
 ```
 
-Notes:
+说明：
 
-- `websocket` mode is the default and keeps `openrelay` bound to `127.0.0.1`
-- webhook mode registers `WEBHOOK_PATH` and listens on `0.0.0.0`
-- `CODEX_SQLITE_HOME` can isolate relay-driven Codex state from your normal interactive Codex home
-- `FEISHU_ALLOWED_OPEN_IDS` and `FEISHU_ADMIN_OPEN_IDS` provide an app-side permission layer
+- `websocket` 是默认模式，此时 `openrelay` 只绑定 `127.0.0.1`
+- webhook 模式会注册 `WEBHOOK_PATH`，并监听 `0.0.0.0`
+- `CODEX_SQLITE_HOME` 可把 relay 驱动的 Codex state 与日常交互式 Codex home 隔离
+- `FEISHU_ALLOWED_OPEN_IDS` 与 `FEISHU_ADMIN_OPEN_IDS` 可增加应用侧权限控制
 
-### 3. Run the server
+### 3. 启动服务
 
 ```bash
 uv run openrelayd
 ```
 
-### 4. Check health
+### 4. 检查健康状态
 
 ```bash
 curl http://127.0.0.1:3000/health
 ```
 
-### 5. Connect Feishu
+### 5. 接入飞书
 
-- If `FEISHU_CONNECTION_MODE=websocket`, enable long-connection delivery in Feishu and no webhook URL is needed.
-- If `FEISHU_CONNECTION_MODE=webhook`, point Feishu to:
+- 如果 `FEISHU_CONNECTION_MODE=websocket`，在飞书开放平台开启长连接接收即可，不需要 webhook URL。
+- 如果 `FEISHU_CONNECTION_MODE=webhook`，把飞书事件订阅地址指向：
 
 ```text
 http://your-host:3000/feishu/webhook
 ```
 
-## Command surface
+## 命令面
 
-### Session and navigation
+### 会话与导航
 - `/panel [sessions|directories|commands|status]`
 - `/resume [latest|thread_id|local_session_id]`
 - `/compact [thread_id|local_session_id]`
 - `/status`
 - `/help`
 
-### Workspace control
+### 工作区控制
 - `/main [reason]`
 - `/stable [reason]`
 - `/develop [reason]`
@@ -155,43 +159,45 @@ http://your-host:3000/feishu/webhook
 - `/cd [path]`
 - `/shortcut list|add|remove|cd`
 
-### Runtime control
+### 运行控制
 - `/stop`
 - `/clear`
 - `/model [name|default]`
 - `/sandbox [read-only|workspace-write|danger-full-access]`
 - `/backend [list|name]`
 - `/ping`
-- `/restart` (admin only)
+- `/restart`（仅管理员）
 
-## The intended workflow
+## 推荐使用方式
 
-1. Open Feishu and start from `/panel` or a direct task message.
-2. Let `openrelay` bind the current scope to a backend session.
-3. Continue in-thread for follow-ups instead of re-explaining the task.
-4. Use `/resume` when you need to jump back into an older native agent thread.
-5. Use `/main`, `/develop`, or `/cwd` when the execution surface needs to move.
+1. 在飞书里从 `/panel` 或一条直接任务消息开始。
+2. 让 `openrelay` 把当前 scope 绑定到 backend session。
+3. 同一任务就在 thread 里持续补充，而不是反复重讲背景。
+4. 需要回到旧会话时，用 `/resume` 接回原生 agent thread。
+5. 需要切执行面时，用 `/main`、`/develop` 或 `/cwd`。
 
-This is the key idea: Feishu is the control surface, but the backend session remains real.
+核心理念只有一句话：
 
-## Current backend status
+飞书只是控制面，backend session 必须是真的。
+
+## 当前 backend 状态
 
 ### Codex
-- first-class path
-- connects through `codex app-server`
-- native session reuse is part of the primary product flow
+- 当前一等主路径
+- 通过 `codex app-server` 接入
+- 原生 session 续接已经是产品主流程的一部分
 
 ### Claude
-- adapter exists
-- currently minimal and not feature-parity with Codex yet
+- 已有 adapter
+- 目前仍是最小实现，还没有和 Codex 做完整能力对齐
 
-## Local development
+## 本地开发
 
 ```bash
 uv run pytest
 ```
 
-Useful files:
+建议优先阅读这些入口：
 
 - `src/openrelay/server.py`
 - `src/openrelay/runtime/orchestrator.py`
@@ -199,16 +205,16 @@ Useful files:
 - `src/openrelay/backends/codex_adapter/`
 - `docs/architecture.md`
 
-## Why people may care
+## 为什么这个项目值得关注
 
-Because remote coding from chat only becomes useful when it preserves the things that matter:
+因为“在聊天软件里远程驱动 coding agent”这件事，只有在下面这些点都成立时才真正有用：
 
-- session identity
-- execution locality
-- follow-up continuity
-- readable streaming output
-- explicit workspace boundaries
+- session 身份是真实的
+- 执行位置是明确的
+- follow-up 是连续的
+- 流式输出是可读的
+- 工作区边界是清楚的
 
-That is the bet behind `openrelay`.
+这就是 `openrelay` 的判断。
 
-If you want your coding agent to survive real work instead of demo prompts, this repo is for you.
+如果你不想要一个只能 demo 的 bot，而是想要一个能在真实开发任务里活下来的远程 agent 入口，这个仓库就是为这个方向做的。
