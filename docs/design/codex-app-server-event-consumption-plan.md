@@ -140,11 +140,14 @@ CodexTurnStream
 
 本机 `codex-cli 0.115.0` 样本已确认出现：
 
+- `thread/started`
 - `thread/status/changed`
 - `turn/started`
 - `item/started`
 - `item/completed`
 - `item/agentMessage/delta`
+- `item/reasoning/summaryPartAdded`
+- `item/reasoning/summaryTextDelta`
 - `thread/tokenUsage/updated`
 - `account/rateLimits/updated`
 - `turn/completed`
@@ -152,9 +155,17 @@ CodexTurnStream
 样本同时确认：
 
 - `item/started` / `item/completed` 会携带 `userMessage`，必须忽略。
+- `item/started` / `item/completed` 当前实测 item type 主要是 `userMessage`、`reasoning`、`agentMessage`。
+- 推理摘要流会经过 `item/reasoning/summaryPartAdded` 与 `item/reasoning/summaryTextDelta`，没有出现 unknown method。
 - `thread/status/changed.params.status` 是结构化对象，不能按单一字符串假设。
 - `account/rateLimits/updated` 的主要数据位于 `params.rateLimits`。
 - `turn/start` 请求里的 sandbox 值应使用 `workspace-write`。
+
+补充结论：
+
+- 这轮额外做了“强制 shell / 强制文件修改”探针，但外部 app-server 实测仍没有产出 `item/commandExecution/outputDelta`、`item/fileChange/outputDelta`、`item/mcpToolCall/progress`、`turn/plan/updated`、`skills/changed`、`turn/diff/updated`。
+- 同一轮里也没有出现任何未注册 method；当前 registry 对已观察到的外部 typed 通知覆盖完整。
+- 但这不代表工具类 typed 事件不存在，只能说明在当前本机 `codex-cli 0.115.0`、当前模型和这些 prompt 下还没复现出来，后续仍需要更贴近真实任务的样本继续抓。
 
 ## 当前实现结论
 

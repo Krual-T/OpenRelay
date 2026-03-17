@@ -59,6 +59,7 @@
   - `tests/test_codex_protocol_mapper.py`
   - `tests/test_codex_runtime_backend.py`
   - `tests/test_agent_runtime.py`
+  - 本机额外 probe 已再次确认：当前外部 typed 样本未出现 unknown method；新增观察到 `thread/started`、`item/reasoning/summaryPartAdded`、`item/reasoning/summaryTextDelta`
 
 ## Active
 
