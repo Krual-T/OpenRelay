@@ -1,18 +1,12 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from enum import StrEnum
 from typing import Literal
 
 
 EventPolicy = Literal["render", "system", "ignore", "observe"]
-EventRoute = Literal["v1", "v2"]
-SupportLevel = Literal["v1-only", "v2-only", "dual"]
-
-
-class CodexConsumptionMode(StrEnum):
-    HYBRID = "hybrid"
-    TYPED_ONLY = "typed-only"
+EventRoute = Literal["v2"]
+SupportLevel = Literal["v2-only"]
 
 
 @dataclass(frozen=True, slots=True)
@@ -57,15 +51,5 @@ class CodexEventRegistry:
             )
         }
 
-    def lookup(self, method: str, mode: CodexConsumptionMode) -> CodexEventDescriptor | None:
-        descriptor = self._descriptors.get(method)
-        if descriptor is None:
-            return None
-        if not self.is_enabled(descriptor, mode):
-            return None
-        return descriptor
-
-    def is_enabled(self, descriptor: CodexEventDescriptor, mode: CodexConsumptionMode) -> bool:
-        if mode == CodexConsumptionMode.HYBRID:
-            return True
-        return descriptor.route == "v2"
+    def lookup(self, method: str) -> CodexEventDescriptor | None:
+        return self._descriptors.get(method)

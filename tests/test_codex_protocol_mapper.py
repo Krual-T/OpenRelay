@@ -22,7 +22,7 @@ from openrelay.agent_runtime import (
 from openrelay.backends.codex_adapter import CodexProtocolMapper, CodexTurnState
 
 
-def test_codex_mapper_maps_turn_started_and_alias_agent_delta() -> None:
+def test_codex_mapper_maps_turn_started_and_agent_delta() -> None:
     mapper = CodexProtocolMapper(session_id="relay-1", native_session_id="thread_1")
     state = CodexTurnState()
 
@@ -32,21 +32,9 @@ def test_codex_mapper_maps_turn_started_and_alias_agent_delta() -> None:
         {"threadId": "thread_1", "turnId": "turn_1", "itemId": "msg_1", "delta": "hello"},
         state,
     )
-    alias = mapper.map_notification(
-        "codex/event/agent_message_content_delta",
-        {
-            "conversationId": "thread_1",
-            "id": "turn_1",
-            "msg": {"thread_id": "thread_1", "turn_id": "turn_1", "item_id": "msg_1", "delta": "hello"},
-        },
-        state,
-    )
-
     assert len(started) == 1 and isinstance(started[0], TurnStartedEvent)
     assert len(direct) == 1 and isinstance(direct[0], AssistantDeltaEvent)
     assert direct[0].delta == "hello"
-    assert len(alias) == 1 and isinstance(alias[0], BackendNoticeEvent)
-    assert alias[0].provider_payload["classification"] == "observe"
 
 
 def test_codex_mapper_aggregates_reasoning_and_prefers_summary() -> None:
@@ -61,21 +49,6 @@ def test_codex_mapper_aggregates_reasoning_and_prefers_summary() -> None:
             "itemId": "reasoning_1",
             "contentIndex": 0,
             "delta": "verbose trace",
-        },
-        state,
-    )
-    alias = mapper.map_notification(
-        "codex/event/reasoning_content_delta",
-        {
-            "conversationId": "thread_1",
-            "id": "turn_1",
-            "msg": {
-                "thread_id": "thread_1",
-                "turn_id": "turn_1",
-                "item_id": "reasoning_1",
-                "content_index": 0,
-                "delta": "verbose trace",
-            },
         },
         state,
     )
@@ -96,8 +69,6 @@ def test_codex_mapper_aggregates_reasoning_and_prefers_summary() -> None:
 
     assert len(delta) == 1 and isinstance(delta[0], ReasoningDeltaEvent)
     assert delta[0].text == "verbose trace"
-    assert len(alias) == 1 and isinstance(alias[0], BackendNoticeEvent)
-    assert alias[0].provider_payload["classification"] == "observe"
     assert len(completed) == 1 and isinstance(completed[0], ReasoningDeltaEvent)
     assert completed[0].text == "concise summary"
 
