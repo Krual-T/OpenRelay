@@ -5,6 +5,9 @@ aliases:
   codex cli 怎么自己勾选任务:
     id: task_board_self_close_protocol
     kind: decision
+  codex tui gap:
+    id: feishu_codex_tui_gap_priority
+    kind: fact
   cwd clear develop 这些命令为什么复用同一个 session_id:
     id: scope_mutations_reuse_current_session
     kind: decision
@@ -77,3 +80,6 @@ aliases:
   飞书消息是怎么进 backend 的:
     id: trace_feishu_message_to_backend_turn
     kind: workflow
+  飞书端和 codex tui 还差什么:
+    id: feishu_codex_tui_gap_priority
+    kind: fact
