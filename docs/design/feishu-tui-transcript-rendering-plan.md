@@ -1,4 +1,4 @@
-# Feishu TUI Transcript Rendering Plan
+# Feishu TUI Transcript Rendering
 
 更新时间：2026-03-17
 
@@ -21,6 +21,37 @@
 这些内容自然混排，而不是先放进过程面板、再在下面补答案。
 
 本设计的目标不是把 Feishu 伪装成终端，而是让 Feishu 投影层和 TUI 更接近同一个产品语义：**渲染统一 transcript，而不是分别渲染‘过程’与‘答案’**。
+
+## 本轮落地结果
+
+本轮已经把 OR-TASK-003 的主路径落地到代码里，当前实现收敛为：
+
+- `src/openrelay/presentation/live_turn.py`
+  - `build_snapshot()` 现在会同时维护 `plan_history_items` 与 `transcript_items`。
+  - `build_transcript_markdown()` 成为 presenter 的正式 transcript 输出。
+  - `build_final_card()` / `build_streaming_card()` 直接面向 transcript card，而不是 `process_text`。
+- `src/openrelay/feishu/reply_card.py`
+  - `render_transcript_markdown()` 成为统一 transcript renderer。
+  - `build_streaming_content()` 与 `build_complete_card()` 都改为 transcript-first。
+  - `build_process_panel_text()` 仅保留为兼容别名，不再代表 panel-first 主路径。
+- `src/openrelay/feishu/streaming.py`
+  - `freeze()` 超时后不再构造“运行中状态 panel card”，而是冻结 transcript card，并在正文尾部追加 timeout notice。
+- `src/openrelay/runtime/orchestrator.py`
+  - `_reply_final()` 不再手工拼 `process_text`，而是直接关闭到 presenter 提供的 final transcript card。
+- `src/openrelay/runtime/turn.py`
+  - 中断/停止也走同一条 final transcript card 主路径，不再分叉到旧的 panel 输出。
+
+这意味着当前飞书 live turn 主路径已经不再依赖：
+
+- `Execution Log`
+- `collapsible_panel`
+- `process_text + final_answer` 这种双区 contract
+
+而是统一依赖：
+
+- `transcript_items`
+- `render_transcript_markdown(...)`
+- `build_complete_card(..., transcript_markdown=...)`
 
 ## 当前实现链路
 
@@ -425,6 +456,7 @@
 
 - 先追求主语义正确；
 - 再决定是否保留 compact mode，而不是为了“看起来简洁”继续维持双区结构。
+- 当前实现保留了 `build_process_panel_text()` 兼容入口，必要时可以短期回退调用方，但它已经只是 transcript renderer 的别名，不再单独维护 panel 逻辑。
 
 ### 2. 风险：reasoning 与 answer 边界变弱
 
@@ -450,6 +482,19 @@
 - 不把 provider 原始事件名直接暴露给飞书 UI。
 - 不在这轮里同时重做 `/panel`、`/help`、审批卡片等非 live turn 主路径。
 - 不为了兼容旧 panel 先长期保留双轨主路径；如果需要回退，只允许短期 feature flag。
+
+## 最小验证
+
+本轮已通过下面的最小验证：
+
+- `uv run pytest tests/test_runtime_turn.py tests/test_live_turn_presenter.py tests/test_feishu_streaming.py`
+
+覆盖点包括：
+
+- transcript streaming 与 final card 共用同一条 markdown 输出链；
+- `plan` 更新会保留 transcript 历史，而不是只显示最后一个当前 plan；
+- timeout freeze / stop interrupt 都会落到 transcript-only card；
+- `build_complete_card()` 会优先渲染外部传入的 transcript markdown，而不是重新拆出 panel。
 
 ## 结论
 

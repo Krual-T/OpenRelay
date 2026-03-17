@@ -189,3 +189,39 @@ def test_live_turn_presenter_renders_terminal_interaction_item() -> None:
 
     assert terminal_item["title"] == "Command terminal interaction"
     assert "process: 89012" in terminal_item["detail"]
+
+
+def test_live_turn_presenter_preserves_plan_history_in_transcript() -> None:
+    presenter = LiveTurnPresenter()
+    first_state = LiveTurnViewModel(
+        backend="codex",
+        session_id="relay_1",
+        native_session_id="thread_1",
+        turn_id="turn_1",
+        status="running",
+        plan_steps=(
+            PlanStep(step="Inspect runtime", status="completed"),
+            PlanStep(step="Adjust Feishu rendering", status="in_progress"),
+        ),
+    )
+    second_state = LiveTurnViewModel(
+        backend="codex",
+        session_id="relay_1",
+        native_session_id="thread_1",
+        turn_id="turn_1",
+        status="running",
+        plan_steps=(
+            PlanStep(step="Inspect runtime", status="completed"),
+            PlanStep(step="Adjust Feishu rendering", status="completed"),
+            PlanStep(step="Verify snapshot output", status="in_progress"),
+        ),
+    )
+
+    first_snapshot = presenter.build_snapshot(first_state)
+    second_snapshot = presenter.build_snapshot(second_state, previous=first_snapshot)
+    transcript = presenter.build_transcript_markdown(second_snapshot)
+
+    assert len(second_snapshot["plan_history_items"]) == 2
+    assert transcript.count("**Plan**") == 2
+    assert "Adjust Feishu rendering" in transcript
+    assert "Verify snapshot output" in transcript

@@ -2,6 +2,7 @@ import pytest
 
 import openrelay.feishu.streaming as streaming_card_module
 from openrelay.feishu.reply_card import build_streaming_card_signature
+from openrelay.feishu.reply_card import build_complete_card
 from openrelay.feishu import (
     DEFAULT_THINKING_TEXT,
     FeishuStreamingSession,
@@ -435,6 +436,7 @@ async def test_streaming_session_freezes_before_platform_timeout(monkeypatch: py
     assert calls[0] == ("settings", False)
     assert calls[1][0] == "update"
     assert "流式显示已自动暂停" in str(calls[1][1])
+    assert "第二段" in str(calls[1][1])
 
 
 @pytest.mark.asyncio
@@ -462,3 +464,14 @@ async def test_streaming_session_close_updates_final_card_after_freeze(monkeypat
     assert calls == [
         ("update", {"schema": "2.0", "config": {"streaming_mode": False}, "body": {"elements": []}}),
     ]
+
+
+def test_build_complete_card_prefers_transcript_markdown() -> None:
+    card = build_complete_card(
+        "最终答案",
+        transcript_markdown="• **Ran** `pytest`\n\n---\n\n最终答案",
+        summary_text="最终答案",
+    )
+
+    assert card["body"]["elements"] == [{"tag": "markdown", "content": "• **Ran** `pytest`\n\n---\n\n最终答案"}]
+    assert card["config"]["summary"]["content"] == "最终答案"

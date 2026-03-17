@@ -14,7 +14,7 @@ from openrelay.core import (
     IncomingMessage,
     SessionRecord,
 )
-from openrelay.feishu import FeishuMessenger, FeishuStreamingSession, FeishuTypingManager, build_process_panel_text
+from openrelay.feishu import FeishuMessenger, FeishuStreamingSession, FeishuTypingManager
 from openrelay.presentation.live_turn import LiveTurnPresenter
 from openrelay.presentation.panel import RuntimePanelPresenter
 from openrelay.presentation.runtime_status import RuntimeStatusPresenter
@@ -338,12 +338,9 @@ class RuntimeOrchestrator:
         live_state: dict[str, Any] | None = None,
     ) -> None:
         live_state = live_state or {}
-        process_text = build_process_panel_text(live_state)
         if self.config.feishu.stream_mode == "card" and streaming is not None and streaming.has_started():
             try:
-                await streaming.close(
-                    self.live_turn_presenter.build_reply_card(text, process_text=process_text)
-                )
+                await streaming.close(self.live_turn_presenter.build_final_card(live_state, fallback_text=text))
                 return
             except Exception:
                 LOGGER.exception("streaming final card update failed for event_id=%s", message.event_id)

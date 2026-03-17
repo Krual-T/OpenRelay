@@ -44,6 +44,7 @@ from .reply_card import (
     build_streaming_content,
     build_thinking_card_json,
     format_reasoning_duration,
+    render_transcript_markdown,
 )
 from .streaming import FeishuStreamingSession
 from .streaming import STREAMING_ROLLOVER_NOTICE
@@ -78,6 +79,7 @@ __all__ = [
     "build_note_bar",
     "build_process_panel_text",
     "build_raw_request",
+    "render_transcript_markdown",
     "build_section_block",
     "build_status_heading",
     "build_status_hero",

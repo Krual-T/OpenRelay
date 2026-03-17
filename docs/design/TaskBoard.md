@@ -4,6 +4,26 @@
 
 ## Landed
 
+### [x] OR-TASK-003 Feishu 流式回复收敛为 TUI Transcript 投影
+- **目标**：把飞书当前“过程面板 + 最终答案”的双区渲染，收敛为与 Codex TUI 更一致的单条 transcript 投影，使执行记录、解释文字和 follow-up 建议能在线性正文里自然混排。
+- **结果**：
+  - `LiveTurnPresenter` 现在会显式维护 `transcript_items` 与 `plan_history_items`，并提供统一 `build_transcript_markdown()` / `build_final_card()` 输出。
+  - `reply_card.py` 已收敛到 transcript-first contract；streaming 与 final 都优先渲染同一份 transcript markdown，不再默认构造 `collapsible_panel`。
+  - `FeishuStreamingSession.freeze()` 已改为冻结 transcript card，并把 timeout notice 作为 transcript 尾部提示，而不是切回“运行中状态 panel”。
+  - `RuntimeOrchestrator._reply_final()` 与 `BackendTurnSession` 的 stop/cancel 关闭路径已删除对 `process_text` 的显式依赖。
+  - `plan.updated` 在飞书 transcript 中已保留历史痕迹，不再退化成单一“当前 Plan 板块”。
+  - `rate_limits`、`thread_status`、`available_skills`、`last_diff_id` 等 runtime 元信息仍默认不进入主 transcript。
+- **主要证据**：
+  - `docs/design/feishu-tui-transcript-rendering-plan.md`
+  - `src/openrelay/presentation/live_turn.py`
+  - `src/openrelay/feishu/reply_card.py`
+  - `src/openrelay/feishu/streaming.py`
+  - `src/openrelay/runtime/orchestrator.py`
+  - `src/openrelay/runtime/turn.py`
+  - `tests/test_live_turn_presenter.py`
+  - `tests/test_feishu_streaming.py`
+  - `tests/test_runtime_turn.py`
+
 ### [x] OR-TASK-004 README 首页重写与视觉入口收敛
 - **目标**：把仓库首页重写成能直接说明 `openrelay` 产品定位、主路径能力和上手方式的 GitHub README，并把 `static/` 里的品牌图片纳入默认视觉入口。
 - **结果**：
@@ -63,33 +83,7 @@
 
 ## Active
 
-### [ ] OR-TASK-003 Feishu 流式回复收敛为 TUI Transcript 投影
-- **目标**：把飞书当前“过程面板 + 最终答案”的双区渲染，收敛为与 Codex TUI 更一致的单条 transcript 投影，使执行记录、解释文字和 follow-up 建议能在线性正文里自然混排。
-- **当前关注**：
-  - 明确 transcript 渲染 contract 应该落在哪一层，避免把 provider 事件细节直接泄漏到飞书卡片。
-  - 明确 streaming 阶段与 final 阶段是否共用同一份 transcript builder，消除当前双套拼装逻辑。
-  - 写死 transcript-first 约束：目标是 append-only / tail-replace 的 transcript block 历史，而不是把最新状态快照重新渲染得像 transcript。
-  - 明确 `plan.updated` 在飞书里的语义应保留历史痕迹，不能继续只表现为“当前 Plan 板块”。
-  - 明确 `rate_limits`、`thread_status`、`available_skills`、`last_diff_id` 这类 runtime 元信息默认不进入主 transcript。
-  - 明确 `collapsible_panel`、`Execution Log` 和固定 `---` 分隔线如何退出主路径。
-- **关闭条件**：
-  - 设计文档明确现状链路、目标链路和迁移边界。
-  - 需要改动的类、方法名、职责调整和替换顺序被写清楚。
-  - 风险点、回退策略和最小验证方案被写清楚。
-- **建议产物**：
-  - `docs/design/feishu-tui-transcript-rendering-plan.md`
-- **已完成证据**：
-  - 当前实现入口：`src/openrelay/presentation/live_turn.py`
-  - 当前实现入口：`src/openrelay/feishu/reply_card.py`
-  - 当前实现入口：`src/openrelay/feishu/streaming.py`
-  - `docs/design/feishu-tui-transcript-rendering-plan.md`
-  - 2026-03-17 已补充 transcript contract、plan 历史语义与非正文 runtime 元信息过滤原则。
-- **后续 follow-up**：
-  - 按设计引入统一 transcript builder，并删除流式 / 最终态的重复拼装。
-  - 决定 `plan` 是 append-only 还是仅允许覆盖 transcript 尾部最后一个 live block，并把规则下沉到 presenter / reducer contract。
-  - 决定是否保留可配置的 compact card 模式，避免一次性把旧展示能力彻底删死。
-
 ## 使用约定
 
-- 当前打开的设计主线任务见 `OR-TASK-003`；`OR-TASK-002` 已落地。
+- 当前设计主线任务已全部落地；若再开启新任务，请直接新增新的 `OR-TASK-xxx` 条目。
 - 后续若再开启新的设计主线，新增条目应继续遵循 `docs/design/task-board-protocol.md`。

@@ -5,7 +5,7 @@ from typing import Any, Callable
 
 from openrelay.agent_runtime import ApprovalDecision, ApprovalRequest, LiveTurnViewModel, ToolState
 from openrelay.core import SessionRecord, utc_now
-from openrelay.feishu import build_complete_card, build_process_panel_text as build_reply_process_panel_text
+from openrelay.feishu import build_complete_card, render_transcript_markdown
 
 
 class LiveTurnPresenter:
@@ -20,6 +20,8 @@ class LiveTurnPresenter:
             "cwd": format_cwd(session.cwd, session),
             "history": [],
             "history_items": [],
+            "plan_history_items": [],
+            "transcript_items": [],
             "heading": "Generating reply",
             "status": "Waiting for streamed output",
             "current_command": "",
@@ -50,6 +52,8 @@ class LiveTurnPresenter:
             "cwd": format_cwd(session.cwd, session) if (session is not None and format_cwd is not None) else str(previous.get("cwd") or ""),
             "history": list(previous.get("history") or []),
             "history_items": self._history_items(state, previous),
+            "plan_history_items": [],
+            "transcript_items": [],
             "heading": heading,
             "status": status,
             "current_command": self._current_command(state),
@@ -66,11 +70,16 @@ class LiveTurnPresenter:
         }
         if state.reasoning_text and not snapshot["reasoning_started_at"]:
             snapshot["reasoning_started_at"] = previous.get("started_at") or utc_now()
+        snapshot["plan_history_items"] = self._merge_plan_history_items(snapshot["history_items"], previous)
+        snapshot["transcript_items"] = self._build_transcript_items(snapshot["history_items"], snapshot["plan_history_items"])
         return snapshot
 
     def build_process_text(self, state: dict[str, Any] | LiveTurnViewModel) -> str:
+        return self.build_transcript_markdown(state)
+
+    def build_transcript_markdown(self, state: dict[str, Any] | LiveTurnViewModel) -> str:
         snapshot = state if isinstance(state, dict) else self.build_snapshot(state)
-        return build_reply_process_panel_text(snapshot)
+        return render_transcript_markdown(snapshot)
 
     def build_final_reply(self, state: LiveTurnViewModel) -> str:
         return state.assistant_text
@@ -95,7 +104,29 @@ class LiveTurnPresenter:
         return ("Generating reply", "Waiting for streamed output")
 
     def build_reply_card(self, text: str, *, process_text: str = "") -> dict[str, object]:
-        return build_complete_card(text, panel_text=process_text, panel_title="Execution Log")
+        transcript_markdown = str(process_text or "").strip()
+        return build_complete_card(text, transcript_markdown=transcript_markdown)
+
+    def build_streaming_card(self, state: dict[str, Any] | LiveTurnViewModel) -> dict[str, object]:
+        snapshot = state if isinstance(state, dict) else self.build_snapshot(state)
+        return build_complete_card(
+            snapshot.get("partial_text") or "",
+            transcript_markdown=self.build_transcript_markdown(snapshot),
+        )
+
+    def build_final_card(self, state: dict[str, Any] | LiveTurnViewModel, *, fallback_text: str = "") -> dict[str, object]:
+        snapshot = state if isinstance(state, dict) else self.build_snapshot(state)
+        text = str(snapshot.get("partial_text") or fallback_text or "").strip() or "回复为空。"
+        transcript_markdown = self.build_transcript_markdown(snapshot)
+        normalized_fallback = str(fallback_text or "").strip()
+        if normalized_fallback and normalized_fallback != text and normalized_fallback not in transcript_markdown:
+            transcript_markdown = (
+                f"{transcript_markdown}\n\n---\n\n{normalized_fallback}".strip()
+                if transcript_markdown
+                else normalized_fallback
+            )
+        summary_text = normalized_fallback or text
+        return build_complete_card(text, transcript_markdown=transcript_markdown, summary_text=summary_text)
 
     def build_approval_resolved_snapshot(
         self,
@@ -226,6 +257,61 @@ class LiveTurnPresenter:
                 continue
             preserved.append(dict(item))
         return preserved + items
+
+    def _merge_plan_history_items(
+        self,
+        items: list[dict[str, Any]],
+        previous: dict[str, Any] | None,
+    ) -> list[dict[str, Any]]:
+        current_plan = next((dict(item) for item in items if item.get("type") == "plan"), None)
+        history = [
+            dict(item)
+            for item in list((previous or {}).get("plan_history_items") or [])
+            if isinstance(item, dict) and item.get("type") == "plan"
+        ]
+        if current_plan is None:
+            return history
+        signature = self._plan_signature(current_plan)
+        current_plan["transcript_signature"] = signature
+        if history and str(history[-1].get("transcript_signature") or "") == signature:
+            history[-1] = current_plan
+            return history
+        history.append(current_plan)
+        return history
+
+    def _build_transcript_items(
+        self,
+        items: list[dict[str, Any]],
+        plan_history_items: list[dict[str, Any]],
+    ) -> list[dict[str, Any]]:
+        transcript_items: list[dict[str, Any]] = []
+        inserted_plan_history = False
+        for item in items:
+            if item.get("type") == "plan":
+                if not inserted_plan_history:
+                    transcript_items.extend(dict(entry) for entry in plan_history_items)
+                    inserted_plan_history = True
+                continue
+            transcript_items.append(dict(item))
+        if not inserted_plan_history and plan_history_items:
+            transcript_items.extend(dict(entry) for entry in plan_history_items)
+        return transcript_items
+
+    def _plan_signature(self, item: dict[str, Any]) -> str:
+        steps = item.get("steps")
+        if not isinstance(steps, list):
+            return str(item.get("detail") or "").strip()
+        normalized_steps = []
+        for step in steps:
+            if not isinstance(step, dict):
+                continue
+            normalized_steps.append(
+                {
+                    "step": str(step.get("step") or "").strip(),
+                    "status": str(step.get("status") or "").strip(),
+                }
+            )
+        return json.dumps(normalized_steps, ensure_ascii=False, sort_keys=True)
 
     def _format_backend_event_detail(self, detail: str, raw_payload: dict[str, Any]) -> str:
         blocks: list[str] = []

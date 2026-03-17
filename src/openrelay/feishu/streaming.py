@@ -23,11 +23,11 @@ from .reply_card import (
     DEFAULT_THINKING_TEXT,
     STREAMING_ELEMENT_ID,
     build_complete_card,
-    build_process_panel_text,
     build_streaming_card_json,
     build_streaming_card_signature,
     build_streaming_content,
     build_thinking_card_json,
+    render_transcript_markdown,
 )
 
 DEFAULT_STREAM_UPDATE_THROTTLE_MS = 100
@@ -130,10 +130,15 @@ class FeishuStreamingSession:
                 return
             await self.flush_pending_content()
             await self._disable_streaming_mode()
+            transcript_markdown = render_transcript_markdown(live_state)
+            if transcript_markdown:
+                transcript_markdown = f"{transcript_markdown}\n\n---\n\n> {notice_text}"
+            else:
+                transcript_markdown = f"> {notice_text}"
             waiting_card = build_complete_card(
                 notice_text,
-                panel_text=build_process_panel_text(live_state),
-                panel_title="运行中状态",
+                transcript_markdown=transcript_markdown,
+                summary_text=notice_text,
             )
             await self.update_card_json(waiting_card)
             self.state["card_signature"] = ("frozen", "")

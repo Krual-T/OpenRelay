@@ -513,15 +513,34 @@ def _build_basic_process_panel_text(state: dict[str, Any]) -> str:
 
 
 def build_process_panel_text(state: dict[str, Any] | None) -> str:
+    return render_transcript_markdown(state)
+
+
+def render_transcript_markdown(state: dict[str, Any] | None) -> str:
     if not isinstance(state, dict):
         return ""
-    history_items = state.get("history_items") if isinstance(state.get("history_items"), list) else []
+    history_items = state.get("transcript_items") if isinstance(state.get("transcript_items"), list) else state.get("history_items")
+    history_items = history_items if isinstance(history_items, list) else []
     rendered_history = _render_history_items(history_items, int(state.get("spinner_frame") or 0))
     worked_for = _format_worked_for(state.get("started_at") or state.get("startedAt"))
+    partial_text = str(state.get("partial_text") or "").strip()
+    partial_reasoning, partial_answer = split_reasoning_text(partial_text)
+    summary_text = optimize_markdown_style(partial_answer or strip_reasoning_tags(partial_text)).strip()
+    reasoning_text = clean_reasoning_prefix(partial_reasoning).strip()
+
+    blocks: list[str] = []
     if rendered_history:
-        if worked_for:
-            return f"{rendered_history}\n\n- Worked for {worked_for}"
-        return rendered_history
+        blocks.append(rendered_history)
+    if worked_for and rendered_history:
+        blocks.append(f"- Worked for {worked_for}")
+    if reasoning_text and not rendered_history:
+        blocks.append(f"---\n\n💭 **Thinking...**\n\n{reasoning_text}")
+    if summary_text:
+        blocks.append(f"---\n\n{summary_text}")
+
+    transcript = "\n\n".join(block for block in blocks if block).strip()
+    if transcript:
+        return transcript
     return _build_basic_process_panel_text(state)
 
 
@@ -581,28 +600,7 @@ def _build_process_panel_element(panel_text: object, panel_title: object) -> dic
 
 
 def _streaming_inline_content(live_state: dict[str, Any] | None = None) -> str:
-    live_state = live_state or {}
-    history_items = live_state.get("history_items") if isinstance(live_state.get("history_items"), list) else []
-    rendered_history = _render_history_items(history_items, int(live_state.get("spinner_frame") or 0))
-    worked_for = _format_worked_for(live_state.get("started_at") or live_state.get("startedAt"))
-    partial_text = str(live_state.get("partial_text") or "").strip()
-
-    partial_reasoning, partial_answer = split_reasoning_text(partial_text)
-    summary_text = optimize_markdown_style(partial_answer or strip_reasoning_tags(partial_text)).strip()
-    reasoning_text = clean_reasoning_prefix(partial_reasoning).strip()
-
-    blocks: list[str] = []
-    if rendered_history:
-        blocks.append(rendered_history)
-    if worked_for and rendered_history:
-        blocks.append(f"- Worked for {worked_for}")
-    if reasoning_text and not rendered_history:
-        blocks.append(f"---\n\n💭 **Thinking...**\n\n{reasoning_text}")
-
-    if summary_text:
-        blocks.append(f"---\n\n{summary_text}")
-
-    return "\n\n".join(block for block in blocks if block).strip()
+    return render_transcript_markdown(live_state or {})
 
 
 def _streaming_process_text(live_state: dict[str, Any] | None = None) -> str:
@@ -635,31 +633,35 @@ def build_streaming_card_json(live_state: dict[str, Any] | None = None) -> dict[
 
 
 def build_streaming_content(live_state: dict[str, Any] | None = None) -> str:
-    return _streaming_inline_content(live_state)
+    return render_transcript_markdown(live_state)
 
 
 def build_complete_card(
     text: object,
     *,
+    transcript_markdown: object = "",
+    summary_text: object = "",
     panel_text: object = "",
     panel_title: object = PROCESS_LOG_PANEL_TITLE,
 ) -> dict[str, Any]:
     raw_text = str(text or "").strip() or "回复为空。"
     extracted_reasoning, extracted_answer = split_reasoning_text(raw_text)
+    transcript_content = str(transcript_markdown or "").strip()
     final_panel_text = str(panel_text or "").strip() or extracted_reasoning
     final_answer = extracted_answer or raw_text
-
-    transcript_blocks: list[str] = []
-    if final_panel_text:
-        transcript_blocks.append(final_panel_text)
     rendered_answer = optimize_markdown_style(final_answer)
-    if rendered_answer:
-        transcript_blocks.append(rendered_answer if not transcript_blocks else f"---\n\n{rendered_answer}")
 
-    transcript_content = "\n\n".join(block for block in transcript_blocks if block).strip() or rendered_answer
+    if not transcript_content:
+        transcript_blocks: list[str] = []
+        if final_panel_text:
+            transcript_blocks.append(final_panel_text)
+        if rendered_answer:
+            transcript_blocks.append(rendered_answer if not transcript_blocks else f"---\n\n{rendered_answer}")
+        transcript_content = "\n\n".join(block for block in transcript_blocks if block).strip() or rendered_answer
+
     elements: list[dict[str, Any]] = [{"tag": "markdown", "content": transcript_content}]
 
-    summary = strip_markdown_for_summary(final_answer)
+    summary = str(summary_text or "").strip() or strip_markdown_for_summary(final_answer)
     config: dict[str, Any] = {"wide_screen_mode": True, "update_multi": True}
     if summary:
         config["summary"] = {"content": summary}
