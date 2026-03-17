@@ -1,9 +1,7 @@
 <div align="center">
   <img src="static/openrelay_logo.png" alt="OpenRelay logo" width="220" />
 
-# OpenRelay
-
-### 把你的 coding agent，接进飞书。
+### OpenRelay——把你的 coding agent，接进飞书。
 
 让 `Codex` 真正以“远程工作台”的方式进入飞书：保留原生 session、支持 thread 内连续追问、可按目录切换不同项目上下文，并把流式执行过程稳定投影回聊天界面。
 
