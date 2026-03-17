@@ -1,0 +1,142 @@
+from __future__ import annotations
+
+from typing import Any
+
+from openrelay.agent_runtime import (
+    ApprovalResolvedEvent,
+    AssistantCompletedEvent,
+    AssistantDeltaEvent,
+    BackendNoticeEvent,
+    PlanUpdatedEvent,
+    ReasoningDeltaEvent,
+    RuntimeEvent,
+    SessionStartedEvent,
+    ToolCompletedEvent,
+    ToolProgressEvent,
+    ToolStartedEvent,
+    TurnCompletedEvent,
+    TurnFailedEvent,
+    TurnInterruptedEvent,
+    TurnStartedEvent,
+    UsageUpdatedEvent,
+)
+
+from .semantic_events import CodexSemanticEvent
+
+
+class CodexRuntimeEventProjector:
+    def __init__(self, *, backend: str, session_id: str) -> None:
+        self.backend = backend
+        self.session_id = session_id
+
+    def project(self, event: CodexSemanticEvent) -> tuple[RuntimeEvent, ...]:
+        provider_payload = {
+            **event.payload,
+            "method": event.source_method,
+            "route": event.source_route,
+            "semantic_name": event.semantic_name,
+            "classification": event.policy,
+        }
+        if event.semantic_name == "session.started":
+            return (
+                SessionStartedEvent(
+                    backend=self.backend,  # type: ignore[arg-type]
+                    session_id=self.session_id,
+                    turn_id=event.turn_id,
+                    event_type="session.started",
+                    native_session_id=str(event.payload.get("native_session_id") or ""),
+                    title=str(event.payload.get("title") or ""),
+                    provider_payload=provider_payload,
+                ),
+            )
+        if event.semantic_name == "turn.started":
+            return (self._event(TurnStartedEvent, event.turn_id, "turn.started", provider_payload),)
+        if event.semantic_name == "assistant.delta":
+            return (self._event(AssistantDeltaEvent, event.turn_id, "assistant.delta", provider_payload, delta=event.text),)
+        if event.semantic_name == "assistant.completed":
+            return (self._event(AssistantCompletedEvent, event.turn_id, "assistant.completed", provider_payload, text=event.text),)
+        if event.semantic_name == "reasoning.delta":
+            return (self._event(ReasoningDeltaEvent, event.turn_id, "reasoning.delta", provider_payload, text=event.text),)
+        if event.semantic_name == "plan.updated":
+            return (
+                self._event(
+                    PlanUpdatedEvent,
+                    event.turn_id,
+                    "plan.updated",
+                    provider_payload,
+                    steps=event.steps,
+                    explanation=event.explanation,
+                ),
+            )
+        if event.semantic_name == "tool.started" and event.tool is not None:
+            return (self._event(ToolStartedEvent, event.turn_id, "tool.started", provider_payload, tool=event.tool),)
+        if event.semantic_name == "tool.progress":
+            return (
+                self._event(
+                    ToolProgressEvent,
+                    event.turn_id,
+                    "tool.progress",
+                    provider_payload,
+                    tool_id=event.tool_id,
+                    detail=event.detail,
+                ),
+            )
+        if event.semantic_name == "tool.completed" and event.tool is not None:
+            return (self._event(ToolCompletedEvent, event.turn_id, "tool.completed", provider_payload, tool=event.tool),)
+        if event.semantic_name == "approval.resolved":
+            return (
+                self._event(
+                    ApprovalResolvedEvent,
+                    event.turn_id,
+                    "approval.resolved",
+                    provider_payload,
+                    approval_id=event.approval_id,
+                ),
+            )
+        if event.semantic_name == "usage.updated" and event.usage is not None:
+            return (self._event(UsageUpdatedEvent, event.turn_id, "usage.updated", provider_payload, usage=event.usage),)
+        if event.semantic_name == "turn.completed":
+            return (
+                self._event(
+                    TurnCompletedEvent,
+                    event.turn_id,
+                    "turn.completed",
+                    provider_payload,
+                    final_text=event.final_text,
+                    usage=event.usage,
+                ),
+            )
+        if event.semantic_name == "turn.interrupted":
+            return (self._event(TurnInterruptedEvent, event.turn_id, "turn.interrupted", provider_payload, message=event.message),)
+        if event.semantic_name == "turn.failed":
+            return (self._event(TurnFailedEvent, event.turn_id, "turn.failed", provider_payload, message=event.message),)
+        if event.policy == "ignore":
+            return ()
+        return (
+            self._event(
+                BackendNoticeEvent,
+                event.turn_id,
+                "backend.notice",
+                provider_payload,
+                level=event.level,  # type: ignore[arg-type]
+                message=event.message or str(event.payload.get("title") or ""),
+            ),
+        )
+
+    def _event(
+        self,
+        event_cls: type[RuntimeEvent],
+        turn_id: str,
+        event_type: str,
+        provider_payload: dict[str, Any],
+        **kwargs: Any,
+    ) -> RuntimeEvent:
+        return event_cls(
+            backend=self.backend,  # type: ignore[arg-type]
+            session_id=self.session_id,
+            turn_id=turn_id,
+            event_type=event_type,
+            provider_payload=provider_payload,
+            **kwargs,
+        )
+
