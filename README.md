@@ -1,47 +1,98 @@
+<div align="center">
+  <img src="static/openrelay_logo.png" alt="OpenRelay logo" width="220" />
+
 # openrelay
 
-> 当前主线：自 2026-03-11 起，`openrelay` 是正在继续演进的 Python 实现。
-> 旧的 Node.js 版 [`opencodex`](../opencodex/README.md) 已归档，只保留为历史原型和迁移参考。
+### Your coding agent, relayed into Feishu.
 
-`openrelay` 是一个通过飞书附着到本机 agent CLI 会话的远程终端入口。
+Remote control `Codex` from Feishu with real session continuity, thread-aware follow-ups, workspace switching, and streaming replies that feel like a real terminal instead of a toy bot.
 
-当前目标是把体验打磨成 `openrelay` 自己的一致命令心智：清晰的会话隔离、`main/develop` 工作区切换，以及 Feishu thread-first 使用方式。
+<p>
+  <img alt="Python 3.12+" src="https://img.shields.io/badge/python-3.12%2B-111111?style=flat-square&logo=python&logoColor=white">
+  <img alt="FastAPI" src="https://img.shields.io/badge/FastAPI-openrelay-111111?style=flat-square&logo=fastapi&logoColor=white">
+  <img alt="Feishu" src="https://img.shields.io/badge/Feishu-chat%20native-111111?style=flat-square">
+  <img alt="Codex" src="https://img.shields.io/badge/Codex-app--server-111111?style=flat-square">
+</p>
+</div>
 
-同时，内部实现会保持“CLI 适配器抽象”：runtime 不关心到底是谁提供 server，只关心这个 CLI 适配器是否支持持久会话、如何发送 prompt、如何中断当前运行。
+## Why this exists
 
-飞书侧现在统一走官方 Python SDK `lark-oapi`，包括消息发送、事件订阅和长连接接入。
+Most “chat to code” bots break the moment the task becomes real:
 
-## 当前内置后端
+- they lose session state
+- they hide the agent runtime behind fake chat abstractions
+- they can't switch workspaces cleanly
+- they make long-running work unreadable inside messaging apps
 
-- `codex`：通过 `codex app-server` 复用原生 session
+`openrelay` takes the opposite path.
 
-后续如果要支持 `claude` 或其他 coding-agent CLI，只需要新增一个 backend adapter 并注册到 registry。
+It turns Feishu into a serious remote cockpit for local coding-agent sessions:
 
-## 当前体验对齐点
+- resume real backend threads instead of replaying prompts
+- keep session scope stable across Feishu threads
+- switch between `main` and `develop` workspaces on demand
+- stream progress and final answers back into Feishu cards
+- keep the runtime backend-neutral so the product is not welded to one provider forever
 
-- Feishu 支持 webhook 与 WebSocket 长连接两种接入方式
-- thread-first 回复：普通回复默认优先在线程里继续
-- 命令集尽量对齐：`/panel`、`/ping`、`/stop`、`/restart`、`/main`、`/stable`、`/develop`、`/resume`、`/clear`、`/status`、`/cwd`、`/cd`、`/shortcut`、`/model`、`/sandbox`、`/tools`、`/help`
-- 会话支持 `main` / `develop` 工作区切换，并写入 `data/release-events.jsonl`
-- `/panel` 现在是飞书里的总入口：总览页下再分 `sessions / directories / commands / status` 四类结果面
-- `/panel`、`/resume`、`/help` 这类导航型卡片在按钮切换时会优先原地更新，避免翻页和层级切换不断刷新消息
-- `/panel` 的会话结果继续复用 `/resume` 主路径，目录结果继续复用 `/cwd` 主路径，避免再长出第二套执行语义
-- `/panel` 仍会按 `main / develop` 作用域显示常用目录快捷按钮，点击后直接复用 `/cwd` 切换
-- `/resume` 现在直接读取并绑定 Codex 原生 thread；本地 session 只保留为当前作用域的轻量绑定壳
-- `FEISHU_STREAM_MODE=card` 时会显示 `openrelay` 的运行中状态卡片与 typing
-- `card` 模式现在直接按飞书官方 OpenClaw 风格走 CardKit：流式阶段更新单个 markdown element，最终态在同一张卡里收口正文，并把 reasoning 放进默认折叠的 `collapsible_panel`
-- 当前回复还没结束时，继续发消息会自动排到下一轮；连续补充会合并成一轮 follow-up
-- `/ping`、`/status`、`/usage`、`/help`、`/panel` 这类诊断命令在当前回复尚未结束时也会立即返回，不再被同 session 串行锁静默卡住
-- 串行粒度现在按本地 backend `session_id` 收敛：同一个 session 的多 thread 串行，不同 session 可以并发
-- 飞书图片消息会先通过消息资源接口下载到本地临时文件，再作为图像 input 传给 `codex app-server`
+Today, the main production path is `Codex app-server`. A minimal `Claude` adapter is already wired into the same runtime shape for future expansion.
 
-## 环境变量
+## What makes it feel different
 
-这版使用 `openrelay` 当前约定的配置名：
+### 1. Real session continuity
+`/resume` binds Feishu back to native backend sessions. `openrelay` does not pretend a fresh prompt is the same thing as continuing a real agent thread.
+
+### 2. Thread-first remote workflow
+In Feishu, you can stay inside a thread, send follow-ups while a run is still active, stop the current run, and keep the task moving without dropping context.
+
+### 3. Workspace-aware execution
+Use `/main`, `/stable`, `/develop`, `/cwd`, and directory shortcuts to move the agent between working trees without turning session state into spaghetti.
+
+### 4. Backend-neutral runtime core
+Feishu transport, runtime orchestration, agent runtime semantics, backend adapters, and persistence are separated cleanly. That means the product can evolve without rewriting everything around one CLI.
+
+### 5. Built for actual long tasks
+Streaming, typing, session locking, follow-up merging, command routing, and local state persistence are all first-class parts of the design.
+
+## What you get
+
+- Feishu webhook mode and WebSocket mode
+- streaming card replies with final answer convergence
+- session panel for sessions, directories, commands, and status
+- session binding between relay sessions and native backend sessions
+- image message forwarding into the coding-agent input pipeline
+- local SQLite state for sessions, aliases, dedup, shortcuts, and bindings
+- health endpoint at `/health`
+
+## Architecture in one screen
+
+`openrelay` is structured around five layers:
+
+1. `feishu/` - platform ingress, cards, typing, streaming
+2. `runtime/` - command routing, session orchestration, execution flow
+3. `agent_runtime/` - backend-neutral turn, event, approval, transcript semantics
+4. `backends/` - provider adapters such as Codex and Claude
+5. `storage/` + `session/` - SQLite state and relay-to-backend bindings
+
+If you want the full breakdown, see `docs/architecture.md`.
+
+## Quick start
+
+### 1. Install dependencies
+
+```bash
+uv sync --extra dev
+```
+
+### 2. Create your env file
+
+```bash
+cp .env.example .env
+```
+
+Start with these fields:
 
 ```env
 PORT=3000
-WEBHOOK_PATH=/feishu/webhook
 DATA_DIR=./data
 WORKSPACE_DIR=/absolute/path/to/your/workspace
 MAIN_WORKSPACE_DIR=/absolute/path/to/main/worktree
@@ -50,116 +101,114 @@ DEVELOP_WORKSPACE_DIR=/absolute/path/to/develop/worktree
 FEISHU_APP_ID=cli_xxx
 FEISHU_APP_SECRET=xxx
 FEISHU_CONNECTION_MODE=websocket
-FEISHU_VERIFY_TOKEN=
-FEISHU_ENCRYPT_KEY=
 FEISHU_BOT_OPEN_ID=ou_xxx
 FEISHU_STREAM_MODE=card
-FEISHU_CARD_STREAMING_WINDOW_SECONDS=540
-FEISHU_GROUP_REPLY_ALL=false
-FEISHU_GROUP_SESSION_SCOPE=sender
-FEISHU_ALLOWED_OPEN_IDS=
-FEISHU_ADMIN_OPEN_IDS=
 
 MODEL_BACKEND=codex-cli
-MODEL_NAME=
 CODEX_CLI_PATH=codex
-CODEX_MODEL_OVERRIDE=
 CODEX_SANDBOX=workspace-write
 CODEX_SESSIONS_DIR=~/.codex/sessions
-CODEX_SQLITE_HOME=
-CODEX_REQUEST_TIMEOUT_SECONDS=
-DIRECTORY_SHORTCUTS=[{"name":"docs","path":"docs","channels":"main"},{"name":"api","path":"services/api","channels":"develop"}]
 ```
 
-说明：
+Notes:
 
-- `FEISHU_VERIFY_TOKEN` 现在是可选的；如果飞书后台配置了 token，建议填上
-- `FEISHU_ENCRYPT_KEY` 用于飞书事件加密；只有你在开放平台开启了加密推送时才需要配置
-- `FEISHU_CARD_STREAMING_WINDOW_SECONDS` 默认 `540` 秒；`card` 模式会在到达这个窗口前主动结束 CardKit 流式更新，避免平台约 10 分钟的 streaming 超时把界面卡死
-- `WORKSPACE_DIR` 是默认工作区；`MAIN_WORKSPACE_DIR` 和 `DEVELOP_WORKSPACE_DIR` 对应 `/main` 与 `/develop`
-- `MODEL_BACKEND` 当前内置只支持 `codex-cli`，但 runtime 已按 CLI 适配器抽象设计
-- `CODEX_SQLITE_HOME` 默认会落到 `DATA_DIR/codex-sqlite`，把 `codex app-server` 的 SQLite state / log 与你交互式 `~/.codex` 隔离，避免共享同一份不断增长的 state 库
-- `CODEX_REQUEST_TIMEOUT_SECONDS` 默认留空，表示不对 `codex app-server` 请求施加固定超时；如需显式限制，可填正数秒
-- `FEISHU_ALLOWED_OPEN_IDS` 与 `FEISHU_ADMIN_OPEN_IDS` 是 `openrelay` 新补的权限层
-- `DIRECTORY_SHORTCUTS` 用 JSON array 描述 `/panel` 常用目录快捷入口；`channels` 支持 `main` / `develop` / `all`
-- 快捷目录按钮内部会先解析成稳定目标路径，再复用 `/cwd <path>` 主路径，避免受当前 cwd 深度影响
+- `websocket` mode is the default and keeps `openrelay` bound to `127.0.0.1`
+- webhook mode registers `WEBHOOK_PATH` and listens on `0.0.0.0`
+- `CODEX_SQLITE_HOME` can isolate relay-driven Codex state from your normal interactive Codex home
+- `FEISHU_ALLOWED_OPEN_IDS` and `FEISHU_ADMIN_OPEN_IDS` provide an app-side permission layer
 
-## 快速开始
-
-1. 安装依赖：
-
-```bash
-cd openrelay
-uv sync --extra dev
-```
-
-2. 复制环境变量模板：
-
-```bash
-cp .env.example .env
-```
-
-3. 启动服务：
+### 3. Run the server
 
 ```bash
 uv run openrelayd
 ```
 
-如果你本机按仓库当前约定安装成 systemd service，默认使用的是用户级 unit，而不是系统级 unit：
+### 4. Check health
 
 ```bash
-XDG_RUNTIME_DIR=/run/user/$(id -u) DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/$(id -u)/bus \
-  systemctl --user status openrelay.service
-
-XDG_RUNTIME_DIR=/run/user/$(id -u) DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/$(id -u)/bus \
-  systemctl --user restart openrelay.service
+curl http://127.0.0.1:3000/health
 ```
 
-- unit 文件路径：`~/.config/systemd/user/openrelay.service`
-- 不要直接用系统级 `systemctl status openrelay.service` 判断服务是否存在；那会把用户级 unit 误判成“没有这个服务”
-- 当前用户级 unit 的 `ExecStart` 约定是 `uv run openrelayd`
+### 5. Connect Feishu
 
-4. 如果你使用 webhook 模式，在飞书开放平台把事件订阅地址指向：
+- If `FEISHU_CONNECTION_MODE=websocket`, enable long-connection delivery in Feishu and no webhook URL is needed.
+- If `FEISHU_CONNECTION_MODE=webhook`, point Feishu to:
 
 ```text
 http://your-host:3000/feishu/webhook
 ```
 
-如果你使用 `FEISHU_CONNECTION_MODE=websocket`，则无需配置 webhook 地址，飞书后台需要开启“使用长连接接收事件/回调”；`openrelay` 也会只监听 `127.0.0.1`，不再注册 `/feishu/webhook` 入站路由。
+## Command surface
 
-## 命令
+### Session and navigation
+- `/panel [sessions|directories|commands|status]`
+- `/resume [latest|thread_id|local_session_id]`
+- `/compact [thread_id|local_session_id]`
+- `/status`
+- `/help`
 
-- `/panel [sessions|directories|commands|status]` - 打开总入口或直接进入对应结果面；`sessions` 额外支持 `--page` 与 `--sort`，卡片按钮切换时优先留在同一张卡
-- `/ping` - 连通性检查
-- `/stop` - 停止当前回复
-- `/restart` - 重启当前服务进程
-- `/main [reason]`、`/stable [reason]` - 原地切到 main 稳定工作区，并解绑当前 thread
-- `/develop [reason]` - 原地切到 develop 修复工作区，并解绑当前 thread
-- `/resume [latest|thread_id|local_session_id]` - 默认查看 Codex thread 列表；带目标时绑定到当前作用域
-- `/compact [thread_id|local_session_id]` - 对当前或指定 Codex thread 发起 compact
-- `/clear` - 清空当前 scope 的 thread 绑定和本地上下文，但保留目录与配置
-- `/status` - 查看当前会话状态
-- `/cwd [path]`、`/cd [path]` - 查看或原地切换当前目录；下一条真实消息会在新目录绑定新 thread
-- `/shortcut list|add|remove|cd` - 在飞书里维护常用目录快捷入口，并复用 `/cwd` 快速切换
-- `/model [name|default]` - 查看或原地切换模型覆盖值；下一条真实消息开始生效
-- `/sandbox [read-only|workspace-write|danger-full-access]` - 查看或原地切换执行模式；下一条真实消息开始生效
-- `/tools`、`/help` - 查看当前会话阶段、优先操作建议、常用流程和命令速查
+### Workspace control
+- `/main [reason]`
+- `/stable [reason]`
+- `/develop [reason]`
+- `/cwd [path]`
+- `/cd [path]`
+- `/shortcut list|add|remove|cd`
 
-推荐路径是：先 `/panel`，再点进 `sessions / directories / commands / status` 对应结果面；其中会话结果负责“找回哪条会话”，目录结果负责“进哪个目录”，命令结果负责“高频动作直达”，状态结果负责“先判断现场”。这些按钮导航、翻页和返回总览会优先停留在同一张卡内完成。
+### Runtime control
+- `/stop`
+- `/clear`
+- `/model [name|default]`
+- `/sandbox [read-only|workspace-write|danger-full-access]`
+- `/backend [list|name]`
+- `/ping`
+- `/restart` (admin only)
 
-如果你的 `/panel` 已配置常用目录快捷按钮，优先直接点按钮切目录；没有合适入口时再手写 `/cwd <path>`。
+## The intended workflow
 
-## 当前状态
+1. Open Feishu and start from `/panel` or a direct task message.
+2. Let `openrelay` bind the current scope to a backend session.
+3. Continue in-thread for follow-ups instead of re-explaining the task.
+4. Use `/resume` when you need to jump back into an older native agent thread.
+5. Use `/main`, `/develop`, or `/cwd` when the execution surface needs to move.
 
-- 命令与会话体验已收敛到 `openrelay` 当前形态
-- `codex app-server` 本机 smoke test 已跑通
-- Feishu WebSocket、流式卡片和 typing 已经补上；还未完全补齐的是更细的流式活动面板与外部 provider 行为差异
-- 但 runtime 主流程已经按“可插拔 CLI 适配器”设计好了，后续扩展不会再把产品绑死到某一家 CLI
+This is the key idea: Feishu is the control surface, but the backend session remains real.
 
-## 连续消息的默认心智
+## Current backend status
 
-- 同一任务继续时，通常不用先发命令，直接补充消息即可。
-- 如果上一条回复还在生成，新的普通文本会进入下一轮 follow-up；连续补充会自动合并。
-- 如果你想立刻打断当前回复，发送 `/stop`；已确认收到的补充消息会在停止后继续处理。
-- 如果你其实已经切到新任务，不要继续堆在同一会话里，直接回顶层发新消息。
-- 飞书侧这版不依赖“编辑上一条消息”来驱动 runtime；想修正内容时，直接补发一条，或 `/stop` 后重发。
+### Codex
+- first-class path
+- connects through `codex app-server`
+- native session reuse is part of the primary product flow
+
+### Claude
+- adapter exists
+- currently minimal and not feature-parity with Codex yet
+
+## Local development
+
+```bash
+uv run pytest
+```
+
+Useful files:
+
+- `src/openrelay/server.py`
+- `src/openrelay/runtime/orchestrator.py`
+- `src/openrelay/agent_runtime/service.py`
+- `src/openrelay/backends/codex_adapter/`
+- `docs/architecture.md`
+
+## Why people may care
+
+Because remote coding from chat only becomes useful when it preserves the things that matter:
+
+- session identity
+- execution locality
+- follow-up continuity
+- readable streaming output
+- explicit workspace boundaries
+
+That is the bet behind `openrelay`.
+
+If you want your coding agent to survive real work instead of demo prompts, this repo is for you.
