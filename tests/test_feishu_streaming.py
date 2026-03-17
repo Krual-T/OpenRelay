@@ -122,7 +122,7 @@ def test_build_streaming_content_interleaves_summary_blocks_with_history_items()
 
     assert "🔵 **Explored**" in content
     assert "---\n\n第一段总结" in content
-    assert "• **Ran**" in content
+    assert "🟢 **Ran**" in content
     assert "- `sed -n '1,10p' src/openrelay/runtime/live.py`" in content
     assert "---\n\n第二段总结" in content
 
@@ -151,7 +151,7 @@ def test_build_streaming_content_keeps_summary_and_partial_text_in_one_transcrip
     )
 
     assert "---\n\n已经确认 reply_card 是入口。" in content
-    assert "• **Ran**" in content
+    assert "🟢 **Ran**" in content
     assert "- `git status --short`" in content
     assert content.endswith("---\n\n下一步检查 streaming session 的更新路径。")
 

@@ -471,6 +471,8 @@ def _streaming_history_bullet(item: dict[str, Any]) -> str:
             return "🔴"
         if str(item.get("mode") or "").strip() == "exploration":
             return "🔵"
+        if state == "completed":
+            return "🟢"
     if state in {"failed", "error"}:
         return "🔴"
     return "•"
