@@ -280,3 +280,4 @@ uv run pytest
 - `docs/marketing/launch-kit.md`：一句话定位、受众、卖点、社区帖模板、录屏脚本
 - `docs/marketing/outreach-plan.md`：三周外发节奏、渠道优先级、反馈判断标准
 - `static/openrelay_social_card.svg`：仓库分享图 / 帖子封面底图
+- `CHANGELOG.md`：当前公开版本的发布说明
