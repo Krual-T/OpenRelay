@@ -53,6 +53,7 @@ def test_backend_session_list_card_uses_markdown_blocks_without_quote_footer_but
     card = build_backend_session_list_card(
         {
             "page": 1,
+            "known_page_count": 1,
             "backend_name": "codex",
             "action_context": {"sessionKey": "p2p:oc_1", "rootId": "root_1"},
             "sessions": [
@@ -68,6 +69,36 @@ def test_backend_session_list_card_uses_markdown_blocks_without_quote_footer_but
     assert "/resume latest" not in extract_commands(card)
     assert "/panel" not in extract_commands(card)
     assert "/help" not in extract_commands(card)
+
+
+def test_backend_session_list_card_renders_page_number_strip() -> None:
+    card = build_backend_session_list_card(
+        {
+            "page": 3,
+            "known_page_count": 5,
+            "has_previous": True,
+            "has_next": True,
+            "backend_name": "codex",
+            "action_context": {"sessionKey": "p2p:oc_1", "rootId": "root_1"},
+            "sessions": [
+                {"index": 7, "session_id": "thread_7", "active": False, "title": "task 7", "meta": "2026-03-16 18:00:00 · status=idle"},
+            ],
+        }
+    )
+
+    commands = extract_commands(card)
+    assert commands[-7:] == [
+        "/resume --page 2",
+        "/resume",
+        "/resume --page 2",
+        "/resume --page 3",
+        "/resume --page 4",
+        "/resume --page 5",
+        "/resume --page 4",
+    ]
+
+    pagination_actions = card["elements"][-1]["actions"]
+    assert [action["text"]["content"] for action in pagination_actions] == ["上一页", "1", "2", "[3]", "4", "5", "下一页"]
 
 
 def test_runtime_panel_service_backend_session_card_limits_to_three_and_formats_seconds() -> None:
@@ -100,6 +131,7 @@ def test_runtime_panel_service_backend_session_card_limits_to_three_and_formats_
     assert markdown_blocks[0] == "**1. task 1**\n2026-03-16 18:00:00 · status=idle · cwd=openrelay\n`thread_1`"
     assert markdown_blocks[1] == "**2. task 2** · 当前\n2026-03-15 18:00:00 · status=idle · cwd=openrelay\n`thread_2`"
     assert "thread_4" not in str(card)
+    assert [action["text"]["content"] for action in card["elements"][-1]["actions"]] == ["[1]", "2", "下一页"]
     assert "预览" not in str(card)
     assert "preview" not in fallback
     assert "2026-03-16 18:00:00" in fallback
