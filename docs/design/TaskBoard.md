@@ -40,14 +40,17 @@
   - mapper / turn stream 后续改造边界被写清楚。
 - **建议产物**：
   - `docs/design/codex-app-server-event-consumption-plan.md`
+  - `docs/design/codex-app-server-event-consumption-detailed-design.md`
 - **已完成证据**：
   - 本地日志已确认 `item/*` 与 `codex/event/*` 双轨并存。
   - 本地日志已确认 `codex/event/turn_aborted` 真实出现。
   - `docs/design/codex-app-server-consumption-comparison.md`
   - `docs/design/codex-app-server-event-consumption-plan.md`
+  - `docs/design/codex-app-server-event-consumption-detailed-design.md`
 - **后续 follow-up**：
   - 按设计补齐 terminal legacy 兼容与 typed-only 系统事件消费。
   - 把 ignore 集合从“隐式未处理”改成“显式登记”。
+  - 按 detailed design 将 mapper 重构为 registry + semantic mapper + deduper + projector 四段。
 
 ### [ ] OR-TASK-003 Feishu 流式回复收敛为 TUI Transcript 投影
 - **目标**：把飞书当前“过程面板 + 最终答案”的双区渲染，收敛为与 Codex TUI 更一致的单条 transcript 投影，使执行记录、解释文字和 follow-up 建议能在线性正文里自然混排。
