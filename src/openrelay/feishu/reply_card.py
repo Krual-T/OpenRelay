@@ -459,6 +459,108 @@ def _render_history_items(items: list[dict[str, Any]], spinner_frame: int) -> st
     return "\n\n".join(blocks).strip()
 
 
+def _streaming_history_bullet(item: dict[str, Any]) -> str:
+    item_type = str(item.get("type") or "").strip()
+    state = str(item.get("state") or "").strip().lower()
+    if item_type == "plan":
+        return "🟣"
+    if item_type == "web_search":
+        return "🔵"
+    if item_type == "command":
+        if isinstance(item.get("exit_code"), int) and int(item.get("exit_code")) != 0:
+            return "🔴"
+        if str(item.get("mode") or "").strip() == "exploration":
+            return "🔵"
+    if state in {"failed", "error"}:
+        return "🔴"
+    return "•"
+
+
+def _streaming_item_detail_lines(item: dict[str, Any]) -> list[str]:
+    item_type = str(item.get("type") or "").strip()
+    if item_type == "command":
+        lines: list[str] = []
+        command_value = str(item.get("command") or "").strip()
+        mode = str(item.get("mode") or "").strip()
+        if mode == "exploration":
+            detail = _describe_exploration_command(command_value)
+            if detail:
+                lines.append(detail)
+        else:
+            command_text = _sanitize_code_inline(command_value)
+            if command_text:
+                lines.append(command_text)
+        exit_code = item.get("exit_code")
+        if exit_code is not None and str(item.get("state") or "") != "running" and int(exit_code) != 0:
+            lines.append(f"exit {exit_code}")
+        lines.extend(_split_detail_lines(item.get("output_preview"), code=True))
+        return lines
+    if item_type == "web_search":
+        return _describe_web_search_queries(item)
+    if item_type == "reasoning":
+        return _split_detail_lines(clean_reasoning_prefix(item.get("text")))
+    if item_type == "file_change":
+        return _describe_file_changes(item)
+    if item_type == "plan":
+        steps = item.get("steps")
+        if isinstance(steps, list):
+            rendered_steps = []
+            for step in steps:
+                if not isinstance(step, dict):
+                    continue
+                rendered = _render_plan_step(item, step)
+                if rendered:
+                    rendered_steps.append(rendered)
+            if rendered_steps:
+                return rendered_steps
+        return _split_detail_lines(item.get("detail"))
+    if item_type == "collab":
+        lines = []
+        targets = _describe_collab_targets(item)
+        lines.extend(f"Agent `{target}`" for target in targets)
+        prompt = str(item.get("prompt") or "").strip()
+        if prompt:
+            lines.extend(_split_detail_lines(prompt))
+        return lines
+    return _split_detail_lines(item.get("detail"))
+
+
+def _render_streaming_history_item(item: dict[str, Any]) -> list[str]:
+    item_type = str(item.get("type") or "").strip()
+    if not item_type:
+        return []
+    if item_type == "summary":
+        summary_text = str(item.get("text") or "").strip()
+        if not summary_text:
+            return []
+        _partial_reasoning, partial_answer = split_reasoning_text(summary_text)
+        rendered_summary = optimize_markdown_style(partial_answer or strip_reasoning_tags(summary_text)).strip()
+        if not rendered_summary:
+            return []
+        return ["---", "", rendered_summary]
+    title = _normalize_history_title(item)
+    if not title:
+        return []
+    line = f"{_streaming_history_bullet(item)} **{title}**"
+    details = _streaming_item_detail_lines(item)
+    lines = [line]
+    lines.extend(f"- {detail}" for detail in details if detail)
+    return lines
+
+
+def _render_streaming_history_items(items: list[dict[str, Any]]) -> str:
+    blocks: list[str] = []
+    for item in items[-12:]:
+        if not isinstance(item, dict):
+            continue
+        if not _should_render_history_item(item):
+            continue
+        lines = _render_streaming_history_item(item)
+        if lines:
+            blocks.append("\n".join(lines))
+    return "\n\n".join(blocks).strip()
+
+
 def _build_basic_process_panel_text(state: dict[str, Any]) -> str:
     lines: list[str] = []
     heading = str(state.get("heading") or "").strip()
@@ -628,12 +730,30 @@ def build_thinking_card_json() -> dict[str, Any]:
 
 
 def build_streaming_card_json(live_state: dict[str, Any] | None = None) -> dict[str, Any]:
-    _ = live_state
-    return build_thinking_card_json()
+    content = build_streaming_content(live_state)
+    card = build_thinking_card_json()
+    card["body"]["elements"][0]["content"] = content
+    return card
 
 
 def build_streaming_content(live_state: dict[str, Any] | None = None) -> str:
-    return render_transcript_markdown(live_state)
+    live_state = live_state or {}
+    history_items = live_state.get("transcript_items") if isinstance(live_state.get("transcript_items"), list) else live_state.get("history_items")
+    history_items = history_items if isinstance(history_items, list) else []
+    rendered_history = _render_streaming_history_items(history_items)
+    partial_text = str(live_state.get("partial_text") or "").strip()
+    partial_reasoning, partial_answer = split_reasoning_text(partial_text)
+    summary_text = optimize_markdown_style(partial_answer or strip_reasoning_tags(partial_text)).strip()
+    reasoning_text = clean_reasoning_prefix(partial_reasoning).strip()
+
+    blocks: list[str] = []
+    if rendered_history:
+        blocks.append(rendered_history)
+    if reasoning_text and not rendered_history:
+        blocks.append(f"---\n\n💭 **Thinking...**\n\n{reasoning_text}")
+    if summary_text:
+        blocks.append(f"---\n\n{summary_text}")
+    return "\n\n".join(block for block in blocks if block).strip()
 
 
 def build_complete_card(
