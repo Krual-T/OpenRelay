@@ -6,7 +6,7 @@
 
 这份文档是在 [`docs/design/codex-app-server-event-consumption-plan.md`](/home/Shaokun.Tang/Projects/openrelay/docs/design/codex-app-server-event-consumption-plan.md) 的基础上，把后续实现需要落到的类、方法、状态边界和迁移顺序写清楚。
 
-目标不是再叠一层 patch，而是在不改动 `agent_runtime -> runtime -> presentation` 主路径接口的前提下，对 `src/openrelay/backends/codex_adapter/` 做一次小范围结构重组。
+目标不是再叠一层 patch，而是在不改动 `agent_runtime -> runtime -> presentation` 主路径接口的前提下，对 `src/openrelay/backends/codex_adapter/` 做一次小范围结构重组，并把支持基线收敛到官方 `codex >= 0.115.0` 的 external typed app-server contract。
 
 ## 当前结构的问题
 
@@ -25,8 +25,8 @@
 
 这会带来三个问题：
 
-1. 双轨迁移期的“协议判断”和“语义判断”混在一起，导致新增一个 legacy method 时只能继续堆 `if method == ...`。
-2. 当前去重主要还是 alias 级别，见 [`src/openrelay/backends/codex_adapter/mapper.py:159`](/home/Shaokun.Tang/Projects/openrelay/src/openrelay/backends/codex_adapter/mapper.py#L159) 和 [`src/openrelay/backends/codex_adapter/mapper.py:760`](/home/Shaokun.Tang/Projects/openrelay/src/openrelay/backends/codex_adapter/mapper.py#L760)，还没有变成稳定的“语义去重”。
+1. 旧版本日志中的 external legacy `codex/event/*` 与当前 external contract 已经分叉，如果继续把它们当正式输入面，会让适配目标失真。
+2. 当前去重主要还是围绕旧 alias 思路演进，而不是围绕稳定的 typed semantic key。
 3. terminal 行为现在主要由 [`src/openrelay/backends/codex_adapter/turn_stream.py:67`](/home/Shaokun.Tang/Projects/openrelay/src/openrelay/backends/codex_adapter/turn_stream.py#L67) 开始的事件循环按 `event_type` 做收口，缺少“同一 turn 只能关闭一次”的显式模型。
 
 ## 约束
@@ -101,8 +101,8 @@ class CodexConsumptionMode(StrEnum):
 职责：
 
 - 明确 mapper 当前工作在哪个消费模式。
-- `HYBRID` 默认开启 v1 + v2 双轨。
-- `TYPED_ONLY` 仅用于实验和验证，不作为默认值。
+- `TYPED_ONLY` 默认开启，只消费 external typed contract。
+- `HYBRID` 仅用于旧日志回放或低版本调试，不作为正式支持路径。
 
 配置流向：
 
