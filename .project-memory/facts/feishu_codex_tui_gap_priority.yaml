@@ -1,14 +1,14 @@
 id: feishu_codex_tui_gap_priority
 kind: fact
-title: 飞书端相对 Codex TUI 的当前高优先级差距
+title: 飞书端相对 Codex TUI 的当前高优先级体验差距
 scope:
   repo: openrelay
   branch: main
 status: reviewed
 created_at: '2026-03-17T16:26:01Z'
-updated_at: '2026-03-17T16:26:01Z'
+updated_at: '2026-03-18T08:40:00Z'
 confidence: 0.8
-last_verified_commit: b83bea402a029d987587353d965dc81b9603f178
+last_verified_commit: 8ec9ca0
 intent_aliases:
 - 飞书端和 codex tui 还差什么
 - codex tui gap
@@ -19,9 +19,7 @@ tags:
 - fact
 applies_to:
 - docs/design/or-task-006-feishu-vs-codex-tui-gap-analysis.md
-statement: 截至 2026-03-18，openrelay 飞书端相对 codex-cli 0.115.0 的最高优先级差距不是 session 续接或基础
-  approval，而是 terminal.interaction 缺少可回复闭环，以及 user_input / MCP elicitation 仍缺少结构化卡片表单体验；fork
-  属于下一层的 session 工作流差距。
+statement: 截至 2026-03-18，openrelay 飞书端相对 codex-cli 0.115.0 的最高优先级差距应按用户体验而不是命令面对齐来判断；真正优先的问题是等待用户处理的交互不够统一自然、当前会话状态与控制入口不够集中、异步回看不够清楚，而部分 Codex CLI 能力应明确视为不适合飞书场景。
 evidence:
 - path: docs/design/or-task-006-feishu-vs-codex-tui-gap-analysis.md
   kind: file
