@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Any
 
 import lark_oapi as lark
-from lark_oapi.api.im.v1 import ReplyMessageRequest, ReplyMessageRequestBody, UpdateMessageRequest, UpdateMessageRequestBody
+from lark_oapi.api.im.v1 import PatchMessageRequest, PatchMessageRequestBody, ReplyMessageRequest, ReplyMessageRequestBody, UpdateMessageRequest, UpdateMessageRequestBody
 from lark_oapi.core.enum import AccessTokenType, HttpMethod, LogLevel
 from lark_oapi.core.model import BaseRequest
 
@@ -93,6 +93,14 @@ class FeishuMessenger:
         _ensure_success(response, f"Feishu update {msg_type}")
         return _response_payload(response)
 
+    async def patch_message(self, message_id: str, content: str) -> dict[str, Any]:
+        request = PatchMessageRequest.builder().message_id(message_id).request_body(
+            PatchMessageRequestBody.builder().content(content).build()
+        ).build()
+        response = await self.client.im.v1.message.apatch(request)
+        _ensure_success(response, "Feishu patch message")
+        return _response_payload(response)
+
     async def download_message_resource_to_file(self, message_id: str, file_key: str, *, resource_type: str = "image") -> str:
         request = BaseRequest.builder().http_method(HttpMethod.GET).uri(
             f"/open-apis/im/v1/messages/{message_id}/resources/{file_key}"
@@ -151,15 +159,19 @@ class FeishuMessenger:
         content = _json_dumps(card)
         if update_message_id:
             try:
-                await self.update_message(update_message_id, "interactive", content)
+                await self.patch_message(update_message_id, content)
                 return SentMessageRef(message_id=update_message_id)
             except Exception:
-                LOGGER.exception("update interactive card failed for message_id=%s", update_message_id)
+                LOGGER.exception("patch interactive card failed for message_id=%s", update_message_id)
         if reply_to_message_id and not force_new_message:
             try:
                 payload = await self.reply_message(reply_to_message_id, "interactive", content, reply_in_thread=True)
                 return sent_message_ref_from_payload(payload)
             except Exception:
-                LOGGER.exception("reply interactive card failed for message_id=%s", reply_to_message_id)
+                LOGGER.exception(
+                    "reply interactive card failed for message_id=%s after patch fallback message_id=%s",
+                    reply_to_message_id,
+                    update_message_id,
+                )
         payload = await self.create_message(chat_id, "interactive", content, root_id=root_id)
         return sent_message_ref_from_payload(payload)
