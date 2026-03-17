@@ -129,7 +129,6 @@ class CodexSemanticMapper:
         native_session_id = str(
             envelope.params.get("threadId")
             or thread.get("id")
-            or envelope.params.get("conversationId")
             or envelope.thread_id
             or ""
         )
@@ -179,7 +178,7 @@ class CodexSemanticMapper:
         descriptor: CodexEventDescriptor,
         state: Any,
     ) -> tuple[CodexSemanticEvent, ...]:
-        if envelope.method in {"item/reasoning/textDelta", "codex/event/reasoning_content_delta"}:
+        if envelope.method == "item/reasoning/textDelta":
             index = self._int_field(envelope.params, "contentIndex", "content_index")
             reasoning = self._reasoning_state(state, envelope.item_id)
             reasoning.append_content(index, self._delta(envelope.params))
@@ -196,7 +195,7 @@ class CodexSemanticMapper:
                     text=self._combined_reasoning_text(state),
                 ),
             )
-        if envelope.method in {"item/reasoning/summaryTextDelta", "codex/event/reasoning_summary_text_delta"}:
+        if envelope.method == "item/reasoning/summaryTextDelta":
             index = self._int_field(envelope.params, "summaryIndex", "summary_index")
             reasoning = self._reasoning_state(state, envelope.item_id)
             reasoning.append_summary(index, self._delta(envelope.params))
@@ -236,9 +235,6 @@ class CodexSemanticMapper:
                 ),
             )
         raw_steps = envelope.params.get("plan") if isinstance(envelope.params.get("plan"), list) else []
-        if not raw_steps and envelope.method == "codex/event/plan_update":
-            msg = envelope.params.get("msg") if isinstance(envelope.params.get("msg"), dict) else {}
-            raw_steps = msg.get("plan") if isinstance(msg.get("plan"), list) else []
         if raw_steps:
             steps = tuple(self._to_plan_step(item) for item in raw_steps if isinstance(item, dict))
             explanation = str(envelope.params.get("explanation") or "")
@@ -488,28 +484,8 @@ class CodexSemanticMapper:
                 terminal_kind="failed",
                 message=str(error.get("message") or envelope.params),
             )
-        if envelope.method == "codex/event/turn_aborted":
-            msg = envelope.params.get("msg") if isinstance(envelope.params.get("msg"), dict) else {}
-            status = str(msg.get("status") or "interrupted")
-            message = str(msg.get("error", {}).get("message") if isinstance(msg.get("error"), dict) else msg.get("error") or "interrupted")
-            semantic_name = "turn.interrupted" if status == "interrupted" else "turn.failed"
-            terminal_kind = "interrupted" if semantic_name == "turn.interrupted" else "failed"
-            return CodexSemanticEvent(
-                semantic_name=semantic_name,
-                policy="system",
-                source_method=envelope.method,
-                source_route=envelope.route,
-                thread_id=envelope.thread_id,
-                turn_id=envelope.turn_id,
-                terminal_kind=terminal_kind,
-                message=message,
-            )
         turn = envelope.params.get("turn") if isinstance(envelope.params.get("turn"), dict) else {}
-        msg = envelope.params.get("msg") if isinstance(envelope.params.get("msg"), dict) else {}
-        if not turn:
-            turn = {"status": msg.get("status") or "completed", "error": msg.get("error")}
-        last_agent_message = str(msg.get("last_agent_message") or msg.get("lastAgentMessage") or "").strip()
-        final_text = (state.final_text or last_agent_message).strip()
+        final_text = state.final_text.strip()
         status = str(turn.get("status") or "")
         if status == "completed":
             return CodexSemanticEvent(
@@ -669,21 +645,17 @@ class CodexSemanticMapper:
         item = params.get("item") if isinstance(params.get("item"), dict) else {}
         if item:
             return _normalize_event_item(item)
-        msg = params.get("msg") if isinstance(params.get("msg"), dict) else {}
-        event_item = msg.get("item") if isinstance(msg.get("item"), dict) else {}
-        return _normalize_event_item(event_item)
+        return {}
 
     def _item_id(self, params: dict[str, Any]) -> str:
-        msg = params.get("msg") if isinstance(params.get("msg"), dict) else {}
-        return str(params.get("itemId") or msg.get("item_id") or msg.get("itemId") or "")
+        return str(params.get("itemId") or "")
 
     def _delta(self, params: dict[str, Any]) -> str:
-        msg = params.get("msg") if isinstance(params.get("msg"), dict) else {}
-        return str(params.get("delta") or msg.get("delta") or "")
+        return str(params.get("delta") or "")
 
     def _int_field(self, params: dict[str, Any], primary: str, alias: str) -> int:
-        msg = params.get("msg") if isinstance(params.get("msg"), dict) else {}
-        raw = params.get(primary) or msg.get(alias) or msg.get(primary) or 0
+        _ = alias
+        raw = params.get(primary) or 0
         try:
             return int(raw)
         except (TypeError, ValueError):
@@ -789,34 +761,20 @@ class CodexSemanticMapper:
 
     def _extract_usage(self, params: dict[str, Any]) -> UsageSnapshot | None:
         token_usage = params.get("tokenUsage") if isinstance(params.get("tokenUsage"), dict) else {}
-        if token_usage:
-            last = (
-                token_usage.get("last")
-                if isinstance(token_usage.get("last"), dict)
-                else token_usage.get("total")
-                if isinstance(token_usage.get("total"), dict)
-                else {}
-            )
-            return UsageSnapshot(
-                input_tokens=last.get("inputTokens"),
-                cached_input_tokens=last.get("cachedInputTokens"),
-                output_tokens=last.get("outputTokens"),
-                reasoning_output_tokens=last.get("reasoningOutputTokens"),
-                total_tokens=last.get("totalTokens"),
-                context_window=token_usage.get("modelContextWindow"),
-            )
-        msg = params.get("msg") if isinstance(params.get("msg"), dict) else {}
-        info = msg.get("info") if isinstance(msg.get("info"), dict) else {}
-        usage = info.get("last_token_usage") if isinstance(info.get("last_token_usage"), dict) else {}
-        if not usage:
-            usage = info.get("total_token_usage") if isinstance(info.get("total_token_usage"), dict) else {}
-        if not usage:
+        if not token_usage:
             return None
+        last = (
+            token_usage.get("last")
+            if isinstance(token_usage.get("last"), dict)
+            else token_usage.get("total")
+            if isinstance(token_usage.get("total"), dict)
+            else {}
+        )
         return UsageSnapshot(
-            input_tokens=usage.get("input_tokens"),
-            cached_input_tokens=usage.get("cached_input_tokens"),
-            output_tokens=usage.get("output_tokens"),
-            reasoning_output_tokens=usage.get("reasoning_output_tokens"),
-            total_tokens=usage.get("total_tokens"),
-            context_window=info.get("model_context_window"),
+            input_tokens=last.get("inputTokens"),
+            cached_input_tokens=last.get("cachedInputTokens"),
+            output_tokens=last.get("outputTokens"),
+            reasoning_output_tokens=last.get("reasoningOutputTokens"),
+            total_tokens=last.get("totalTokens"),
+            context_window=token_usage.get("modelContextWindow"),
         )

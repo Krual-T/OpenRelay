@@ -6,17 +6,10 @@ from typing import Any
 from openrelay.agent_runtime import ApprovalDecision, ApprovalRequest, ApprovalRequestedEvent, RuntimeEvent
 
 from .event_deduper import CodexSemanticDeduper
-from .event_registry import CodexConsumptionMode, CodexEventRegistry
+from .event_registry import CodexEventRegistry
 from .runtime_projector import CodexRuntimeEventProjector
 from .semantic_events import CodexRawEventEnvelope, CodexTerminalState
 from .semantic_mapper import CodexSemanticMapper, _flatten_text
-
-
-def _normalize_event_item_type(item_type: object) -> str:
-    normalized = str(item_type or "").strip()
-    if not normalized:
-        return ""
-    return normalized[:1].lower() + normalized[1:]
 
 
 @dataclass(slots=True)
@@ -77,13 +70,10 @@ class CodexProtocolMapper:
         session_id: str,
         native_session_id: str = "",
         turn_id: str = "",
-        *,
-        mode: CodexConsumptionMode = CodexConsumptionMode.TYPED_ONLY,
     ) -> None:
         self.session_id = session_id
         self.native_session_id = native_session_id
         self.turn_id = turn_id
-        self.mode = mode
         self.registry = CodexEventRegistry()
         self.semantic_mapper = CodexSemanticMapper()
         self.deduper = CodexSemanticDeduper()
@@ -128,7 +118,7 @@ class CodexProtocolMapper:
         envelope = self._build_envelope(method, params)
         if envelope is None:
             return ()
-        descriptor = self.registry.lookup(method, self.mode)
+        descriptor = self.registry.lookup(method)
         if descriptor is None:
             return (self._observe_unknown_event(envelope),)
         semantic_events = self.semantic_mapper.map(envelope, descriptor, state)
@@ -284,11 +274,10 @@ class CodexProtocolMapper:
         thread_id, turn_id = self._message_identity(params)
         if not self._matches(thread_id, turn_id):
             return None
-        route = "v1" if method.startswith("codex/event/") else "v2"
         item_id = self._item_id(params)
         envelope = CodexRawEventEnvelope(
             method=method,
-            route=route,  # type: ignore[arg-type]
+            route="v2",
             params=params,
             thread_id=thread_id,
             turn_id=turn_id,
@@ -317,24 +306,17 @@ class CodexProtocolMapper:
         return True
 
     def _message_identity(self, params: dict[str, Any]) -> tuple[str, str]:
-        msg = params.get("msg") if isinstance(params.get("msg"), dict) else {}
         thread = params.get("thread") if isinstance(params.get("thread"), dict) else {}
         turn = params.get("turn") if isinstance(params.get("turn"), dict) else {}
         thread_id = str(
             params.get("threadId")
             or thread.get("id")
-            or params.get("conversationId")
-            or msg.get("thread_id")
-            or msg.get("threadId")
             or self.native_session_id
             or ""
         )
         turn_id = str(
             params.get("turnId")
             or turn.get("id")
-            or msg.get("turn_id")
-            or msg.get("turnId")
-            or params.get("id")
             or self.turn_id
             or ""
         )
@@ -344,10 +326,4 @@ class CodexProtocolMapper:
         item = params.get("item") if isinstance(params.get("item"), dict) else {}
         if item:
             return str(item.get("id") or item.get("item_id") or "")
-        msg = params.get("msg") if isinstance(params.get("msg"), dict) else {}
-        event_item = msg.get("item") if isinstance(msg.get("item"), dict) else {}
-        if event_item:
-            normalized = _normalize_event_item_type(event_item.get("type"))
-            _ = normalized
-            return str(event_item.get("id") or event_item.get("item_id") or "")
-        return str(params.get("itemId") or msg.get("item_id") or msg.get("itemId") or "")
+        return str(params.get("itemId") or "")
