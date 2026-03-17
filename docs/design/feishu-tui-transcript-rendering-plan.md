@@ -109,6 +109,15 @@
 - streaming 与 final 共用同一条 transcript 生成链
 - Feishu card 只负责“承载 transcript”，不再主导内容分区
 
+这里需要进一步写死一个实现约束：**最终 contract 应优先是 transcript-first，而不是把最新状态快照重新排版得更像 transcript。**
+
+也就是说，目标不只是把当前 `history_items + partial_text` 改成线性文本，而是要明确：
+
+- transcript 代表一条按时间线生长的消息历史；
+- 渲染层首先关心“追加了什么 block”，其次才是“当前状态长什么样”；
+- 只有确实需要覆盖更新的 live block，才允许在 transcript 尾部做受控替换；
+- 不能继续让 `plan`、`summary`、assistant partial 这些内容停留在“当前状态板块”的语义里。
+
 也就是把现有 contract：
 
 - `process_text`
@@ -127,6 +136,38 @@
 2. `reply_card.py` 负责把 transcript 语义块渲染成 Feishu markdown / card。
 3. `FeishuStreamingSession` 只负责流式更新 card，不再拥有内容分区逻辑。
 4. `RuntimeOrchestrator` 不再额外拼 `process_text`。
+
+### Transcript Contract
+
+为了避免实现落回“状态快照投影”，这里补充 transcript contract：
+
+1. transcript 的基本单元是 presentation block，而不是 provider event，也不是拼好的整段 markdown。
+2. transcript block 默认采用 append-only 语义；只有少数 live block 允许覆盖最后一个同类 block。
+3. assistant partial / final text 属于 transcript block，不再是 panel 外单独的“正文区”。
+4. `summary` 仍保留 `---` 分隔线，但它属于 transcript 内的普通 block，而不是特殊的“切换到正文区”信号。
+5. runtime 元信息默认不进入主 transcript，除非它已经被定义为用户可感知事件。
+
+当前已识别出的“默认不进入主 transcript”的元信息包括：
+
+- `rate_limits`
+- `thread_status`
+- `available_skills`
+- `last_diff_id`
+
+这些信息如果后续仍有展示价值，应进入 debug / compact / diagnostics 视图，而不是主回复正文。
+
+### Plan 语义补充
+
+`plan` 是当前最容易因为状态模型而退化的部分，这里单独补充：
+
+- Codex / TUI 语义更接近“plan 更新历史”，而不是“始终只有一个当前 plan 面板”。
+- 因此 `plan.updated` 进入 transcript 时，默认应保留历史痕迹，而不是每次只覆盖 `state.plan_steps` 后再渲染成单个板块。
+- 允许的收敛方式应是：
+  - 追加新的 `plan` block；或
+  - 只覆盖 transcript 尾部最后一个仍处于 live 状态的 `plan` block。
+- 不应继续采用“飞书只维护一个当前 Plan 板块”的展示语义。
+
+如果实现上仍保留 `LiveTurnViewModel.plan_steps` 作为便捷快照字段，也只能把它视为派生缓存，不能再把它当作 transcript 的唯一来源。
 
 ## 建议改动
 
@@ -156,6 +197,7 @@
   - 当前 assistant partial / final text
   - approval resolved 等保留交互项
 - 展开顺序应遵守“先事件，再输出”的心智，不再区分“panel 区”和“answer 区”。
+- 这里要特别避免把 transcript 实现成“每轮根据最新 `state` 全量重建一块 Plan / Tool / Summary 面板”；否则视觉上线性，语义上仍是状态投影。
 
 建议新增私有方法：
 
@@ -171,6 +213,11 @@
 - `summary_block`
 
 这样可以保持 presenter 仍是 backend-neutral，而不是把 Codex 的事件名直接打进飞书层。
+
+额外要求：
+
+- presenter 需要显式区分“append block”与“replace tail block”两种操作语义。
+- `plan`、assistant partial、正在运行中的 command detail 都应归入这套语义，而不是被塞回统一的状态面板。
 
 ### B. `reply_card.py`：从“panel builder”改为“transcript renderer”
 
@@ -216,6 +263,7 @@
 4. 把 `_render_history_items()` 的输出要求从“适合 panel 阅读”调整成“适合插入 transcript 阅读”：
    - 当前树形结构、短摘要和 worked-for 尾行可保留；
    - 但不要再假定它必然出现在折叠 panel 里。
+   - `summary` 的 `---` 需要保留，但它的作用是 transcript block 分隔，而不是“过程区 / 正文区”的切换标记。
 
 ### C. `FeishuStreamingSession`：只负责流式更新，不再决定内容结构
 

@@ -68,6 +68,9 @@
 - **当前关注**：
   - 明确 transcript 渲染 contract 应该落在哪一层，避免把 provider 事件细节直接泄漏到飞书卡片。
   - 明确 streaming 阶段与 final 阶段是否共用同一份 transcript builder，消除当前双套拼装逻辑。
+  - 写死 transcript-first 约束：目标是 append-only / tail-replace 的 transcript block 历史，而不是把最新状态快照重新渲染得像 transcript。
+  - 明确 `plan.updated` 在飞书里的语义应保留历史痕迹，不能继续只表现为“当前 Plan 板块”。
+  - 明确 `rate_limits`、`thread_status`、`available_skills`、`last_diff_id` 这类 runtime 元信息默认不进入主 transcript。
   - 明确 `collapsible_panel`、`Execution Log` 和固定 `---` 分隔线如何退出主路径。
 - **关闭条件**：
   - 设计文档明确现状链路、目标链路和迁移边界。
@@ -80,8 +83,10 @@
   - 当前实现入口：`src/openrelay/feishu/reply_card.py`
   - 当前实现入口：`src/openrelay/feishu/streaming.py`
   - `docs/design/feishu-tui-transcript-rendering-plan.md`
+  - 2026-03-17 已补充 transcript contract、plan 历史语义与非正文 runtime 元信息过滤原则。
 - **后续 follow-up**：
   - 按设计引入统一 transcript builder，并删除流式 / 最终态的重复拼装。
+  - 决定 `plan` 是 append-only 还是仅允许覆盖 transcript 尾部最后一个 live block，并把规则下沉到 presenter / reducer contract。
   - 决定是否保留可配置的 compact card 模式，避免一次性把旧展示能力彻底删死。
 
 ## 使用约定
