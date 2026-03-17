@@ -239,37 +239,7 @@ class LiveTurnPresenter:
 
     def _system_history_items(self, state: LiveTurnViewModel) -> list[dict[str, Any]]:
         items: list[dict[str, Any]] = []
-        if state.thread_status:
-            items.append(
-                {
-                    "type": "system",
-                    "state": "running" if state.status == "running" else "completed",
-                    "title": "Thread status",
-                    "detail": state.thread_status,
-                }
-            )
-        if state.skills_version or state.available_skills:
-            skill_text = ", ".join(skill for skill in state.available_skills if skill) or "updated"
-            detail = skill_text
-            if state.skills_version:
-                detail = f"{state.skills_version}: {skill_text}"
-            items.append(
-                {
-                    "type": "system",
-                    "state": "completed",
-                    "title": "Available skills",
-                    "detail": detail,
-                }
-            )
-        if state.last_diff_id:
-            items.append(
-                {
-                    "type": "system",
-                    "state": "completed",
-                    "title": "Thread diff",
-                    "detail": state.last_diff_id,
-                }
-            )
+        _ = state
         return items
 
     def _terminal_interaction_detail(self, process_id: str, stdin: str) -> str:
