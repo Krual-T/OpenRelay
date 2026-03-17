@@ -222,6 +222,7 @@ def test_build_streaming_content_renders_plan_with_static_purple_bullets_and_str
     )
 
     assert "🟣 Plan" in content
+    assert "🟣 Plan  \n├ 🟣 ~~`completed` Inspect runtime~~" in content
     assert "├ 🟣 ~~`completed` Inspect runtime~~" in content
     assert "├ 🟣 `in_progress` Adjust Feishu rendering" in content
     assert "└ 🟣 `pending` Verify snapshot output" in content

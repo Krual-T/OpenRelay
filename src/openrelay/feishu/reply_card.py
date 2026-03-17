@@ -192,6 +192,22 @@ def _append_tree_entries(lines: list[str], entries: list[list[str]]) -> None:
             lines.append(f"{continuation} {line}")
 
 
+def _join_markdown_lines(lines: list[str]) -> str:
+    if not lines:
+        return ""
+    parts: list[str] = []
+    for index, line in enumerate(lines):
+        parts.append(line)
+        if index == len(lines) - 1:
+            continue
+        next_line = lines[index + 1]
+        if not line or not next_line:
+            parts.append("\n")
+            continue
+        parts.append("  \n")
+    return "".join(parts).strip()
+
+
 def _format_worked_for(started_at: object) -> str:
     raw_value = str(started_at or "").strip()
     if not raw_value:
@@ -455,7 +471,7 @@ def _render_history_items(items: list[dict[str, Any]], spinner_frame: int) -> st
             continue
         lines = _render_history_item(item, spinner_frame)
         if lines:
-            blocks.append("\n".join(lines))
+            blocks.append(_join_markdown_lines(lines))
     return "\n\n".join(blocks).strip()
 
 
@@ -572,7 +588,7 @@ def _render_streaming_history_items(items: list[dict[str, Any]]) -> str:
             continue
         lines = _render_streaming_history_item(item)
         if lines:
-            blocks.append("\n".join(lines))
+            blocks.append(_join_markdown_lines(lines))
     return "\n\n".join(blocks).strip()
 
 
