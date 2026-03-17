@@ -541,7 +541,6 @@ class CodexSemanticMapper:
             level="warning",
             message=title,
             payload={
-                "fallback": True,
                 "observe": True,
                 "title": title,
                 "raw_event": {"method": envelope.method, "params": envelope.params},
@@ -565,7 +564,6 @@ class CodexSemanticMapper:
             level="warning",
             message=title,
             payload={
-                "fallback": True,
                 "observe": True,
                 "title": title,
                 "raw_event": {"method": envelope.method, "params": envelope.params, "item": item},

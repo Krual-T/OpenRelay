@@ -368,7 +368,7 @@ def test_codex_mapper_falls_back_for_unexpected_backend_event() -> None:
     )
 
     assert len(events) == 1 and isinstance(events[0], BackendNoticeEvent)
-    assert events[0].provider_payload["fallback"] is True
+    assert events[0].provider_payload["observe"] is True
     assert events[0].provider_payload["raw_event"]["params"]["foo"] == "bar"
 
 
@@ -387,5 +387,5 @@ def test_codex_mapper_falls_back_for_unexpected_item_type() -> None:
     )
 
     assert len(events) == 1 and isinstance(events[0], BackendNoticeEvent)
-    assert events[0].provider_payload["fallback"] is True
+    assert events[0].provider_payload["observe"] is True
     assert events[0].provider_payload["raw_event"]["item"]["type"] == "customTool"
