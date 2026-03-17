@@ -6,8 +6,12 @@ from pathlib import Path
 import pytest
 
 from openrelay.agent_runtime import (
+    RateLimitsUpdatedEvent,
     ApprovalDecision,
     ApprovalRequestedEvent,
+    SkillsUpdatedEvent,
+    ThreadDiffUpdatedEvent,
+    ThreadStatusUpdatedEvent,
     ListSessionsRequest,
     RuntimeEvent,
     SessionLocator,
@@ -17,6 +21,7 @@ from openrelay.agent_runtime import (
     TurnInput,
 )
 from openrelay.backends.codex_adapter.backend import CodexRuntimeBackend
+from openrelay.backends.codex_adapter.app_server import CodexTurn
 
 
 class FakeCodexClient:
@@ -104,6 +109,61 @@ class CapturingSink:
 
     async def publish(self, event: RuntimeEvent) -> None:
         self.events.append(event)
+
+
+@pytest.mark.asyncio
+async def test_codex_app_server_turn_emits_legacy_progress_for_system_runtime_events() -> None:
+    progress_events: list[dict[str, object]] = []
+
+    async def capture(event: dict[str, object]) -> None:
+        progress_events.append(event)
+
+    turn = CodexTurn(thread_id="thread_1", on_progress=capture)
+
+    await turn._apply_runtime_event(
+        ThreadStatusUpdatedEvent(
+            backend="codex",
+            session_id="thread_1",
+            turn_id="turn_1",
+            event_type="thread.status.updated",
+            status="active",
+        )
+    )
+    await turn._apply_runtime_event(
+        RateLimitsUpdatedEvent(
+            backend="codex",
+            session_id="thread_1",
+            turn_id="turn_1",
+            event_type="rate_limits.updated",
+            rate_limits={"limitId": "codex", "primary": {"usedPercent": 37}},
+        )
+    )
+    await turn._apply_runtime_event(
+        SkillsUpdatedEvent(
+            backend="codex",
+            session_id="thread_1",
+            turn_id="turn_1",
+            event_type="skills.updated",
+            version="skills-v3",
+            skills=("search", "apply_patch"),
+        )
+    )
+    await turn._apply_runtime_event(
+        ThreadDiffUpdatedEvent(
+            backend="codex",
+            session_id="thread_1",
+            turn_id="turn_1",
+            event_type="thread.diff.updated",
+            diff_id="diff_9",
+        )
+    )
+
+    assert progress_events == [
+        {"type": "thread.status", "status": "active", "threadId": "thread_1"},
+        {"type": "rate_limits.updated", "rateLimits": {"limitId": "codex", "primary": {"usedPercent": 37}}, "threadId": "thread_1"},
+        {"type": "skills.updated", "version": "skills-v3", "skills": ["search", "apply_patch"], "threadId": "thread_1"},
+        {"type": "thread.diff.updated", "diffId": "diff_9", "threadId": "thread_1"},
+    ]
 
 
 @pytest.mark.asyncio
