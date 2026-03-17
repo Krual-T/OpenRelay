@@ -5,6 +5,8 @@
 
 让 `Codex` 真正以“远程工作台”的方式进入飞书：保留原生 session、支持 thread 内连续追问、可按目录切换不同项目上下文，并把流式执行过程稳定投影回聊天界面。
 
+Connect your local coding agent to Feishu with real backend sessions, thread-first follow-ups, and per-directory project context.
+
 <p>
   <img alt="Python 3.12+" src="https://img.shields.io/badge/python-3.12%2B-111111?style=flat-square&logo=python&logoColor=white">
   <img alt="FastAPI" src="https://img.shields.io/badge/FastAPI-openrelay-111111?style=flat-square&logo=fastapi&logoColor=white">
@@ -270,3 +272,11 @@ uv run pytest
 这就是 `openrelay` 的判断。
 
 如果你不想要一个只能 demo 的 bot，而是想要一个能在真实开发任务里活下来的远程 agent 入口，这个仓库就是为这个方向做的。
+
+## 对外传播素材
+
+如果你准备把这个项目发到社区、社群或社交媒体，可以直接复用这些现成材料：
+
+- `docs/marketing/launch-kit.md`：一句话定位、受众、卖点、社区帖模板、录屏脚本
+- `docs/marketing/outreach-plan.md`：三周外发节奏、渠道优先级、反馈判断标准
+- `static/openrelay_social_card.svg`：仓库分享图 / 帖子封面底图
