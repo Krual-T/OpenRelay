@@ -8,9 +8,13 @@ from openrelay.agent_runtime import (
     AssistantDeltaEvent,
     BackendNoticeEvent,
     PlanUpdatedEvent,
+    RateLimitsUpdatedEvent,
     ReasoningDeltaEvent,
     RuntimeEvent,
     SessionStartedEvent,
+    SkillsUpdatedEvent,
+    ThreadDiffUpdatedEvent,
+    ThreadStatusUpdatedEvent,
     ToolCompletedEvent,
     ToolProgressEvent,
     ToolStartedEvent,
@@ -95,6 +99,47 @@ class CodexRuntimeEventProjector:
             )
         if event.semantic_name == "usage.updated" and event.usage is not None:
             return (self._event(UsageUpdatedEvent, event.turn_id, "usage.updated", provider_payload, usage=event.usage),)
+        if event.semantic_name == "thread.status.changed":
+            return (
+                self._event(
+                    ThreadStatusUpdatedEvent,
+                    event.turn_id,
+                    "thread.status.updated",
+                    provider_payload,
+                    status=str(event.payload.get("status") or ""),
+                ),
+            )
+        if event.semantic_name == "account.rate_limits.updated":
+            return (
+                self._event(
+                    RateLimitsUpdatedEvent,
+                    event.turn_id,
+                    "rate_limits.updated",
+                    provider_payload,
+                    rate_limits=dict(event.payload.get("rate_limits") or {}),
+                ),
+            )
+        if event.semantic_name == "skills.changed":
+            return (
+                self._event(
+                    SkillsUpdatedEvent,
+                    event.turn_id,
+                    "skills.updated",
+                    provider_payload,
+                    version=str(event.payload.get("version") or ""),
+                    skills=tuple(str(skill) for skill in event.payload.get("skills") or ()),
+                ),
+            )
+        if event.semantic_name == "thread.diff.updated":
+            return (
+                self._event(
+                    ThreadDiffUpdatedEvent,
+                    event.turn_id,
+                    "thread.diff.updated",
+                    provider_payload,
+                    diff_id=str(event.payload.get("diff_id") or ""),
+                ),
+            )
         if event.semantic_name == "turn.completed":
             return (
                 self._event(
@@ -139,4 +184,3 @@ class CodexRuntimeEventProjector:
             provider_payload=provider_payload,
             **kwargs,
         )
-

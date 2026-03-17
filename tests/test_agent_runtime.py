@@ -6,8 +6,12 @@ from openrelay.agent_runtime import (
     LiveTurnRegistry,
     PlanStep,
     PlanUpdatedEvent,
+    RateLimitsUpdatedEvent,
     ReasoningDeltaEvent,
     RuntimeEvent,
+    SkillsUpdatedEvent,
+    ThreadDiffUpdatedEvent,
+    ThreadStatusUpdatedEvent,
     ToolCompletedEvent,
     ToolProgressEvent,
     ToolStartedEvent,
@@ -105,6 +109,43 @@ def test_live_turn_registry_reduces_streaming_state() -> None:
             usage=UsageSnapshot(input_tokens=10, output_tokens=5, total_tokens=15),
         )
     )
+    registry.apply(
+        ThreadStatusUpdatedEvent(
+            backend="codex",
+            session_id="s1",
+            turn_id="t1",
+            event_type="thread.status.updated",
+            status="active",
+        )
+    )
+    registry.apply(
+        RateLimitsUpdatedEvent(
+            backend="codex",
+            session_id="s1",
+            turn_id="t1",
+            event_type="rate_limits.updated",
+            rate_limits={"limitId": "codex", "primary": {"usedPercent": 37}},
+        )
+    )
+    registry.apply(
+        SkillsUpdatedEvent(
+            backend="codex",
+            session_id="s1",
+            turn_id="t1",
+            event_type="skills.updated",
+            version="skills-v3",
+            skills=("search", "apply_patch"),
+        )
+    )
+    registry.apply(
+        ThreadDiffUpdatedEvent(
+            backend="codex",
+            session_id="s1",
+            turn_id="t1",
+            event_type="thread.diff.updated",
+            diff_id="diff_9",
+        )
+    )
     state = registry.apply(
         TurnCompletedEvent(
             backend="codex",
@@ -121,6 +162,11 @@ def test_live_turn_registry_reduces_streaming_state() -> None:
     assert [step.status for step in state.plan_steps] == ["completed", "in_progress"]
     assert state.pending_approval is None
     assert state.usage is not None and state.usage.total_tokens == 15
+    assert state.thread_status == "active"
+    assert state.rate_limits["limitId"] == "codex"
+    assert state.skills_version == "skills-v3"
+    assert state.available_skills == ("search", "apply_patch")
+    assert state.last_diff_id == "diff_9"
     assert len(state.tools) == 1
     assert state.tools[0].detail == "found src/openrelay/runtime/orchestrator.py"
     assert state.tools[0].exit_code == 0

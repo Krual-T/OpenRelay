@@ -130,5 +130,10 @@ class LiveTurnViewModel:
     backend_events: tuple[BackendEventRecord, ...] = ()
     pending_approval: ApprovalRequest | None = None
     usage: UsageSnapshot | None = None
+    thread_status: str = ""
+    rate_limits: dict[str, Any] = field(default_factory=dict)
+    skills_version: str = ""
+    available_skills: tuple[str, ...] = ()
+    last_diff_id: str = ""
     error_message: str = ""
     updated_at: str = field(default_factory=utc_now)

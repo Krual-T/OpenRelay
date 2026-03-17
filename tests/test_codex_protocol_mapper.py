@@ -6,7 +6,11 @@ from openrelay.agent_runtime import (
     AssistantDeltaEvent,
     BackendNoticeEvent,
     PlanUpdatedEvent,
+    RateLimitsUpdatedEvent,
     ReasoningDeltaEvent,
+    SkillsUpdatedEvent,
+    ThreadDiffUpdatedEvent,
+    ThreadStatusUpdatedEvent,
     ToolCompletedEvent,
     ToolProgressEvent,
     ToolStartedEvent,
@@ -280,7 +284,7 @@ def test_codex_mapper_ignores_typed_user_message_items() -> None:
     assert completed == ()
 
 
-def test_codex_mapper_records_typed_system_snapshots() -> None:
+def test_codex_mapper_maps_typed_system_events_and_updates_snapshot() -> None:
     mapper = CodexProtocolMapper(session_id="relay-1", native_session_id="thread_1", turn_id="turn_1")
     state = CodexTurnState()
 
@@ -302,11 +306,40 @@ def test_codex_mapper_records_typed_system_snapshots() -> None:
         },
         state,
     )
+    skills = mapper.map_notification(
+        "skills/changed",
+        {
+            "threadId": "thread_1",
+            "turnId": "turn_1",
+            "version": "skills-v3",
+            "skills": ["search", "apply_patch"],
+        },
+        state,
+    )
+    diff = mapper.map_notification(
+        "turn/diff/updated",
+        {
+            "threadId": "thread_1",
+            "turnId": "turn_1",
+            "diffId": "diff_9",
+        },
+        state,
+    )
 
-    assert rate_limits == ()
-    assert thread_status == ()
+    assert len(rate_limits) == 1 and isinstance(rate_limits[0], RateLimitsUpdatedEvent)
+    assert rate_limits[0].rate_limits["limitId"] == "codex"
+    assert len(thread_status) == 1 and isinstance(thread_status[0], ThreadStatusUpdatedEvent)
+    assert thread_status[0].status == "active"
+    assert len(skills) == 1 and isinstance(skills[0], SkillsUpdatedEvent)
+    assert skills[0].version == "skills-v3"
+    assert skills[0].skills == ("search", "apply_patch")
+    assert len(diff) == 1 and isinstance(diff[0], ThreadDiffUpdatedEvent)
+    assert diff[0].diff_id == "diff_9"
     assert state.system_snapshot["thread_status"] == "active"
     assert state.system_snapshot["rate_limits_payload"]["limitId"] == "codex"
+    assert state.system_snapshot["skills_version"] == "skills-v3"
+    assert state.system_snapshot["skills"] == ("search", "apply_patch")
+    assert state.system_snapshot["last_diff_id"] == "diff_9"
 
 
 def test_codex_mapper_maps_assistant_completed_event() -> None:

@@ -65,6 +65,7 @@ class CodexTurnState:
             "thread_status": "",
             "last_diff_id": "",
             "skills_version": "",
+            "skills": (),
             "rate_limits_payload": {},
         }
     )
