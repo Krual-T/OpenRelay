@@ -191,12 +191,13 @@ async def test_runtime_panel_service_updates_resume_card_in_place_for_card_actio
 
     session = SessionRecord(session_id="local_1", base_key="p2p:oc_1", backend="codex", cwd=str(tmp_path))
     message = IncomingMessage(
-        event_id="card-action-resume-page-2",
+        event_id="evt_resume_card_page_2",
         message_id="om_resume_card",
         reply_to_message_id="om_resume_card",
         chat_id="oc_1",
         chat_type="p2p",
         sender_open_id="ou_user",
+        source_kind="card_action",
         text="/resume --page 2",
         actionable=True,
     )

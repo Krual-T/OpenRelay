@@ -220,6 +220,22 @@ def make_thread_message(text: str, suffix: str = "thread_cmd") -> IncomingMessag
     )
 
 
+def make_card_action_message(text: str, suffix: str = "card_cmd") -> IncomingMessage:
+    return IncomingMessage(
+        event_id=f"evt_{suffix}",
+        message_id=f"om_{suffix}",
+        reply_to_message_id="om_resume_card",
+        chat_id="oc_1",
+        chat_type="p2p",
+        sender_open_id="ou_user",
+        source_kind="card_action",
+        root_id="om_root",
+        thread_id="om_root",
+        text=text,
+        actionable=True,
+    )
+
+
 
 def build_router(tmp_path: Path) -> tuple[RuntimeCommandRouter, StateStore, FakeHooks]:
     config = make_config(tmp_path)
@@ -376,6 +392,19 @@ async def test_runtime_command_router_rejects_resume_inside_thread(tmp_path: Pat
     assert handled is True
     assert hooks.session_list_calls == []
     assert hooks.replies[-1]["text"] == "`/resume` 只允许在私聊顶层使用；子 thread 会固定绑定当前后端会话。"
+    store.close()
+
+
+@pytest.mark.asyncio
+async def test_runtime_command_router_allows_resume_card_action_pagination(tmp_path: Path) -> None:
+    router, store, hooks = build_router(tmp_path)
+    session = store.load_session("p2p:oc_1")
+
+    handled = await router.handle(make_card_action_message("/resume --page 2", suffix="resume_card_page_2"), session.base_key, session)
+
+    assert handled is True
+    assert hooks.session_list_calls == [(session.base_key, 2, "updated-desc")]
+    assert hooks.replies == []
     store.close()
 
 
