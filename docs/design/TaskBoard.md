@@ -49,7 +49,28 @@
   - 按设计补齐 terminal legacy 兼容与 typed-only 系统事件消费。
   - 把 ignore 集合从“隐式未处理”改成“显式登记”。
 
+### [ ] OR-TASK-003 Feishu 流式回复收敛为 TUI Transcript 投影
+- **目标**：把飞书当前“过程面板 + 最终答案”的双区渲染，收敛为与 Codex TUI 更一致的单条 transcript 投影，使执行记录、解释文字和 follow-up 建议能在线性正文里自然混排。
+- **当前关注**：
+  - 明确 transcript 渲染 contract 应该落在哪一层，避免把 provider 事件细节直接泄漏到飞书卡片。
+  - 明确 streaming 阶段与 final 阶段是否共用同一份 transcript builder，消除当前双套拼装逻辑。
+  - 明确 `collapsible_panel`、`Execution Log` 和固定 `---` 分隔线如何退出主路径。
+- **关闭条件**：
+  - 设计文档明确现状链路、目标链路和迁移边界。
+  - 需要改动的类、方法名、职责调整和替换顺序被写清楚。
+  - 风险点、回退策略和最小验证方案被写清楚。
+- **建议产物**：
+  - `docs/design/feishu-tui-transcript-rendering-plan.md`
+- **已完成证据**：
+  - 当前实现入口：`src/openrelay/presentation/live_turn.py`
+  - 当前实现入口：`src/openrelay/feishu/reply_card.py`
+  - 当前实现入口：`src/openrelay/feishu/streaming.py`
+  - `docs/design/feishu-tui-transcript-rendering-plan.md`
+- **后续 follow-up**：
+  - 按设计引入统一 transcript builder，并删除流式 / 最终态的重复拼装。
+  - 决定是否保留可配置的 compact card 模式，避免一次性把旧展示能力彻底删死。
+
 ## 使用约定
 
-- 当前打开的设计主线任务见 `OR-TASK-002`。
+- 当前打开的设计主线任务见 `OR-TASK-002`、`OR-TASK-003`。
 - 后续若再开启新的设计主线，新增条目应继续遵循 `docs/design/task-board-protocol.md`。
