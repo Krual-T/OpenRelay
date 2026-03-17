@@ -163,11 +163,11 @@ class FeishuStreamingSession:
         if self.state is None:
             return
         next_content = self.pending_content
-        if not next_content:
+        if not next_content or next_content == str(self.state.get("current_content") or ""):
             return
         self.pending_content = ""
         await self.update_card_content(next_content)
-        self.state["current_content"] = f"{str(self.state.get('current_content') or '')}{next_content}"
+        self.state["current_content"] = next_content
 
     def _cancel_pending_flush_task(self) -> None:
         if self._pending_flush_task is None:
@@ -262,12 +262,9 @@ class FeishuStreamingSession:
                     self.state["current_content"] = next_content
                     self.last_update_time = time.time() * 1000
                     return
-        delta_content = next_content[len(current_content):] if next_content.startswith(current_content) else next_content
-        if not delta_content:
-            return
         now_ms = time.time() * 1000
         if now_ms - self.last_update_time < self.update_throttle_ms:
-            self.pending_content = delta_content
+            self.pending_content = next_content
             remaining_ms = max(0.0, self.update_throttle_ms - (now_ms - self.last_update_time))
             self._schedule_pending_flush(remaining_ms / 1000)
             return
@@ -283,10 +280,7 @@ class FeishuStreamingSession:
                 await self.update_card_json(build_streaming_card_json(live_state))
                 self.state["card_signature"] = next_signature
             else:
-                delta_content = next_content[len(current_content):] if next_content.startswith(current_content) else next_content
-                if not delta_content:
-                    return
-                await self.update_card_content(delta_content)
+                await self.update_card_content(next_content)
             self.state["current_content"] = next_content
 
     async def close(self, final_card: dict[str, Any] | None = None) -> None:

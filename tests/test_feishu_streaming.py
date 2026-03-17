@@ -352,7 +352,7 @@ async def test_streaming_session_throttles_updates_to_short_cardkit_interval(mon
 
     async def fake_update_card_content(text: str) -> None:
         applied_contents.append(text)
-        session.state["current_content"] = f"{session.state['current_content']}{text}"
+        session.state["current_content"] = text
         session.last_update_time = clock["now"] * 1000
 
     async def fake_update_card_json(card_json: dict[str, object]) -> None:
@@ -524,7 +524,12 @@ async def test_streaming_session_appends_delta_when_transcript_is_prefix(monkeyp
         }
     )
 
-    assert calls == [("update_content", "\n第二段")]
+    assert calls == [("update_content", build_streaming_content(
+        {
+            "history_items": initial_state["history_items"],
+            "partial_text": "# Answer\n第一段\n第二段",
+        }
+    ))]
 
 
 @pytest.mark.asyncio
