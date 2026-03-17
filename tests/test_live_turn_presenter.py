@@ -206,3 +206,63 @@ def test_live_turn_presenter_preserves_plan_history_in_transcript() -> None:
     assert transcript.count("**Plan**") == 2
     assert "Adjust Feishu rendering" in transcript
     assert "Verify snapshot output" in transcript
+
+
+def test_live_turn_presenter_interleaves_plan_history_with_command_timeline() -> None:
+    presenter = LiveTurnPresenter()
+    first_state = LiveTurnViewModel(
+        backend="codex",
+        session_id="relay_1",
+        native_session_id="thread_1",
+        turn_id="turn_1",
+        status="running",
+        tools=(
+            ToolState(
+                tool_id="cmd_1",
+                kind="command",
+                title="rg runtime",
+                status="completed",
+                preview="rg runtime",
+                detail="src/openrelay/runtime",
+            ),
+        ),
+        plan_steps=(
+            PlanStep(step="Inspect runtime", status="completed"),
+            PlanStep(step="Adjust Feishu rendering", status="in_progress"),
+        ),
+    )
+    second_state = LiveTurnViewModel(
+        backend="codex",
+        session_id="relay_1",
+        native_session_id="thread_1",
+        turn_id="turn_1",
+        status="running",
+        tools=(
+            ToolState(
+                tool_id="cmd_1",
+                kind="command",
+                title="rg runtime",
+                status="completed",
+                preview="rg runtime",
+                detail="src/openrelay/runtime",
+            ),
+            ToolState(
+                tool_id="cmd_2",
+                kind="command",
+                title="sed file",
+                status="completed",
+                preview="sed -n '1,40p' src/openrelay/feishu/reply_card.py",
+                detail="def render_transcript_markdown",
+            ),
+        ),
+        plan_steps=(
+            PlanStep(step="Inspect runtime", status="completed"),
+            PlanStep(step="Adjust Feishu rendering", status="completed"),
+            PlanStep(step="Verify snapshot output", status="in_progress"),
+        ),
+    )
+
+    first_snapshot = presenter.build_snapshot(first_state)
+    second_snapshot = presenter.build_snapshot(second_state, previous=first_snapshot)
+
+    assert [item["type"] for item in second_snapshot["transcript_items"]] == ["command", "plan", "command", "plan"]

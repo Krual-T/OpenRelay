@@ -70,8 +70,12 @@ class LiveTurnPresenter:
         }
         if state.reasoning_text and not snapshot["reasoning_started_at"]:
             snapshot["reasoning_started_at"] = previous.get("started_at") or utc_now()
-        snapshot["plan_history_items"] = self._merge_plan_history_items(snapshot["history_items"], previous)
-        snapshot["transcript_items"] = self._build_transcript_items(snapshot["history_items"], snapshot["plan_history_items"])
+        snapshot["transcript_items"] = self._merge_transcript_items(snapshot["history_items"], previous)
+        snapshot["plan_history_items"] = [
+            dict(item)
+            for item in snapshot["transcript_items"]
+            if isinstance(item, dict) and item.get("type") == "plan"
+        ]
         return snapshot
 
     def build_process_text(self, state: dict[str, Any] | LiveTurnViewModel) -> str:
@@ -249,43 +253,48 @@ class LiveTurnPresenter:
             preserved.append(dict(item))
         return preserved + items
 
-    def _merge_plan_history_items(
+    def _merge_transcript_items(
         self,
         items: list[dict[str, Any]],
         previous: dict[str, Any] | None,
     ) -> list[dict[str, Any]]:
-        current_plan = next((dict(item) for item in items if item.get("type") == "plan"), None)
-        history = [
-            dict(item)
-            for item in list((previous or {}).get("plan_history_items") or [])
-            if isinstance(item, dict) and item.get("type") == "plan"
-        ]
-        if current_plan is None:
-            return history
-        signature = self._plan_signature(current_plan)
-        current_plan["transcript_signature"] = signature
-        if history and str(history[-1].get("transcript_signature") or "") == signature:
-            history[-1] = current_plan
-            return history
-        history.append(current_plan)
-        return history
-
-    def _build_transcript_items(
-        self,
-        items: list[dict[str, Any]],
-        plan_history_items: list[dict[str, Any]],
-    ) -> list[dict[str, Any]]:
-        transcript_items: list[dict[str, Any]] = []
-        inserted_plan_history = False
+        prior_items = (previous or {}).get("transcript_items")
+        if not isinstance(prior_items, list):
+            prior_items = (previous or {}).get("history_items")
+        transcript_items = [dict(item) for item in list(prior_items or []) if isinstance(item, dict)]
+        keyed_indexes = {
+            key: index
+            for index, item in enumerate(transcript_items)
+            if (key := self._transcript_item_key(item)) is not None
+        }
         for item in items:
-            if item.get("type") == "plan":
-                if not inserted_plan_history:
-                    transcript_items.extend(dict(entry) for entry in plan_history_items)
-                    inserted_plan_history = True
+            current_item = dict(item)
+            if current_item.get("type") == "plan":
+                signature = self._plan_signature(current_item)
+                current_item["transcript_signature"] = signature
+                last_plan_index = next(
+                    (
+                        index
+                        for index in range(len(transcript_items) - 1, -1, -1)
+                        if transcript_items[index].get("type") == "plan"
+                    ),
+                    None,
+                )
+                if last_plan_index is not None and str(transcript_items[last_plan_index].get("transcript_signature") or "") == signature:
+                    transcript_items[last_plan_index] = current_item
+                    continue
+                transcript_items.append(current_item)
                 continue
-            transcript_items.append(dict(item))
-        if not inserted_plan_history and plan_history_items:
-            transcript_items.extend(dict(entry) for entry in plan_history_items)
+            key = self._transcript_item_key(current_item)
+            if key is None:
+                transcript_items.append(current_item)
+                continue
+            existing_index = keyed_indexes.get(key)
+            if existing_index is None:
+                keyed_indexes[key] = len(transcript_items)
+                transcript_items.append(current_item)
+                continue
+            transcript_items[existing_index] = current_item
         return transcript_items
 
     def _plan_signature(self, item: dict[str, Any]) -> str:
@@ -303,6 +312,28 @@ class LiveTurnPresenter:
                 }
             )
         return json.dumps(normalized_steps, ensure_ascii=False, sort_keys=True)
+
+    def _transcript_item_key(self, item: dict[str, Any]) -> tuple[str, str] | None:
+        item_type = str(item.get("type") or "").strip()
+        if not item_type or item_type == "plan":
+            return None
+        if item_type == "command":
+            return (item_type, str(item.get("command_id") or "").strip())
+        if item_type == "web_search":
+            return (item_type, str(item.get("search_id") or "").strip())
+        if item_type == "file_change":
+            return (item_type, str(item.get("file_change_id") or "").strip())
+        if item_type == "collab":
+            return (item_type, str(item.get("collab_id") or "").strip())
+        if item_type == "interaction":
+            return (item_type, str(item.get("interaction_id") or "").strip())
+        if item_type == "reasoning":
+            return (item_type, "current")
+        detail = str(item.get("detail") or "").strip()
+        title = str(item.get("title") or "").strip()
+        if not title and not detail:
+            return None
+        return (item_type, json.dumps({"title": title, "detail": detail}, ensure_ascii=False, sort_keys=True))
 
     def _format_backend_event_detail(self, detail: str, raw_payload: dict[str, Any]) -> str:
         blocks: list[str] = []
