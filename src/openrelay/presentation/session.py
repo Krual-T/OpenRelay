@@ -35,6 +35,12 @@ def _page_window(page: int, known_page_count: int, width: int = 5) -> list[int]:
     return list(range(start, end + 1))
 
 
+def _chunk_buttons(buttons: list[dict[str, Any]], size: int = 5) -> list[list[dict[str, Any]]]:
+    if size <= 0:
+        return [buttons] if buttons else []
+    return [buttons[index:index + size] for index in range(0, len(buttons), size)]
+
+
 def _session_text(entry: dict[str, Any]) -> str:
     title = str(entry.get("title") or entry.get("label") or entry.get("session_id") or "未命名会话")
     lines = [f"**{entry.get('index', '-')}. {title}**{' · 当前' if entry.get('active') else ''}"]
@@ -162,8 +168,8 @@ def build_backend_session_list_card(info: dict[str, Any]) -> dict[str, Any]:
         )
     if has_next:
         controls.append(build_button("下一页", build_resume_card_command(page=page + 1), "primary", action_context))
-    if controls:
-        elements.append({"tag": "action", "actions": controls})
+    for chunk in _chunk_buttons(controls):
+        elements.append({"tag": "action", "actions": chunk})
     return build_card_shell(f"Relay {backend_name} thread histories", elements, tone="info")
 
 
