@@ -150,7 +150,7 @@ class SessionScopeResolver:
         return self.compose_key(message, thread_id=message.message_id)
 
     def is_card_action_message(self, message: IncomingMessage) -> bool:
-        return message.event_id.startswith("card-action-")
+        return message.source_kind == "card_action"
 
     def root_id_for_message(self, message: IncomingMessage) -> str:
         return message.root_id or message.thread_id

@@ -86,3 +86,21 @@ def test_session_scope_remembers_inbound_and_outbound_aliases(tmp_path: Path) ->
     assert store.find_session_key_alias("p2p:oc_1:thread:om_bot_reply") == session_key
     assert store.find_session_key_alias("p2p:oc_1:thread:omt_bot_thread") == session_key
     store.close()
+
+
+def test_card_action_detection_uses_explicit_source_kind(tmp_path: Path) -> None:
+    config = make_config(tmp_path)
+    store = StateStore(config)
+    resolver = SessionScopeResolver(config, store, _NullLogger())
+
+    message = make_message(
+        "/resume --page 2",
+        event_suffix="resume_page_2",
+        root_id="om_root",
+        thread_id="om_root",
+        reply_to_message_id="om_resume_card",
+        source_kind="card_action",
+    )
+
+    assert resolver.is_card_action_message(message) is True
+    store.close()

@@ -148,6 +148,7 @@ def test_parse_message_event_post_with_text_and_image() -> None:
 def test_parse_card_action_event() -> None:
     parsed = parse_card_action_event(
         {
+            "header": {"event_id": "evt_card_1"},
             "token": "tok_1",
             "operator": {"open_id": "ou_user"},
             "action": {
@@ -163,10 +164,35 @@ def test_parse_card_action_event() -> None:
     )
     assert parsed.type == "message"
     assert parsed.message is not None
+    assert parsed.message.event_id == "card-action-tok_1"
     assert parsed.message.reply_to_message_id == "om_card_1"
+    assert parsed.message.source_kind == "card_action"
     assert parsed.message.session_key == "p2p:oc_1:thread:root_1"
     assert parsed.message.thread_id == "thread_1"
     assert parsed.message.text == "/resume --page 2 --sort active-first"
+
+
+def test_parse_webhook_card_action_keeps_header_event_id_and_card_source_kind() -> None:
+    parsed = parse_webhook_body(
+        make_config(),
+        {
+            "header": {
+                "event_type": "card.action.trigger",
+                "token": "verify-token",
+                "event_id": "evt_card_2",
+            },
+            "event": {
+                "token": "tok_2",
+                "operator": {"open_id": "ou_user"},
+                "action": {"value": {"command": "/resume --page 2"}},
+                "context": {"open_chat_id": "oc_1", "open_message_id": "om_card_2"},
+            },
+        },
+    )
+    assert parsed.type == "message"
+    assert parsed.message is not None
+    assert parsed.message.event_id == "evt_card_2"
+    assert parsed.message.source_kind == "card_action"
 
 
 def test_parse_card_action_event_accepts_help_card_context_keys() -> None:
