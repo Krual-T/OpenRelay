@@ -45,6 +45,8 @@
   - 本地日志已确认 `item/*` 与 `codex/event/*` 双轨并存。
   - 本地日志已确认 `codex/event/turn_aborted` 真实出现。
   - 官方 `0.115.0` external app-server transport 已停止发 `codex/event/*`。
+  - 本机已升级到 `codex-cli 0.115.0` 并抓到真实 external typed 事件样本：
+    `thread/status/changed`、`turn/started`、`item/started`、`item/completed`、`item/agentMessage/delta`、`thread/tokenUsage/updated`、`account/rateLimits/updated`、`turn/completed`
   - `docs/design/codex-app-server-consumption-comparison.md`
   - `docs/design/codex-app-server-event-consumption-plan.md`
   - `docs/design/codex-app-server-event-consumption-detailed-design.md`

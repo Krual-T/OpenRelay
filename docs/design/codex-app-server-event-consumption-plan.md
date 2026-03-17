@@ -182,6 +182,25 @@ RawEvent(typed)
 | `skills/changed` | `skills.changed` | 系统 | provider 能力变化 |
 | `turn/diff/updated` | `thread.diff.updated` | 系统 | 用于线程历史增量同步 |
 
+### 2.1 已用本机 `codex-cli 0.115.0` 验证到的真实 external typed 事件
+
+在一次真实 `initialize -> thread/start -> turn/start` 样本里，实际收到的通知方法包括：
+
+- `thread/status/changed`
+- `turn/started`
+- `item/started`
+- `item/completed`
+- `item/agentMessage/delta`
+- `thread/tokenUsage/updated`
+- `account/rateLimits/updated`
+- `turn/completed`
+
+同一轮样本还确认了 3 个实现细节：
+
+- `item/started` / `item/completed` 会出现 `userMessage` item，不应被当成 unexpected item notice。
+- `thread/status/changed.params.status` 是结构化对象，如 `{type: "active"}`，不能直接按普通字符串假设。
+- `account/rateLimits/updated` 的主要数据位于 `params.rateLimits` 下，而不是平铺在根层。
+
 ### 3. 旧日志与新协议存在重名语义，但正式实现按 typed-only 收敛
 
 这类事件曾经存在双轨，但对 `codex >= 0.115.0` external transport 来说，正式实现应只消费 typed 路线。
