@@ -10,6 +10,8 @@ from openrelay.agent_runtime import (
     ApprovalDecision,
     ApprovalRequestedEvent,
     SkillsUpdatedEvent,
+    TerminalInteraction,
+    TerminalInteractionEvent,
     ThreadDiffUpdatedEvent,
     ThreadStatusUpdatedEvent,
     ListSessionsRequest,
@@ -157,12 +159,22 @@ async def test_codex_app_server_turn_emits_legacy_progress_for_system_runtime_ev
             diff_id="diff_9",
         )
     )
+    await turn._apply_runtime_event(
+        TerminalInteractionEvent(
+            backend="codex",
+            session_id="thread_1",
+            turn_id="turn_1",
+            event_type="terminal.interaction",
+            interaction=TerminalInteraction(item_id="call_1", process_id="89012", stdin=""),
+        )
+    )
 
     assert progress_events == [
         {"type": "thread.status", "status": "active", "threadId": "thread_1"},
         {"type": "rate_limits.updated", "rateLimits": {"limitId": "codex", "primary": {"usedPercent": 37}}, "threadId": "thread_1"},
         {"type": "skills.updated", "version": "skills-v3", "skills": ["search", "apply_patch"], "threadId": "thread_1"},
         {"type": "thread.diff.updated", "diffId": "diff_9", "threadId": "thread_1"},
+        {"type": "command.terminal", "interaction": {"itemId": "call_1", "processId": "89012", "stdin": ""}},
     ]
 
 

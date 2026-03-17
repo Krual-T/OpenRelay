@@ -1,4 +1,4 @@
-from openrelay.agent_runtime import ApprovalDecision, ApprovalRequest, BackendEventRecord, LiveTurnViewModel, PlanStep, ToolState
+from openrelay.agent_runtime import ApprovalDecision, ApprovalRequest, BackendEventRecord, LiveTurnViewModel, PlanStep, TerminalInteraction, ToolState
 from openrelay.presentation.live_turn import LiveTurnPresenter
 
 
@@ -174,3 +174,21 @@ def test_live_turn_presenter_renders_system_state_items() -> None:
     assert any(item["title"] == "Rate limits" and "codex: 37%" in item["detail"] for item in system_items)
     assert any(item["title"] == "Available skills" and "skills-v3: search, apply_patch" == item["detail"] for item in system_items)
     assert any(item["title"] == "Thread diff" and item["detail"] == "diff_9" for item in system_items)
+
+
+def test_live_turn_presenter_renders_terminal_interaction_item() -> None:
+    presenter = LiveTurnPresenter()
+    state = LiveTurnViewModel(
+        backend="codex",
+        session_id="relay_1",
+        native_session_id="thread_1",
+        turn_id="turn_1",
+        status="running",
+        terminal_interactions=(TerminalInteraction(item_id="call_1", process_id="89012", stdin=""),),
+    )
+
+    snapshot = presenter.build_snapshot(state)
+    terminal_item = next(item for item in snapshot["history_items"] if item["type"] == "terminal_interaction")
+
+    assert terminal_item["title"] == "Command terminal interaction"
+    assert "process: 89012" in terminal_item["detail"]

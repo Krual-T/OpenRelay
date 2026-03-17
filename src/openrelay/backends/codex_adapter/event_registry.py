@@ -42,7 +42,7 @@ class CodexEventRegistry:
                 CodexEventDescriptor("turn/plan/updated", "v2", "plan.updated", "render", "v2-only", "plan.updated", "plan"),
                 CodexEventDescriptor("item/commandExecution/outputDelta", "v2", "tool.progress", "render", "v2-only", "tool.progress", "tool-output"),
                 CodexEventDescriptor("item/fileChange/outputDelta", "v2", "tool.progress", "render", "v2-only", "tool.progress", "tool-output"),
-                CodexEventDescriptor("item/commandExecution/terminalInteraction", "v2", "terminal.interaction", "observe", "v2-only", "observe"),
+                CodexEventDescriptor("item/commandExecution/terminalInteraction", "v2", "terminal.interaction", "render", "v2-only", "terminal.interaction"),
                 CodexEventDescriptor("item/mcpToolCall/progress", "v2", "tool.progress", "render", "v2-only", "tool.progress", "tool-output"),
                 CodexEventDescriptor("serverRequest/resolved", "v2", "approval.resolved", "system", "v2-only", "approval.resolved", "approval"),
                 CodexEventDescriptor("item/started", "v2", "item.started", "render", "v2-only", "item.started"),

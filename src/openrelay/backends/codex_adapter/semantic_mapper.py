@@ -91,6 +91,8 @@ class CodexSemanticMapper:
             return self._map_plan(envelope, descriptor, state)
         if descriptor.semantic_name == "tool.progress":
             return (self._map_tool_progress(envelope, descriptor, state),)
+        if descriptor.semantic_name == "terminal.interaction":
+            return (self._map_terminal_interaction(envelope, descriptor),)
         if descriptor.semantic_name == "approval.resolved":
             return (self._map_approval_resolved(envelope, descriptor),)
         if descriptor.semantic_name == "item.started":
@@ -316,6 +318,32 @@ class CodexSemanticMapper:
             thread_id=envelope.thread_id,
             turn_id=envelope.turn_id,
             approval_id=str(envelope.params.get("requestId") or ""),
+        )
+
+    def _map_terminal_interaction(
+        self,
+        envelope: CodexRawEventEnvelope,
+        descriptor: CodexEventDescriptor,
+    ) -> CodexSemanticEvent:
+        process_id = str(envelope.params.get("processId") or "").strip()
+        stdin = str(envelope.params.get("stdin") or "")
+        item_id = str(envelope.params.get("itemId") or envelope.item_id)
+        return CodexSemanticEvent(
+            semantic_name="terminal.interaction",
+            policy=descriptor.policy,
+            source_method=envelope.method,
+            source_route=envelope.route,
+            thread_id=envelope.thread_id,
+            turn_id=envelope.turn_id,
+            item_id=item_id,
+            dedupe_key=f"terminal.interaction:{envelope.thread_id}:{envelope.turn_id}:{item_id}:{process_id}:{stdin}",
+            message="Command terminal interaction",
+            payload={
+                "title": "Command terminal interaction",
+                "item_id": item_id,
+                "process_id": process_id,
+                "stdin": stdin,
+            },
         )
 
     def _map_item_started(

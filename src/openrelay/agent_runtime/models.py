@@ -116,6 +116,14 @@ class BackendEventRecord:
     created_at: str = field(default_factory=utc_now)
 
 
+@dataclass(slots=True, frozen=True)
+class TerminalInteraction:
+    item_id: str = ""
+    process_id: str = ""
+    stdin: str = ""
+    created_at: str = field(default_factory=utc_now)
+
+
 @dataclass(slots=True)
 class LiveTurnViewModel:
     backend: BackendKind
@@ -135,5 +143,6 @@ class LiveTurnViewModel:
     skills_version: str = ""
     available_skills: tuple[str, ...] = ()
     last_diff_id: str = ""
+    terminal_interactions: tuple[TerminalInteraction, ...] = ()
     error_message: str = ""
     updated_at: str = field(default_factory=utc_now)

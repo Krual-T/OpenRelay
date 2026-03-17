@@ -19,6 +19,7 @@ from openrelay.agent_runtime import (
     RuntimeEvent,
     SessionStartedEvent,
     SkillsUpdatedEvent,
+    TerminalInteractionEvent,
     ThreadDiffUpdatedEvent,
     ThreadStatusUpdatedEvent,
     ToolCompletedEvent,
@@ -428,22 +429,22 @@ class CodexTurn:
             event_type = "reasoning.completed" if event.provider_payload.get("completed") else "reasoning.delta"
             await self._emit_progress({"type": event_type, "text": event.text})
             return
+        if isinstance(event, TerminalInteractionEvent):
+            await self._emit_progress(
+                {
+                    "type": "command.terminal",
+                    "interaction": {
+                        "itemId": event.interaction.item_id,
+                        "processId": event.interaction.process_id,
+                        "stdin": event.interaction.stdin,
+                    },
+                }
+            )
+            return
         if isinstance(event, BackendNoticeEvent):
             method = str(event.provider_payload.get("method") or "")
             if method == "item/plan/delta":
                 await self._emit_progress({"type": "plan.delta", "text": event.message})
-                return
-            if method == "item/commandExecution/terminalInteraction":
-                await self._emit_progress(
-                    {
-                        "type": "command.terminal",
-                        "interaction": {
-                            "itemId": str(event.provider_payload.get("item_id") or ""),
-                            "processId": str(event.provider_payload.get("process_id") or ""),
-                            "stdin": str(event.provider_payload.get("stdin") or ""),
-                        },
-                    }
-                )
                 return
             if event.message == "Reasoning started":
                 await self._emit_progress({"type": "reasoning.started"})

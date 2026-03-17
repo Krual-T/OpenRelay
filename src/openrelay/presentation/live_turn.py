@@ -155,6 +155,15 @@ class LiveTurnPresenter:
             item = self._tool_history_item(tool)
             if item is not None:
                 items.append(item)
+        for interaction in state.terminal_interactions:
+            items.append(
+                {
+                    "type": "terminal_interaction",
+                    "state": "running",
+                    "title": "Command terminal interaction",
+                    "detail": self._terminal_interaction_detail(interaction.process_id, interaction.stdin),
+                }
+            )
         if state.plan_steps:
             plan_steps = [
                 {"step": step.step.strip(), "status": step.status}
@@ -276,6 +285,15 @@ class LiveTurnPresenter:
                 }
             )
         return items
+
+    def _terminal_interaction_detail(self, process_id: str, stdin: str) -> str:
+        parts: list[str] = []
+        if process_id:
+            parts.append(f"process: {process_id}")
+        normalized_stdin = str(stdin or "")
+        if normalized_stdin:
+            parts.append(f"stdin: {normalized_stdin}")
+        return "\n".join(parts).strip() or "terminal interaction"
 
     def _tool_history_item(self, tool: ToolState) -> dict[str, Any] | None:
         if tool.kind == "command":
