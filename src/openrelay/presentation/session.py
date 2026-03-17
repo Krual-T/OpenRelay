@@ -154,7 +154,7 @@ def build_backend_session_list_card(info: dict[str, Any]) -> dict[str, Any]:
     for page_number in _page_window(page, max(known_page_count, page)):
         controls.append(
             build_button(
-                f"[{page_number}]" if page_number == page else str(page_number),
+                str(page_number),
                 build_resume_card_command(page=page_number),
                 "primary" if page_number == page else "default",
                 action_context,
