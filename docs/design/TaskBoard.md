@@ -39,35 +39,28 @@
   - `tests/test_codex_runtime_backend.py`
   - `tests/test_claude_runtime_backend.py`
 
-## Active
-
-### [ ] OR-TASK-002 Codex App-Server Typed Contract 收敛
+### [x] OR-TASK-002 Codex App-Server Typed Contract 收敛
 - **目标**：把 `openrelay` 的 Codex app-server 适配基线收敛到官方 `codex >= 0.115.0` external typed contract，明确 render / system / ignore / observe 分类，并用单一语义层承接 typed 事件。
-- **当前关注**：
-  - 用真实 `0.115.x` app-server 流量确认 typed schema 实际事件面。
-  - 补齐 `thread/status/changed`、`skills/changed`、`turn/diff/updated` 等 typed system 事件消费。
-  - 收敛 external legacy `codex/event/*` 为 observe/debug，而不是正式兼容目标。
-- **关闭条件**：
-  - 设计文档明确 `codex >= 0.115.0` typed 基线与事件分类矩阵。
-  - mapper 默认工作在 typed-only 模式。
-  - external legacy 路径不再是正式输入面，剩余 observe/debug 边界被写清楚。
-- **建议产物**：
+- **结果**：
+  - Codex 适配主线已经收敛到 typed-only external contract，不再保留 external `codex/event/*` 正式兼容路径。
+  - `app_server.py` 已退回到底层 transport / RPC 客户端职责，不再维护旧版 turn 消费主路径。
+  - typed 事件注册、语义映射、运行时投影已经形成清晰分层，unknown event 会统一进入 observe notice，而不是静默丢失。
+  - `thread/status/changed`、`skills/changed`、`turn/diff/updated`、`account/rateLimits/updated` 等 typed system 事件已进入 runtime state。
+  - 设计文档已改写为面向 typed-only 基线的正式说明，不再把 `v1 / v2` 双轨当作持续设计目标。
+- **主要证据**：
+  - `src/openrelay/backends/codex_adapter/event_registry.py`
+  - `src/openrelay/backends/codex_adapter/mapper.py`
+  - `src/openrelay/backends/codex_adapter/semantic_mapper.py`
+  - `src/openrelay/backends/codex_adapter/runtime_projector.py`
+  - `src/openrelay/backends/codex_adapter/app_server.py`
+  - `src/openrelay/agent_runtime/reducer.py`
   - `docs/design/codex-app-server-event-consumption-plan.md`
   - `docs/design/codex-app-server-event-consumption-detailed-design.md`
-- **已完成证据**：
-  - 本地日志已确认 `item/*` 与 `codex/event/*` 双轨并存。
-  - 本地日志已确认 `codex/event/turn_aborted` 真实出现。
-  - 官方 `0.115.0` external app-server transport 已停止发 `codex/event/*`。
-  - 本机已升级到 `codex-cli 0.115.0` 并抓到真实 external typed 事件样本：
-    `thread/status/changed`、`turn/started`、`item/started`、`item/completed`、`item/agentMessage/delta`、`thread/tokenUsage/updated`、`account/rateLimits/updated`、`turn/completed`
-  - 设计文档已补齐 `codex >= 0.115.0` external typed contract 的全量消息矩阵，逐条写明作用、分类、当前状态与实测情况。
-  - `docs/design/codex-app-server-consumption-comparison.md`
-  - `docs/design/codex-app-server-event-consumption-plan.md`
-  - `docs/design/codex-app-server-event-consumption-detailed-design.md`
-- **后续 follow-up**：
-  - 用本地 `codex 0.115.x` 抓真实 typed app-server schema，并对照 registry 做精简。
-  - 把 typed system 事件真正接入上层状态，而不是只写入 snapshot。
-  - 明确是否需要运行时版本检查，避免低版本 Codex 误接入。
+  - `tests/test_codex_protocol_mapper.py`
+  - `tests/test_codex_runtime_backend.py`
+  - `tests/test_agent_runtime.py`
+
+## Active
 
 ### [ ] OR-TASK-003 Feishu 流式回复收敛为 TUI Transcript 投影
 - **目标**：把飞书当前“过程面板 + 最终答案”的双区渲染，收敛为与 Codex TUI 更一致的单条 transcript 投影，使执行记录、解释文字和 follow-up 建议能在线性正文里自然混排。
@@ -92,5 +85,5 @@
 
 ## 使用约定
 
-- 当前打开的设计主线任务见 `OR-TASK-002`、`OR-TASK-003`。
+- 当前打开的设计主线任务见 `OR-TASK-003`；`OR-TASK-002` 已落地。
 - 后续若再开启新的设计主线，新增条目应继续遵循 `docs/design/task-board-protocol.md`。
