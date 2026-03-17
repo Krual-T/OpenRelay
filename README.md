@@ -5,7 +5,7 @@
 
 ### 把你的 coding agent，接进飞书。
 
-让 `Codex` 真正以“远程工作台”的方式进入飞书：保留原生 session、支持 thread 内连续追问、可切换工作区，并把流式执行过程稳定投影回聊天界面。
+让 `Codex` 真正以“远程工作台”的方式进入飞书：保留原生 session、支持 thread 内连续追问、可按目录切换不同项目上下文，并把流式执行过程稳定投影回聊天界面。
 
 <p>
   <img alt="Python 3.12+" src="https://img.shields.io/badge/python-3.12%2B-111111?style=flat-square&logo=python&logoColor=white">
@@ -21,7 +21,7 @@
 
 - session 不是真续接，只是在重复喂 prompt
 - 聊天壳和 agent runtime 混在一起，行为不可控
-- 切目录、切工作区后，上下文很容易乱掉
+- 切目录、切项目后，上下文和能力边界很容易乱掉
 - 长任务在 IM 里几乎不可读，也不可追踪
 
 `openrelay` 想做的是另一条路：
@@ -32,11 +32,29 @@
 
 - 直接续接真实 backend thread，而不是伪造“上下文连续”
 - 让 Feishu thread 和本地 agent session 形成稳定绑定
-- 在 `main` / `develop` 工作区之间明确切换
+- 按目录切换不同项目，并保留各自独立的 agent 定义与能力边界
 - 把运行中状态、流式输出、最终答复投影回飞书
 - 在内部保持 backend-neutral runtime，不把产品绑死在单一 provider 上
 
 目前主线路径是 `Codex app-server`；`Claude` 适配器已经接进同一套 runtime 形状，但还只是最小实现。
+
+## 它不是另一个 OpenClaw 壳层
+
+很多人第一反应会把这类产品和 OpenClaw 风格方案放在一起看，但 `openrelay` 的判断不一样。
+
+OpenClaw 类方案的优点是“开箱即用、界面像一个完整产品”，但代价通常也很明显：
+
+- 它往往自带一整套自己的 agent 壳、交互壳和产品约束
+- 你需要接受它定义好的工作流、呈现方式和能力边界
+- 一旦你已经在本机把 Codex 打磨出了自己的目录结构、技能、提示词和项目约定，这些沉淀很容易被包在外壳里，不能原样复用
+
+`openrelay` 走的是另一条路：
+
+- 不重做一个“替你定义 agent”的平台
+- 不试图覆盖你本机已经存在的 Codex 使用方式
+- 重点是把你已经调好的本地 Codex，会话级、目录级、项目级地接进飞书
+
+如果你本来就熟悉怎么自定义 Codex，这一点会特别有价值。
 
 ## 为什么它会和别的 bot 不一样
 
@@ -48,8 +66,20 @@
 ### 2. 它以 thread-first 方式工作
 在飞书里，你可以直接在线程里继续追问、补充信息、停止当前运行，再让下一轮 follow-up 接着处理，而不是每次都从头开聊。
 
-### 3. 它把工作区切换当成一等能力
-通过 `/main`、`/stable`、`/develop`、`/cwd` 和快捷目录，agent 可以在不同工作树之间切换，而不会把 session 状态搅成一团。
+### 3. 它允许你按目录“切换不同的 Codex agent”
+`openrelay` 本身不替你重新发明 agent 定义。
+
+它真正提供的能力是：把你电脑上不同目录里的 Codex 配置、项目约定、技能和工作方式，作为真实执行环境接进飞书。
+
+这意味着只要你熟悉如何定制 Codex，你就可以让不同项目天然拥有不同的：
+
+- system prompt / 协作约定
+- skills / 工具使用习惯
+- 目录结构理解
+- 工程脚本与工作流
+- 项目私有知识和执行边界
+
+你切的不是一个“聊天机器人模式”，而是一个真实项目上下文下的 Codex agent。
 
 ### 4. 它的 runtime 是分层的
 `feishu`、`runtime`、`agent_runtime`、`backends`、`storage/session` 职责分离，后续演进不会因为某个 CLI 变化而整套产品一起塌。
@@ -63,6 +93,7 @@
 - 流式卡片回复与最终态收口
 - `/panel` 总入口，统一查看 sessions / directories / commands / status
 - relay session 到 backend native session 的绑定能力
+- 按目录切换不同项目上下文，并复用各项目已有的 Codex 定义、skills 与习惯
 - 飞书图片消息转发进 coding-agent 输入链路
 - 基于 SQLite 的本地状态存储：sessions、aliases、dedup、shortcuts、bindings
 - `/health` 健康检查接口
@@ -151,7 +182,7 @@ http://your-host:3000/feishu/webhook
 - `/status`
 - `/help`
 
-### 工作区控制
+### 目录与上下文控制
 - `/main [reason]`
 - `/stable [reason]`
 - `/develop [reason]`
@@ -174,7 +205,7 @@ http://your-host:3000/feishu/webhook
 2. 让 `openrelay` 把当前 scope 绑定到 backend session。
 3. 同一任务就在 thread 里持续补充，而不是反复重讲背景。
 4. 需要回到旧会话时，用 `/resume` 接回原生 agent thread。
-5. 需要切执行面时，用 `/main`、`/develop` 或 `/cwd`。
+5. 需要切到另一个项目上下文时，用 `/cwd`、快捷目录，或你自己的预设目录入口。
 
 核心理念只有一句话：
 
@@ -213,7 +244,7 @@ uv run pytest
 - 执行位置是明确的
 - follow-up 是连续的
 - 流式输出是可读的
-- 工作区边界是清楚的
+- 不同项目可以保留不同的 agent 定义和能力边界
 
 这就是 `openrelay` 的判断。
 
