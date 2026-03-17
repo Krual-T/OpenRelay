@@ -20,11 +20,17 @@ aliases:
   open questions 怎么改成任务板:
     id: task_board_self_close_protocol
     kind: decision
+  openrelay launch kit 在哪:
+    id: marketing_launch_assets_location
+    kind: fact
   openrelay 一条消息主流程怎么走:
     id: trace_feishu_message_to_backend_turn
     kind: workflow
   openrelay 为什么会进另一个会话:
     id: session_key_scoping_semantics
+    kind: fact
+  openrelay 宣传素材在哪:
+    id: marketing_launch_assets_location
     kind: fact
   openrelay 的 /stop 为什么要重置 client:
     id: stop_command_two_stage_interrupt

@@ -1,0 +1,29 @@
+id: marketing_launch_assets_location
+kind: fact
+title: OpenRelay 宣传素材集中在 docs/marketing 与 static/openrelay_social_card.svg
+scope:
+  repo: openrelay
+  branch: main
+status: reviewed
+created_at: '2026-03-17T16:52:16Z'
+updated_at: '2026-03-17T16:52:16Z'
+confidence: 0.8
+last_verified_commit: bd78ce59f4400163929834d20ad29d1ef7eda37f
+intent_aliases:
+- openrelay 宣传素材在哪
+- openrelay launch kit 在哪
+tags:
+- marketing
+- fact
+applies_to:
+- README.md
+- docs/marketing/launch-kit.md
+statement: 项目对外传播文案模板与外发节奏收敛在 docs/marketing/launch-kit.md 和 docs/marketing/outreach-plan.md，社交分享图位于
+  static/openrelay_social_card.svg。
+evidence:
+- path: docs/marketing/launch-kit.md
+  kind: file
+- path: docs/marketing/outreach-plan.md
+  kind: file
+- path: static/openrelay_social_card.svg
+  kind: file
