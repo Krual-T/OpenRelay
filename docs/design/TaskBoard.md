@@ -8,6 +8,17 @@
 
 ## Active
 
+### [ ] OR-TASK-006 Codex TUI 与飞书端体验差距收敛
+- **目标**：基于本机 `codex-cli 0.115.0` 与当前 `openrelay` 主线路径，明确飞书端离“接近 Codex TUI 原生体验”还缺哪些关键交互，并把后续实现拆成可执行优先级。
+- **当前状态**：差距调研稿已完成，当前任务剩余的是把 `P0 / P1 / P2` 建议继续拆成具体实现任务。
+- **待完成**：
+  - 把 `terminal.interaction`、`user_input`、`fork` 等建议拆成独立实现子任务并逐步落地。
+- **已完成证据**：
+  - `docs/design/or-task-006-feishu-vs-codex-tui-gap-analysis.md`
+- **后续 follow-up**：
+  - 优先把 `terminal.interaction` 与 `user_input` 拆成独立实现任务，避免“命令面、卡片样式、runtime contract”混成一个大 patch。
+  - 在开始实现前，先决定 `fork` 是走 external app-server 正式能力，还是先作为 blocker 留在能力映射表中。
+
 ### [ ] OR-TASK-005 Runtime / Session / Presentation 边界收敛设计
 - **目标**：基于当前实际代码结构而非既有文档，识别 runtime、session、storage、presentation 之间已经发生的职责漂移，并形成后续重构的正式设计稿。
 - **当前状态**：设计稿已完成，当前任务只剩进入实现阶段后的子任务拆分与落地。
