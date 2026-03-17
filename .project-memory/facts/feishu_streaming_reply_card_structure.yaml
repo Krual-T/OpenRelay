@@ -1,0 +1,35 @@
+id: feishu_streaming_reply_card_structure
+kind: fact
+title: 飞书流式回复卡片由固定外壳和 streaming markdown 组成
+scope:
+  repo: openrelay
+  branch: main
+status: reviewed
+created_at: '2026-03-17T14:54:48Z'
+updated_at: '2026-03-17T14:54:48Z'
+confidence: 0.8
+last_verified_commit: 9b79d330645a86392188c56beb74a12be7d7cd9c
+intent_aliases:
+- 飞书流式消息卡片结构
+- 哪些部分是固定的 哪些部分是打字机
+tags:
+- feishu
+- streaming
+- card
+- fact
+applies_to:
+- src/openrelay/feishu/reply_card.py
+- src/openrelay/feishu/streaming.py
+- src/openrelay/runtime/orchestrator.py
+statement: 当前飞书流式回复卡片在 streaming 阶段使用固定 card shell：schema 2.0、streaming_mode=true、summary=Executing、body
+  内含一个 streaming markdown element 和一个 loading icon element。运行中真正按增量更新的是 streaming_content
+  这个 markdown 元素的 content。该 content 由过程区和正文区拼接：过程区来自 history_items/worked_for 等状态渲染，正文区来自
+  partial_text 的 assistant 输出，位于 --- 分隔线之后，承担主要打字机效果。final 阶段则整体替换为 complete card，包含可折叠的
+  Execution Log panel 和最终答案 markdown。
+evidence:
+- path: src/openrelay/feishu/reply_card.py
+  kind: file
+- path: src/openrelay/feishu/streaming.py
+  kind: file
+- path: src/openrelay/runtime/orchestrator.py
+  kind: file

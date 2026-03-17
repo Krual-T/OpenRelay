@@ -1,4 +1,19 @@
 aliases:
+  TaskBoard 在哪里:
+    id: task_board_self_close_protocol
+    kind: decision
+  codex cli 怎么自己勾选任务:
+    id: task_board_self_close_protocol
+    kind: decision
+  cwd clear develop 这些命令为什么复用同一个 session_id:
+    id: scope_mutations_reuse_current_session
+    kind: decision
+  help 和 resume list 为什么不每次发新卡:
+    id: single_card_navigation_updates_original_message
+    kind: decision
+  open questions 怎么改成任务板:
+    id: task_board_self_close_protocol
+    kind: decision
   openrelay 一条消息主流程怎么走:
     id: trace_feishu_message_to_backend_turn
     kind: workflow
@@ -8,57 +23,48 @@ aliases:
   openrelay 的 /stop 为什么要重置 client:
     id: stop_command_two_stage_interrupt
     kind: decision
+  openrelay 的当前会话为什么会被原地重置:
+    id: scope_mutations_reuse_current_session
+    kind: decision
+  panel 单卡导航怎么实现:
+    id: single_card_navigation_updates_original_message
+    kind: decision
+  scope 切换后为什么只是断开旧 thread:
+    id: scope_mutations_reuse_current_session
+    kind: decision
   session key 是怎么生成的:
     id: session_key_scoping_semantics
     kind: fact
   stop 中断语义怎么设计的:
     id: stop_command_two_stage_interrupt
     kind: decision
+  task board protocol 是什么:
+    id: task_board_self_close_protocol
+    kind: decision
+  为什么 /resume 不会新建本地会话:
+    id: scope_mutations_reuse_current_session
+    kind: decision
   为什么 /stop 不是只设取消标记:
     id: stop_command_two_stage_interrupt
     kind: decision
+  为什么 panel 翻页要更新原卡:
+    id: single_card_navigation_updates_original_message
+    kind: decision
+  哪些部分是固定的 哪些部分是打字机:
+    id: feishu_streaming_reply_card_structure
+    kind: fact
   怎么 trace Feishu 到 runtime 再到 backend:
     id: trace_feishu_message_to_backend_turn
     kind: workflow
   群聊和线程怎么隔离会话:
     id: session_key_scoping_semantics
     kind: fact
-  飞书消息是怎么进 backend 的:
-    id: trace_feishu_message_to_backend_turn
-    kind: workflow
-  open questions 怎么改成任务板:
-    id: task_board_self_close_protocol
-    kind: decision
-  TaskBoard 在哪里:
-    id: task_board_self_close_protocol
-    kind: decision
-  codex cli 怎么自己勾选任务:
-    id: task_board_self_close_protocol
-    kind: decision
   设计任务为什么要有关闭条件和证据:
     id: task_board_self_close_protocol
     kind: decision
-  task board protocol 是什么:
-    id: task_board_self_close_protocol
-    kind: decision
-  panel 单卡导航怎么实现:
-    id: single_card_navigation_updates_original_message
-    kind: decision
-  为什么 panel 翻页要更新原卡:
-    id: single_card_navigation_updates_original_message
-    kind: decision
-  help 和 resume list 为什么不每次发新卡:
-    id: single_card_navigation_updates_original_message
-    kind: decision
-  为什么 /resume 不会新建本地会话:
-    id: scope_mutations_reuse_current_session
-    kind: decision
-  cwd clear develop 这些命令为什么复用同一个 session_id:
-    id: scope_mutations_reuse_current_session
-    kind: decision
-  scope 切换后为什么只是断开旧 thread:
-    id: scope_mutations_reuse_current_session
-    kind: decision
-  openrelay 的当前会话为什么会被原地重置:
-    id: scope_mutations_reuse_current_session
-    kind: decision
+  飞书流式消息卡片结构:
+    id: feishu_streaming_reply_card_structure
+    kind: fact
+  飞书消息是怎么进 backend 的:
+    id: trace_feishu_message_to_backend_turn
+    kind: workflow
