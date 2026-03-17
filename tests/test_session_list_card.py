@@ -88,19 +88,19 @@ def test_backend_session_list_card_renders_page_number_strip() -> None:
 
     commands = extract_commands(card)
     assert commands[-7:] == [
-        "/resume --page 2",
         "/resume",
         "/resume --page 2",
         "/resume --page 3",
         "/resume --page 4",
         "/resume --page 5",
+        "/resume --page 2",
         "/resume --page 4",
     ]
 
     pagination_rows = [element["actions"] for element in card["elements"] if element.get("tag") == "action"][-2:]
     assert [[action["text"]["content"] for action in row] for row in pagination_rows] == [
-        ["上一页", "1", "2", "3", "4"],
-        ["5", "下一页"],
+        ["1", "2", "3", "4", "5"],
+        ["上一页", "下一页"],
     ]
 
 
@@ -134,8 +134,8 @@ def test_runtime_panel_service_backend_session_card_limits_to_three_and_formats_
     assert markdown_blocks[0] == "**1. task 1**\n2026-03-16 18:00:00 · status=idle · cwd=openrelay\n`thread_1`"
     assert markdown_blocks[1] == "**2. task 2** · 当前\n2026-03-15 18:00:00 · status=idle · cwd=openrelay\n`thread_2`"
     assert "thread_4" not in str(card)
-    pagination_rows = [element["actions"] for element in card["elements"] if element.get("tag") == "action"][-1:]
-    assert [[action["text"]["content"] for action in row] for row in pagination_rows] == [["1", "2", "下一页"]]
+    pagination_rows = [element["actions"] for element in card["elements"] if element.get("tag") == "action"][-2:]
+    assert [[action["text"]["content"] for action in row] for row in pagination_rows] == [["1", "2"], ["下一页"]]
     assert "预览" not in str(card)
     assert "preview" not in fallback
     assert "2026-03-16 18:00:00" in fallback
