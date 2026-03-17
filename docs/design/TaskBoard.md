@@ -1,6 +1,6 @@
 # Design Task Board
 
-更新时间：2026-03-17
+更新时间：2026-03-18
 
 ## Landed
 
@@ -82,6 +82,23 @@
   - 本机额外 probe 已再次确认：当前外部 typed 样本未出现 unknown method；新增观察到 `thread/started`、`item/reasoning/summaryPartAdded`、`item/reasoning/summaryTextDelta`
 
 ## Active
+
+### [ ] OR-TASK-005 Runtime / Session / Presentation 边界收敛设计
+- **目标**：基于当前实际代码结构而非既有文档，识别 runtime、session、storage、presentation 之间已经发生的职责漂移，并形成后续重构的正式设计稿。
+- **当前关注**：
+  - `RuntimeOrchestrator`、`RuntimeCommandRouter`、`StateStore` 是否已经承担过多跨层职责。
+  - `session` / `release` 对 `presentation` 的反向依赖，是否说明展示层已侵入业务层。
+  - session record 与 session binding 的双事实源问题，是否正在靠同步补丁维持一致。
+- **关闭条件**：
+  - [x] 基于真实代码结构而非文档，给出当前项目的实际架构分层描述。
+  - [x] 明确指出至少一组职责漂移和至少一组补丁式实现，并给出代码证据。
+  - [x] 给出分阶段重构目标、边界和不建议做法。
+  - [ ] 进入实现阶段后，把设计稿拆成可执行子任务并逐步落地。
+- **已完成证据**：
+  - `docs/design/or-task-005-runtime-boundary-refactor-design.md`
+- **后续 follow-up**：
+  - 优先拆出 session/storage repository 边界，再处理 orchestrator 与命令层拆分。
+  - 在实现阶段单独建立子任务，避免把 storage、runtime、Feishu 渲染三条线混成一个大 patch。
 
 ## 使用约定
 
