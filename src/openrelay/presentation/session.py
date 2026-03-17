@@ -163,6 +163,8 @@ def build_backend_session_list_card(info: dict[str, Any]) -> dict[str, Any]:
         nav_controls.append(build_button("上一页", build_resume_card_command(page=page - 1), "default", action_context))
     if has_next:
         nav_controls.append(build_button("下一页", build_resume_card_command(page=page + 1), "primary", action_context))
+    if page_controls or nav_controls:
+        elements.append(divider_block())
     if page_controls:
         elements.append({"tag": "action", "actions": page_controls})
     if nav_controls:
