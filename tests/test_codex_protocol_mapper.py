@@ -11,8 +11,6 @@ from openrelay.agent_runtime import (
     ToolProgressEvent,
     ToolStartedEvent,
     TurnCompletedEvent,
-    TurnFailedEvent,
-    TurnInterruptedEvent,
     TurnStartedEvent,
     UsageUpdatedEvent,
 )
@@ -42,7 +40,8 @@ def test_codex_mapper_maps_turn_started_and_alias_agent_delta() -> None:
     assert len(started) == 1 and isinstance(started[0], TurnStartedEvent)
     assert len(direct) == 1 and isinstance(direct[0], AssistantDeltaEvent)
     assert direct[0].delta == "hello"
-    assert alias == ()
+    assert len(alias) == 1 and isinstance(alias[0], BackendNoticeEvent)
+    assert alias[0].provider_payload["classification"] == "observe"
 
 
 def test_codex_mapper_aggregates_reasoning_and_prefers_summary() -> None:
@@ -92,7 +91,8 @@ def test_codex_mapper_aggregates_reasoning_and_prefers_summary() -> None:
 
     assert len(delta) == 1 and isinstance(delta[0], ReasoningDeltaEvent)
     assert delta[0].text == "verbose trace"
-    assert alias == ()
+    assert len(alias) == 1 and isinstance(alias[0], BackendNoticeEvent)
+    assert alias[0].provider_payload["classification"] == "observe"
     assert len(completed) == 1 and isinstance(completed[0], ReasoningDeltaEvent)
     assert completed[0].text == "concise summary"
 
@@ -205,11 +205,11 @@ def test_codex_mapper_maps_terminal_turn_outcomes() -> None:
         state,
     )
     completed = mapper.map_notification(
-        "codex/event/task_complete",
+        "turn/completed",
         {
-            "conversationId": "thread_1",
-            "id": "turn_1",
-            "msg": {"turn_id": "turn_1", "last_agent_message": "done"},
+            "threadId": "thread_1",
+            "turnId": "turn_1",
+            "turn": {"status": "completed"},
         },
         state,
     )
@@ -226,35 +226,6 @@ def test_codex_mapper_maps_terminal_turn_outcomes() -> None:
 
     assert len(completed) == 1 and isinstance(completed[0], TurnCompletedEvent)
     assert completed[0].final_text == "done"
-    assert failed == ()
-
-
-def test_codex_mapper_uses_legacy_turn_aborted_as_terminal_fallback() -> None:
-    mapper = CodexProtocolMapper(session_id="relay-1", native_session_id="thread_1", turn_id="turn_1")
-    state = CodexTurnState()
-
-    interrupted = mapper.map_notification(
-        "codex/event/turn_aborted",
-        {
-            "conversationId": "thread_1",
-            "id": "turn_1",
-            "msg": {"turn_id": "turn_1", "status": "interrupted", "error": {"message": "stopped"}},
-        },
-        state,
-    )
-    failed = mapper.map_notification(
-        "error",
-        {
-            "threadId": "thread_1",
-            "turnId": "turn_1",
-            "error": {"message": "boom"},
-            "willRetry": False,
-        },
-        state,
-    )
-
-    assert len(interrupted) == 1 and isinstance(interrupted[0], TurnInterruptedEvent)
-    assert interrupted[0].message == "stopped"
     assert failed == ()
 
 

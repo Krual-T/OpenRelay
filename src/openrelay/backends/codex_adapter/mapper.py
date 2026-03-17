@@ -77,7 +77,7 @@ class CodexProtocolMapper:
         native_session_id: str = "",
         turn_id: str = "",
         *,
-        mode: CodexConsumptionMode = CodexConsumptionMode.HYBRID,
+        mode: CodexConsumptionMode = CodexConsumptionMode.TYPED_ONLY,
     ) -> None:
         self.session_id = session_id
         self.native_session_id = native_session_id
@@ -350,4 +350,3 @@ class CodexProtocolMapper:
             _ = normalized
             return str(event_item.get("id") or event_item.get("item_id") or "")
         return str(params.get("itemId") or msg.get("item_id") or msg.get("itemId") or "")
-

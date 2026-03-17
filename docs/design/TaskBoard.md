@@ -28,29 +28,30 @@
 
 ## Active
 
-### [ ] OR-TASK-002 Codex App-Server 双轨事件消费收敛
-- **目标**：把 Codex app-server 的 v1 legacy 与 v2 typed 事件消费收敛为单一语义层，明确 render / system / ignore / fallback 分类，并消除同语义双消费。
+### [ ] OR-TASK-002 Codex App-Server Typed Contract 收敛
+- **目标**：把 `openrelay` 的 Codex app-server 适配基线收敛到官方 `codex >= 0.115.0` external typed contract，明确 render / system / ignore / observe 分类，并用单一语义层承接 typed 事件。
 - **当前关注**：
-  - 明确哪些事件是 `v1 only`、哪些是 `v2 only`、哪些是双轨并存。
-  - 设计统一的语义事件键与去重规则，尤其是 terminal event。
-  - 收敛“必须渲染”“必须系统消费”“明确忽略”的分类表。
+  - 用真实 `0.115.x` app-server 流量确认 typed schema 实际事件面。
+  - 补齐 `thread/status/changed`、`skills/changed`、`turn/diff/updated` 等 typed system 事件消费。
+  - 收敛 external legacy `codex/event/*` 为 observe/debug，而不是正式兼容目标。
 - **关闭条件**：
-  - 设计文档明确事件分类矩阵与去重策略。
-  - 配置策略明确是否保留 hybrid 默认。
-  - mapper / turn stream 后续改造边界被写清楚。
+  - 设计文档明确 `codex >= 0.115.0` typed 基线与事件分类矩阵。
+  - mapper 默认工作在 typed-only 模式。
+  - external legacy 路径不再是正式输入面，剩余 observe/debug 边界被写清楚。
 - **建议产物**：
   - `docs/design/codex-app-server-event-consumption-plan.md`
   - `docs/design/codex-app-server-event-consumption-detailed-design.md`
 - **已完成证据**：
   - 本地日志已确认 `item/*` 与 `codex/event/*` 双轨并存。
   - 本地日志已确认 `codex/event/turn_aborted` 真实出现。
+  - 官方 `0.115.0` external app-server transport 已停止发 `codex/event/*`。
   - `docs/design/codex-app-server-consumption-comparison.md`
   - `docs/design/codex-app-server-event-consumption-plan.md`
   - `docs/design/codex-app-server-event-consumption-detailed-design.md`
 - **后续 follow-up**：
-  - 按设计补齐 terminal legacy 兼容与 typed-only 系统事件消费。
-  - 把 ignore 集合从“隐式未处理”改成“显式登记”。
-  - 按 detailed design 将 mapper 重构为 registry + semantic mapper + deduper + projector 四段。
+  - 用本地 `codex 0.115.x` 抓真实 typed app-server schema，并对照 registry 做精简。
+  - 把 typed system 事件真正接入上层状态，而不是只写入 snapshot。
+  - 明确是否需要运行时版本检查，避免低版本 Codex 误接入。
 
 ### [ ] OR-TASK-003 Feishu 流式回复收敛为 TUI Transcript 投影
 - **目标**：把飞书当前“过程面板 + 最终答案”的双区渲染，收敛为与 Codex TUI 更一致的单条 transcript 投影，使执行记录、解释文字和 follow-up 建议能在线性正文里自然混排。
