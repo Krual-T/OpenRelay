@@ -1,6 +1,6 @@
 # Design Task Board
 
-更新时间：2026-03-16
+更新时间：2026-03-17
 
 ## Landed
 
@@ -26,7 +26,30 @@
   - `tests/test_codex_runtime_backend.py`
   - `tests/test_claude_runtime_backend.py`
 
+## Active
+
+### [ ] OR-TASK-002 Codex App-Server 双轨事件消费收敛
+- **目标**：把 Codex app-server 的 v1 legacy 与 v2 typed 事件消费收敛为单一语义层，明确 render / system / ignore / fallback 分类，并消除同语义双消费。
+- **当前关注**：
+  - 明确哪些事件是 `v1 only`、哪些是 `v2 only`、哪些是双轨并存。
+  - 设计统一的语义事件键与去重规则，尤其是 terminal event。
+  - 收敛“必须渲染”“必须系统消费”“明确忽略”的分类表。
+- **关闭条件**：
+  - 设计文档明确事件分类矩阵与去重策略。
+  - 配置策略明确是否保留 hybrid 默认。
+  - mapper / turn stream 后续改造边界被写清楚。
+- **建议产物**：
+  - `docs/design/codex-app-server-event-consumption-plan.md`
+- **已完成证据**：
+  - 本地日志已确认 `item/*` 与 `codex/event/*` 双轨并存。
+  - 本地日志已确认 `codex/event/turn_aborted` 真实出现。
+  - `docs/design/codex-app-server-consumption-comparison.md`
+  - `docs/design/codex-app-server-event-consumption-plan.md`
+- **后续 follow-up**：
+  - 按设计补齐 terminal legacy 兼容与 typed-only 系统事件消费。
+  - 把 ignore 集合从“隐式未处理”改成“显式登记”。
+
 ## 使用约定
 
-- 当前无打开的 design 主线任务。
+- 当前打开的设计主线任务见 `OR-TASK-002`。
 - 后续若再开启新的设计主线，新增条目应继续遵循 `docs/design/task-board-protocol.md`。
