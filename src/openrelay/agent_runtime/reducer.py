@@ -49,7 +49,11 @@ class LiveTurnReducer:
                 self.state.reasoning_text = text or self.state.reasoning_text
             case PlanUpdatedEvent(steps=steps):
                 self.state.plan_steps = steps
-            case BackendNoticeEvent(level=level, message=message) if event.provider_payload.get("fallback"):
+            case BackendNoticeEvent(level=level, message=message) if (
+                event.provider_payload.get("fallback")
+                or event.provider_payload.get("observe")
+                or event.provider_payload.get("classification") == "observe"
+            ):
                 self.state.backend_events = (
                     *self.state.backend_events,
                     BackendEventRecord(
