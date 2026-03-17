@@ -54,6 +54,20 @@ def _flatten_text(value: Any) -> str:
     return ""
 
 
+def _normalize_thread_status(value: Any) -> str:
+    if isinstance(value, str):
+        return value.strip()
+    if isinstance(value, dict):
+        for key in ("type", "status", "state", "name"):
+            normalized = str(value.get(key) or "").strip()
+            if normalized:
+                return normalized
+    if isinstance(value, list):
+        parts = [_normalize_thread_status(item) for item in value]
+        return " / ".join(part for part in parts if part).strip()
+    return str(value or "").strip()
+
+
 class CodexSemanticMapper:
     def map(
         self,
@@ -316,19 +330,9 @@ class CodexSemanticMapper:
         item_id = str(item.get("id") or envelope.item_id)
         if item_type == "reasoning":
             self._reasoning_state(state, item_id)
-            return (
-                CodexSemanticEvent(
-                    semantic_name="reasoning.started",
-                    policy="observe",
-                    source_method=envelope.method,
-                    source_route=envelope.route,
-                    thread_id=envelope.thread_id,
-                    turn_id=envelope.turn_id,
-                    item_id=item_id,
-                    message="Reasoning started",
-                    payload={"item_id": item_id, "item_type": item_type},
-                ),
-            )
+            return ()
+        if item_type == "userMessage":
+            return ()
         tool = self._to_tool_state(item, status="running", state=state)
         if tool is None:
             return (self._observe_unexpected_item(envelope, item, f"Unexpected backend item started: {item_type or 'unknown'}"),)
@@ -398,6 +402,8 @@ class CodexSemanticMapper:
                     payload={"completed": True, "item_id": item_id},
                 ),
             )
+        if item_type == "userMessage":
+            return ()
         if item_type == "plan":
             text = _flatten_text(item.get("text") or item.get("content"))
             if not text:
@@ -566,13 +572,14 @@ class CodexSemanticMapper:
         if snapshot is None:
             return
         if descriptor.semantic_name == "thread.status.changed":
-            snapshot["thread_status"] = str(envelope.params.get("status") or "")
+            snapshot["thread_status"] = _normalize_thread_status(envelope.params.get("status"))
         elif descriptor.semantic_name == "thread.diff.updated":
-            snapshot["last_diff_id"] = str(envelope.params.get("diffId") or "")
+            snapshot["last_diff_id"] = str(envelope.params.get("diffId") or envelope.params.get("diff_id") or "")
         elif descriptor.semantic_name == "skills.changed":
-            snapshot["skills_version"] = str(envelope.params.get("version") or "")
+            snapshot["skills_version"] = str(envelope.params.get("version") or envelope.params.get("skillsVersion") or "")
         elif descriptor.semantic_name == "account.rate_limits.updated":
-            snapshot["rate_limits_payload"] = dict(envelope.params)
+            rate_limits = envelope.params.get("rateLimits") if isinstance(envelope.params.get("rateLimits"), dict) else envelope.params
+            snapshot["rate_limits_payload"] = dict(rate_limits)
 
     def _usage_dedupe_key(self, envelope: CodexRawEventEnvelope, usage: UsageSnapshot) -> str:
         return (

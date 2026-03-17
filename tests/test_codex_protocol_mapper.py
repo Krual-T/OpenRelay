@@ -253,6 +253,62 @@ def test_codex_mapper_maps_structured_plan_update() -> None:
     assert events[0].explanation == "phase 1"
 
 
+def test_codex_mapper_ignores_typed_user_message_items() -> None:
+    mapper = CodexProtocolMapper(session_id="relay-1", native_session_id="thread_1", turn_id="turn_1")
+    state = CodexTurnState()
+
+    started = mapper.map_notification(
+        "item/started",
+        {
+            "threadId": "thread_1",
+            "turnId": "turn_1",
+            "item": {"id": "user_1", "type": "userMessage", "content": [{"type": "text", "text": "hello"}]},
+        },
+        state,
+    )
+    completed = mapper.map_notification(
+        "item/completed",
+        {
+            "threadId": "thread_1",
+            "turnId": "turn_1",
+            "item": {"id": "user_1", "type": "userMessage", "content": [{"type": "text", "text": "hello"}]},
+        },
+        state,
+    )
+
+    assert started == ()
+    assert completed == ()
+
+
+def test_codex_mapper_records_typed_system_snapshots() -> None:
+    mapper = CodexProtocolMapper(session_id="relay-1", native_session_id="thread_1", turn_id="turn_1")
+    state = CodexTurnState()
+
+    rate_limits = mapper.map_notification(
+        "account/rateLimits/updated",
+        {
+            "rateLimits": {
+                "limitId": "codex",
+                "primary": {"usedPercent": 37},
+            }
+        },
+        state,
+    )
+    thread_status = mapper.map_notification(
+        "thread/status/changed",
+        {
+            "threadId": "thread_1",
+            "status": {"type": "active", "activeFlags": []},
+        },
+        state,
+    )
+
+    assert rate_limits == ()
+    assert thread_status == ()
+    assert state.system_snapshot["thread_status"] == "active"
+    assert state.system_snapshot["rate_limits_payload"]["limitId"] == "codex"
+
+
 def test_codex_mapper_maps_assistant_completed_event() -> None:
     mapper = CodexProtocolMapper(session_id="relay-1", native_session_id="thread_1", turn_id="turn_1")
     state = CodexTurnState()
