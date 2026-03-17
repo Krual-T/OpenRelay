@@ -156,6 +156,47 @@ RawEvent(typed)
 
 ## 事件覆盖矩阵
 
+### 0. `codex >= 0.115.0` external typed contract 全量消息清单
+
+下面这张表只列当前 `openrelay` 正式注册并支持的 external typed `method`。它回答 5 个问题：
+
+- 这个消息是什么作用
+- 它是渲染消息、系统消息、忽略消息还是仅观察消息
+- 当前是否已经真正进入主路径
+- 是否在本机 `codex-cli 0.115.0` 实测样本中出现
+- 如果收到它，应该怎样处理
+
+| method | 统一语义 | 分类 | 当前状态 | `0.115.0` 实测 | 作用 |
+| --- | --- | --- | --- | --- | --- |
+| `thread/started` | `session.started` | 系统 | 已接入 | 否 | 建立 thread 与 openrelay session 的绑定，记录 native session id/title。 |
+| `turn/started` | `turn.started` | 系统 | 已接入 | 是 | 标记新一轮开始，初始化 turn 生命周期。 |
+| `item/agentMessage/delta` | `assistant.delta` | 渲染 | 已接入 | 是 | assistant 正文流式增量，直接进入实时展示。 |
+| `item/reasoning/textDelta` | `reasoning.delta` | 渲染 | 已接入 | 否 | 推理正文增量，按 item 和 index 聚合后渲染。 |
+| `item/reasoning/summaryTextDelta` | `reasoning.delta` | 渲染 | 已接入 | 否 | 推理摘要增量，按 summary index 聚合后渲染。 |
+| `item/reasoning/summaryPartAdded` | `reasoning.summary-part-added` | 忽略 | 已接入 | 否 | 只是 summary 分段元信息，不直接渲染，也不驱动状态机。 |
+| `item/plan/delta` | `plan.delta` | 渲染 | 已接入 | 否 | 计划文本增量，当前作为观察型计划输出展示。 |
+| `turn/plan/updated` | `plan.updated` | 渲染 | 已接入 | 否 | 结构化计划更新，生成 plan step 列表。 |
+| `item/commandExecution/outputDelta` | `tool.progress` | 渲染 | 已接入 | 否 | 命令执行过程输出，作为工具过程流式展示。 |
+| `item/fileChange/outputDelta` | `tool.progress` | 渲染 | 已接入 | 否 | 文件修改类工具输出，作为工具过程流式展示。 |
+| `item/commandExecution/terminalInteraction` | `terminal.interaction` | 仅观察 | 已接入 | 否 | terminal 交互请求，目前只保留完整 payload 供排查，不进入正式状态机。 |
+| `item/mcpToolCall/progress` | `tool.progress` | 渲染 | 已接入 | 否 | MCP 工具执行中的进度或输出内容。 |
+| `serverRequest/resolved` | `approval.resolved` | 系统 | 已接入 | 否 | 服务端请求已闭环，结束 approval / user input 等待态。 |
+| `item/started` | `item.started` | 渲染 | 已接入 | 是 | item 生命周期开始。需要继续按 item.type 分流：工具、计划、reasoning 可以消费，`userMessage` 必须忽略。 |
+| `item/completed` | `item.completed` | 渲染 | 已接入 | 是 | item 生命周期结束。按 item.type 投影为 assistant 完成态、tool 完成态、plan 更新等。 |
+| `thread/tokenUsage/updated` | `usage.updated` | 渲染 | 已接入 | 是 | token/context 使用量更新，进入运行中状态展示。 |
+| `turn/completed` | `turn.terminal` | 系统 | 已接入 | 是 | turn 正常结束或失败结束的总收口事件，是正式的 turn terminal 信号。 |
+| `error` | `turn.error` | 系统 | 已接入 | 否 | provider 级错误，触发 turn 失败收口。 |
+| `account/rateLimits/updated` | `account.rate_limits.updated` | 系统 | 仅写入系统快照 | 是 | 更新 provider 限额状态，后续应让上层状态或面板可直接消费。 |
+| `thread/status/changed` | `thread.status.changed` | 系统 | 仅写入系统快照 | 是 | 更新 thread 当前状态，例如 active / idle，后续应接入运行时状态流。 |
+| `skills/changed` | `skills.changed` | 系统 | 仅写入系统快照 | 否 | 后端技能列表或能力面变化，后续应接入状态刷新路径。 |
+| `turn/diff/updated` | `thread.diff.updated` | 系统 | 仅写入系统快照 | 否 | thread / turn 增量同步入口，后续可用于 transcript 或历史同步。 |
+
+补充约束：
+
+- `item/started` / `item/completed` 不是一个单一语义事件，而是 item 生命周期壳层事件。真正是否展示、如何展示，取决于 `item.type`。
+- `userMessage` 已在 `0.115.0` 实测中确认会通过 `item/started` / `item/completed` 出现，但它只是用户输入回声，必须明确忽略，不能当作 unexpected item。
+- 上表里“仅写入系统快照”表示：当前 mapper 能识别并记录，但还没有把它变成上层可直接消费的正式运行时状态。
+
 下面这张表按“v1 only / v2 only / 双轨都有”来划分当前已知事件。
 
 ### 1. external contract 不再作为正式输入面的 legacy 事件
