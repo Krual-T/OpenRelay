@@ -459,7 +459,7 @@ def _render_history_items(items: list[dict[str, Any]], spinner_frame: int) -> st
     return "\n\n".join(blocks).strip()
 
 
-def _build_legacy_process_panel_text(state: dict[str, Any]) -> str:
+def _build_basic_process_panel_text(state: dict[str, Any]) -> str:
     lines: list[str] = []
     heading = str(state.get("heading") or "").strip()
     status = str(state.get("status") or "").strip()
@@ -522,7 +522,7 @@ def build_process_panel_text(state: dict[str, Any] | None) -> str:
         if worked_for:
             return f"{rendered_history}\n\n- Worked for {worked_for}"
         return rendered_history
-    return _build_legacy_process_panel_text(state)
+    return _build_basic_process_panel_text(state)
 
 
 def _build_streaming_markdown_element(content: str = "") -> dict[str, Any]:
