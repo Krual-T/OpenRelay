@@ -9,6 +9,7 @@ from openrelay.agent_runtime import (
     RateLimitsUpdatedEvent,
     ReasoningDeltaEvent,
     SkillsUpdatedEvent,
+    TerminalInteractionEvent,
     ThreadDiffUpdatedEvent,
     ThreadStatusUpdatedEvent,
     ToolCompletedEvent,
@@ -157,6 +158,27 @@ def test_codex_mapper_maps_tool_lifecycle_and_usage() -> None:
     assert len(usage) == 1 and isinstance(usage[0], UsageUpdatedEvent)
     assert usage[0].usage.total_tokens == 14
     assert usage[0].usage.context_window == 200000
+
+
+def test_codex_mapper_maps_terminal_interaction_event() -> None:
+    mapper = CodexProtocolMapper(session_id="relay-1", native_session_id="thread_1", turn_id="turn_1")
+    state = CodexTurnState()
+
+    events = mapper.map_notification(
+        "item/commandExecution/terminalInteraction",
+        {
+            "threadId": "thread_1",
+            "turnId": "turn_1",
+            "itemId": "call_1",
+            "processId": "89012",
+            "stdin": "",
+        },
+        state,
+    )
+
+    assert len(events) == 1 and isinstance(events[0], TerminalInteractionEvent)
+    assert events[0].interaction.item_id == "call_1"
+    assert events[0].interaction.process_id == "89012"
 
 
 def test_codex_mapper_maps_server_request_and_resolution() -> None:

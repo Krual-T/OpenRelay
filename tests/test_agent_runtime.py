@@ -10,6 +10,8 @@ from openrelay.agent_runtime import (
     ReasoningDeltaEvent,
     RuntimeEvent,
     SkillsUpdatedEvent,
+    TerminalInteraction,
+    TerminalInteractionEvent,
     ThreadDiffUpdatedEvent,
     ThreadStatusUpdatedEvent,
     ToolCompletedEvent,
@@ -146,6 +148,15 @@ def test_live_turn_registry_reduces_streaming_state() -> None:
             diff_id="diff_9",
         )
     )
+    registry.apply(
+        TerminalInteractionEvent(
+            backend="codex",
+            session_id="s1",
+            turn_id="t1",
+            event_type="terminal.interaction",
+            interaction=TerminalInteraction(item_id="call_1", process_id="89012", stdin=""),
+        )
+    )
     state = registry.apply(
         TurnCompletedEvent(
             backend="codex",
@@ -167,6 +178,8 @@ def test_live_turn_registry_reduces_streaming_state() -> None:
     assert state.skills_version == "skills-v3"
     assert state.available_skills == ("search", "apply_patch")
     assert state.last_diff_id == "diff_9"
+    assert len(state.terminal_interactions) == 1
+    assert state.terminal_interactions[0].process_id == "89012"
     assert len(state.tools) == 1
     assert state.tools[0].detail == "found src/openrelay/runtime/orchestrator.py"
     assert state.tools[0].exit_code == 0

@@ -16,6 +16,7 @@ from .events import (
     RuntimeEvent,
     SessionStartedEvent,
     SkillsUpdatedEvent,
+    TerminalInteractionEvent,
     ThreadDiffUpdatedEvent,
     ThreadStatusUpdatedEvent,
     ToolCompletedEvent,
@@ -27,7 +28,7 @@ from .events import (
     TurnStartedEvent,
     UsageUpdatedEvent,
 )
-from .models import BackendEventRecord, LiveTurnViewModel, ToolState
+from .models import BackendEventRecord, LiveTurnViewModel, TerminalInteraction, ToolState
 
 
 class LiveTurnReducer:
@@ -92,6 +93,8 @@ class LiveTurnReducer:
                 self.state.available_skills = skills
             case ThreadDiffUpdatedEvent(diff_id=diff_id):
                 self.state.last_diff_id = diff_id
+            case TerminalInteractionEvent(interaction=interaction):
+                self._upsert_terminal_interaction(interaction)
             case TurnCompletedEvent(final_text=final_text, usage=usage):
                 self.state.status = "completed"
                 self.state.pending_approval = None
@@ -141,6 +144,18 @@ class LiveTurnReducer:
             tools[index] = replace(existing, detail=merged_detail)
             self.state.tools = tuple(tools)
             return
+
+    def _upsert_terminal_interaction(self, interaction: TerminalInteraction) -> None:
+        item_id = interaction.item_id
+        process_id = interaction.process_id
+        interactions = list(self.state.terminal_interactions)
+        for index, existing in enumerate(interactions):
+            if existing.item_id == item_id and existing.process_id == process_id:
+                interactions[index] = interaction
+                self.state.terminal_interactions = tuple(interactions)
+                return
+        interactions.append(interaction)
+        self.state.terminal_interactions = tuple(interactions)
 
 
 class LiveTurnRegistry:

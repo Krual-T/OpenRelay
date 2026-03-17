@@ -13,6 +13,8 @@ from openrelay.agent_runtime import (
     RuntimeEvent,
     SessionStartedEvent,
     SkillsUpdatedEvent,
+    TerminalInteraction,
+    TerminalInteractionEvent,
     ThreadDiffUpdatedEvent,
     ThreadStatusUpdatedEvent,
     ToolCompletedEvent,
@@ -83,6 +85,20 @@ class CodexRuntimeEventProjector:
                     provider_payload,
                     tool_id=event.tool_id,
                     detail=event.detail,
+                ),
+            )
+        if event.semantic_name == "terminal.interaction":
+            return (
+                self._event(
+                    TerminalInteractionEvent,
+                    event.turn_id,
+                    "terminal.interaction",
+                    provider_payload,
+                    interaction=TerminalInteraction(
+                        item_id=str(event.payload.get("item_id") or event.item_id),
+                        process_id=str(event.payload.get("process_id") or ""),
+                        stdin=str(event.payload.get("stdin") or ""),
+                    ),
                 ),
             )
         if event.semantic_name == "tool.completed" and event.tool is not None:

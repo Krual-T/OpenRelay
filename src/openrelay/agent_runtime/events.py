@@ -8,6 +8,7 @@ from openrelay.core import utc_now
 from .models import (
     ApprovalRequest,
     BackendKind,
+    TerminalInteraction,
     PlanStep,
     ToolState,
     UsageSnapshot,
@@ -108,6 +109,11 @@ class SkillsUpdatedEvent(RuntimeEvent):
 @dataclass(slots=True, frozen=True)
 class ThreadDiffUpdatedEvent(RuntimeEvent):
     diff_id: str = ""
+
+
+@dataclass(slots=True, frozen=True)
+class TerminalInteractionEvent(RuntimeEvent):
+    interaction: TerminalInteraction = field(default_factory=TerminalInteraction)
 
 
 @dataclass(slots=True, frozen=True)
