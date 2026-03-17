@@ -4,6 +4,17 @@
 
 ## Landed
 
+### [x] OR-TASK-004 README 首页重写与视觉入口收敛
+- **目标**：把仓库首页重写成能直接说明 `openrelay` 产品定位、主路径能力和上手方式的 GitHub README，并把 `static/` 里的品牌图片纳入默认视觉入口。
+- **结果**：
+  - `README.md` 已从仓库内部说明文，收敛为面对 GitHub 访客的产品型首页。
+  - 首页已使用 `static/openrelay_logo.png` 作为主视觉，强化项目识别度。
+  - 首页已补齐项目定位、核心卖点、架构分层、快速开始、命令面与 backend 状态。
+  - 文案已明确当前主线是 `Codex app-server`，`Claude` 仍是最小适配状态，避免宣传口径和真实能力脱节。
+- **主要证据**：
+  - `README.md`
+  - `static/openrelay_logo.png`
+
 ### [x] OR-TASK-001 Agent Runtime Relay 主线收敛
 - **目标**：把 `openrelay` 收敛为统一的 agent runtime relay，让 Feishu 壳层、runtime 主路径、session binding、interaction 和 presentation 都围绕 backend-neutral 的运行时语义组织。
 - **结果**：
