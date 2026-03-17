@@ -423,7 +423,7 @@ flowchart TD
 
 ### 一句话结论
 
-截至 2026-03-16，官方 `codex cli` 的终端界面（TUI，Text User Interface，文本用户界面）已经把应用服务客户端（InProcessAppServerClient）接进主循环，但当前主界面仍主要由直接核心事件流（direct-core event stream）驱动。
+截至 2026-03-17，官方 `codex cli` 的终端界面（TUI，Text User Interface，文本用户界面）已经把应用服务客户端（InProcessAppServerClient）接进主循环，但当前主界面仍主要由直接核心事件流（direct-core event stream）驱动。
 
 所以它不是：
 
@@ -470,26 +470,57 @@ flowchart TD
 
 官方当前文件：
 
-- `codex-rs/tui/src/app/app_server_adapter.rs`
+- `codex-rs/tui_app_server/src/app/app_server_adapter.rs`
 
 这里写得非常直白：这是混合迁移阶段（hybrid migration period）的临时适配层。
 
-当前逻辑是：
+但截至 2026-03-17，官方现状已经不是更早那种“完全忽略应用服务通知”的状态了，而是更具体的双轨：
 
-- `ServerNotification`：忽略
-- `LegacyNotification`：忽略
-- `ServerRequest`：直接拒绝
+- 老 `codex_tui` 仍然存在，继续保留直接核心事件消费路径
+- 新 `codex_tui_app_server` 在 `Feature::TuiAppServer` 打开时才启用
+- 新路径已经会消费一部分 typed `ServerNotification`
+- 但旧 `LegacyNotification` 也还在保留，作为迁移期兼容通道
+- `ServerRequest` 也不是一律拒绝，而是“支持的接住，不支持的拒绝”
 
-这意味着：
+当前 `tui_app_server` 的适配层里，已经显式处理了下面这些 typed 通知并把它们翻成现有 UI 还能消费的 `EventMsg`：
 
-- 应用服务事件流已经接进来
-- 但它还没有真正进入当前主界面的状态更新主路径
+- `thread/tokenUsage/updated`
+- `error`
+- `thread/name/updated`
+- `turn/started`
+- `turn/completed`
+- `item/started`
+- `item/completed`
+- `item/agentMessage/delta`
+- `item/plan/delta`
+- `item/reasoning/summaryTextDelta`
+- `item/reasoning/textDelta`
+- 一组 realtime 会话通知
 
-如果你问“那它现在接进来干嘛”，答案更接近：
+同时它也单独处理了账户信息类通知：
 
-- 为迁移铺底
-- 让应用服务成为未来统一入口
-- 但当前版本还没完全把旧路径拆掉
+- `account/updated`
+- `account/rateLimits/updated`
+
+服务端请求这边，`tui_app_server` 目前已经能挂住并等待解析这些请求：
+
+- `item/commandExecution/requestApproval`
+- `item/fileChange/requestApproval`
+- `item/permissions/requestApproval`
+- `item/tool/requestUserInput`
+- `mcpServer/elicitation/request`
+
+但仍有一批 request 会被明确拒绝，比如：
+
+- `dynamicToolCall`
+- `chatgptAuthTokensRefresh`
+- 一些 legacy approval request
+
+所以更准确的描述应该是：
+
+- 应用服务事件流已经接进来，而且已经开始驱动部分 UI 状态
+- 但它还没有覆盖全部 typed v2 通知，也还没有删掉 legacy 兼容路
+- 当前版本依旧不是“纯 app-server-first 单轨”
 
 ## Codex CLI：一条最实际的追踪方式
 
@@ -508,15 +539,15 @@ flowchart TD
 
 ## 两条链路的核心差异
 
-| 关注点 | openrelay | codex cli 终端界面（截至 2026-03-16） |
+| 关注点 | openrelay | codex cli 终端界面（截至 2026-03-17） |
 | --- | --- | --- |
 | 应用服务角色 | 正式主后端 | 已接入，但仍在迁移 |
 | 第一个真正发 RPC 的位置 | `CodexSessionClient` | 正在从旧路径迁到应用服务路径 |
-| 谁收通知和服务端请求 | `CodexTurnStream` | 主循环能收到，但当前适配层基本不消费 |
-| 谁翻译协议 | `CodexProtocolMapper` | 当前主路径仍更多依赖旧事件模型 |
+| 谁收通知和服务端请求 | `CodexTurnStream` | 主循环能收到；`tui_app_server` 已消费一部分 typed 通知与支持的 request |
+| 谁翻译协议 | `CodexProtocolMapper` | `app_server_adapter.rs` 把部分 typed `ServerNotification` 翻成旧 `EventMsg` |
 | 展示层最终消费什么 | 实时视图模型（LiveTurnViewModel） | `AppEvent`、`EventMsg`、`ChatWidget` 状态 |
-| 审批是否闭环 | 是 | 当前适配层不是闭环，而是拒绝请求 |
-| 主界面事实来源 | 应用服务协议翻译后的统一状态 | 仍偏向直接核心事件流 |
+| 审批是否闭环 | 是 | 已接住部分 request，但仍有 unsupported request 会拒绝 |
+| 主界面事实来源 | 应用服务协议翻译后的统一状态 | 仍是双轨：一部分来自 typed app-server，一部分来自旧核心事件 |
 
 ## 把前面 10 个问题全部调查清楚
 
@@ -546,7 +577,7 @@ flowchart TD
 
 #### codex cli TUI
 
-截至 2026-03-16，官方 TUI 主启动路径仍主要直接走核心线程管理器（`ThreadManager`）：
+截至 2026-03-17，官方 TUI 主启动路径仍主要直接走核心线程管理器（`ThreadManager`）：
 
 - `StartFresh` 用 `ChatWidget::new(..., thread_manager.clone())`
 - `Resume` 用 `thread_manager.resume_thread_from_rollout(...)`
@@ -629,14 +660,19 @@ flowchart TD
 
 如果只看应用服务协议，官方 README 也明确说 `item/agentMessage/delta` 就是“把增量 `delta` 依次拼起来，还原完整回复”。
 
-但当前 TUI 主界面并没有把应用服务 `ServerNotification` 真正转成 UI 状态；当前界面上的流式文本主要仍来自直接核心线程事件（`thread.next_event()` -> `AppEvent::ThreadEvent`）。
+截至 2026-03-17，官方 `tui_app_server` 也已经开始消费这条 typed 通知了：`app_server_adapter.rs` 会把 `ServerNotification::AgentMessageDelta` 翻成旧的 `EventMsg::AgentMessageDelta`，再继续走现有 `ChatWidget` 更新链。
+
+但这还不是“全面转向 v2”：
+
+- 只是一部分 typed 通知已经开始进入 UI 状态
+- 主 UI 仍保留旧事件模型和 legacy 兼容路径
 
 #### 说明
 
 协议层和 UI 主路径要区分开看：
 
 - 协议上：增量回复就是 `item/agentMessage/delta`
-- 当前官方 TUI 实现上：还没把这条应用服务通知真正接入主 UI 状态归约
+- 当前官方 TUI 实现上：这条 typed 通知已经接入，但整体仍是双轨迁移态，不是纯 v2 单轨
 
 ### 5. 哪一种原始协议方法会变成“工具执行中”
 
@@ -658,7 +694,15 @@ flowchart TD
 - 若干 `item/*/delta`
 - `item/completed`
 
-但当前 TUI 的主 UI 状态仍主要吃直接核心事件，不是吃应用服务适配层里的 `ServerNotification`。
+截至 2026-03-17，官方 `tui_app_server` 已经开始消费这里面的主干子集：
+
+- `item/started`
+- `item/completed`
+- `item/agentMessage/delta`
+- `item/plan/delta`
+- `item/reasoning/*delta`
+
+但像 `thread/status/changed`、`turn/diff/updated`、`skills/changed` 这类新 v2 通知仍未进入它的 `server_notification_thread_events()` 映射，所以“typed v2 已全面接管 UI”这个判断仍然不成立。
 
 #### 说明
 
@@ -667,6 +711,7 @@ flowchart TD
 - 有没有收到 `item/started`
 - 有没有持续 `outputDelta`
 - 有没有最终 `item/completed`
+- 当前 UI 适配层有没有为这类 typed 通知补上映射
 
 ### 6. 命令审批请求从应用服务来到 Feishu，中间经过了哪些对象
 
@@ -707,16 +752,24 @@ flowchart TD
 
 #### codex cli TUI
 
-当前应用服务适配层一旦收到 `ServerRequest`，会直接拒绝，不会进入真正的 UI 审批流程。
+截至 2026-03-17，这里也已经不是“收到 `ServerRequest` 就直接全拒绝”。
 
-所以官方 TUI 当前不是“审批还没接完一半”，而是“应用服务审批请求现在根本不会进入现有主 UI 状态机”。
+`tui_app_server` 现在会先把 request 记到 `PendingAppServerRequests` 里，至少支持下面这些应用服务请求进入现有 UI 交互流：
+
+- `item/commandExecution/requestApproval`
+- `item/fileChange/requestApproval`
+- `item/permissions/requestApproval`
+- `item/tool/requestUserInput`
+- `mcpServer/elicitation/request`
+
+只有 unsupported request 才会在适配层里被显式拒绝，比如 `dynamicToolCall`。
 
 #### 说明
 
-这是两边最本质的分水岭之一：
+这意味着两边的真实差别已经从“有没有接住 request”收缩成了“接住以后有多完整”：
 
-- `openrelay`：审批请求已经是正式主路径
-- 官方 TUI：审批请求对应用服务路径来说仍被视为过渡期未接入能力
+- `openrelay`：审批与交互请求已经是正式主路径，且 backend-neutral
+- 官方 TUI：已经能接住一部分 app-server request，但仍然依赖旧 UI 状态机和兼容层
 
 ### 7. 用户点同意以后，结果是在哪一层写回应用服务的
 
@@ -735,16 +788,20 @@ flowchart TD
 
 #### codex cli TUI
 
-当前适配层不会处理应用服务审批请求，所以也就不存在“用户点同意后写回 app-server”的现行主路径。
+截至 2026-03-17，官方 `tui_app_server` 已经存在“用户决策再写回 app-server”的路径：
+
+- `PendingAppServerRequests.note_server_request()` 先把支持的 request 挂起
+- 用户在现有 UI 里做决策后，`take_resolution()` 会把决策编码成对应的 app-server response
+- 然后再通过 `resolve_server_request(...)` 写回应用服务
+
+所以这里也不能再写成“完全没有回写主路径”。
 
 #### 说明
 
-如果以后要改审批策略，最稳的改动点是：
+现在更准确的说法是：
 
-- 改 `mapper.build_approval_response()`：协议响应形状
-- 改交互控制器：用户怎么选
-
-而不是让展示层直接拼 JSON-RPC（JSON 远程过程调用）响应。
+- `openrelay`：这条路径已经被统一 runtime 收口
+- 官方 TUI：这条路径已开始存在，但仍然是 app-server 适配层把 typed request 翻回旧 UI 命令模型
 
 ### 8. stop 命令是只停本地任务，还是会发 `turn/interrupt`
 
@@ -782,9 +839,9 @@ flowchart TD
 
   A --> B[app_server.next_event]
   B --> C[handle_app_server_event]
-  C --> D[ServerNotification 忽略]
-  C --> E[LegacyNotification 忽略]
-  C --> F[ServerRequest 直接拒绝]
+  C --> D[部分 ServerNotification 翻成旧 EventMsg]
+  C --> E[LegacyNotification 仍保留兼容]
+  C --> F[支持的 ServerRequest 进入 UI 交互; 不支持的拒绝]
 
   A --> G[thread_manager.subscribe_thread_created]
   G --> H[self.server.get_thread]
@@ -795,15 +852,15 @@ flowchart TD
 
 #### 结论
 
-没有。
+有，但不是完整消费。
 
 #### 证据
 
-当前官方 `app_server_adapter.rs` 的逻辑非常直接：
+当前官方 `app_server_adapter.rs` 的逻辑已经进入下一阶段：
 
-- `ServerNotification`：忽略
-- `LegacyNotification`：忽略
-- `ServerRequest`：拒绝
+- `ServerNotification`：开始按子集翻译成旧 `EventMsg`
+- `LegacyNotification`：仍保留并继续兼容
+- `ServerRequest`：支持的挂起并进入交互流，不支持的拒绝
 
 与此同时，主循环虽然确实监听 `app_server.next_event()`，但真正更新界面的主要还是另一条路：
 
@@ -814,19 +871,24 @@ flowchart TD
 
 #### 说明
 
-所以不能只因为“主循环里出现了 `app_server.next_event()`”就判断 TUI 已经消费了应用服务。  
+所以不能只因为“主循环里出现了 `app_server.next_event()`”就判断 TUI 已经完全消费了应用服务。  
 真正判断标准应该是：
 
-- 这些通知有没有进入状态归约
-- 状态归约有没有驱动 `ChatWidget` / `App`
+- 这些 typed 通知有没有进入状态归约
+- 状态归约覆盖面有多大
+- legacy 兼容路和直接核心事件路有没有被删掉
 
-按这个标准，当前答案是否定的。
+按这个标准，当前答案是：
+
+- 已经开始消费 v2
+- 但只覆盖一部分 typed 通知
+- 仍然明显处在双轨迁移态
 
 ### 10. 哪些地方现在看起来像“兼容过渡层”，以后应该删掉
 
 #### 官方 TUI 里最明显的 4 处
 
-1. `tui/src/app/app_server_adapter.rs`
+1. `tui_app_server/src/app/app_server_adapter.rs`
    这个文件头注释已经明说它是“混合迁移期临时适配层”，未来应该缩小直至消失。
 
 2. `App::run()` 里同时监听两条事实来源
@@ -857,8 +919,46 @@ flowchart TD
 
 1. `openrelay` 现在已经不是“表面上接了 app-server”，而是请求入口、事件回流、审批闭环、停止闭环都已经建立。
 2. `openrelay` 的展示层消费的不是原始协议，而是统一运行时事件（`RuntimeEvent`）归约后的实时视图模型（`LiveTurnViewModel`）。
-3. 官方 `codex cli` TUI 截至 2026-03-16 仍处在混合迁移态：应用服务客户端已经进主循环，但通知和服务端请求还没有进入主 UI 状态路径。
-4. 判断“是否真正消费 app-server”的标准，不是有没有 `app_server.next_event()`，而是“请求是否由 app-server 发起、通知是否进入状态归约、服务端请求是否形成交互闭环”。
+3. 官方 `codex cli` TUI 截至 2026-03-17 仍处在混合迁移态：应用服务客户端已经进主循环，typed v2 通知与部分服务端请求已经开始进入主 UI 状态路径，但覆盖面还不完整。
+4. 判断“是否真正消费 app-server”的标准，不是有没有 `app_server.next_event()`，而是“请求是否由 app-server 发起、typed 通知是否进入状态归约、legacy 兼容路是否还在、服务端请求是否形成交互闭环”。
+
+## openrelay 侧已观测到但当前未正式建模的 backend 事件
+
+下面这批事件来自实际运行日志 `/home/Shaokun.Tang/.openrelay/data/codex-sqlite/logs_1.sqlite`，是把 `app-server event: <method>` 与当前 `src/openrelay/backends/codex_adapter/mapper.py` 显式分支做差集后得到的。
+
+### 更像真实 app-server 公共事件，值得优先评估是否正式建模
+
+- `account/rateLimits/updated`
+- `thread/status/changed`
+- `skills/changed`
+- `turn/diff/updated`
+
+这几类是 `codex_app_server::outgoing_message` 发出来的，更接近外部 transport 真正能收到的 typed v2 通知。  
+当前 openrelay 已能 fallback 渲染其完整 payload，但还没有把它们收口成统一 runtime 语义。
+
+### 更像 provider 内部兼容事件或中间态事件，继续走 fallback 更合理
+
+- `codex/event/agent_message_delta`
+- `codex/event/raw_response_item`
+- `codex/event/agent_reasoning_delta`
+- `codex/event/agent_message`
+- `codex/event/exec_command_begin`
+- `codex/event/exec_command_end`
+- `codex/event/task_started`
+- `codex/event/user_message`
+- `codex/event/web_search_begin`
+- `codex/event/web_search_end`
+- `codex/event/mcp_startup_complete`
+- `codex/event/turn_aborted`
+- `codex/event/skills_update_available`
+- `codex/event/turn_diff`
+- `codex/event/plan_update`
+- `codex/event/exec_command_output_delta`
+- `codex/event/terminal_interaction`
+- `codex/event/agent_reasoning_section_break`
+- `codex/event/agent_reasoning`
+
+这批大多来自 `codex_app_server::codex_message_processor`，更像 Codex 内部兼容别名或中间事件，而不是外部客户端必须直接围绕其建模的稳定公共协议面。
 
 ## 证据
 
@@ -879,9 +979,15 @@ flowchart TD
 - `codex app-server` README  
   <https://github.com/openai/codex/blob/main/codex-rs/app-server/README.md>
 - 终端界面应用服务适配层  
-  <https://github.com/openai/codex/blob/main/codex-rs/tui/src/app/app_server_adapter.rs>
-- 终端界面主循环  
-  <https://github.com/openai/codex/blob/main/codex-rs/tui/src/app.rs>
+  <https://github.com/openai/codex/blob/main/codex-rs/tui_app_server/src/app/app_server_adapter.rs>
+- 终端界面应用服务会话封装  
+  <https://github.com/openai/codex/blob/main/codex-rs/tui_app_server/src/app_server_session.rs>
+- 终端界面主循环分发  
+  <https://github.com/openai/codex/blob/main/codex-rs/cli/src/main.rs>
+- 应用服务客户端事件门面  
+  <https://github.com/openai/codex/blob/main/codex-rs/app-server-client/src/lib.rs>
+- 应用服务 typed 通知定义  
+  <https://github.com/openai/codex/blob/main/codex-rs/app-server-protocol/src/protocol/common.rs>
 - 开放拉取请求（PR，Pull Request）：`feat(tui): migrate TUI to in-process app-server`  
   <https://github.com/openai/codex/pull/14018>
 - 开放拉取请求（PR，Pull Request）：`feat(tui): route fresh-session thread lifecycle through app-server`  
@@ -893,6 +999,6 @@ flowchart TD
 
 ## 时效性说明
 
-- `codex cli` 终端界面的结论，基于 2026-03-16 查询到的官方 `main` 分支源码与当日仍为打开状态（open）的拉取请求（PR）。
+- `codex cli` 终端界面的结论，基于 2026-03-17 查询到的官方 `main` 分支源码与当日可见的开放拉取请求（PR）。
 - 由于官方这一段正在快速迁移，后续如果这些 PR 合并，本文对终端界面现状的描述可能会失效。
-- `openrelay` 部分结论基于当前仓库代码，时效点同样是 2026-03-16。
+- `openrelay` 部分结论基于当前仓库代码与本地运行日志，时效点同样是 2026-03-17。
