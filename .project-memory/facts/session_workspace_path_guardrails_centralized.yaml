@@ -1,0 +1,29 @@
+id: session_workspace_path_guardrails_centralized
+kind: fact
+title: Session workspace 路径边界统一由 SessionWorkspaceService 承担
+scope:
+  repo: openrelay
+  branch: main
+status: reviewed
+created_at: '2026-03-17T16:01:40Z'
+updated_at: '2026-03-17T16:01:40Z'
+confidence: 0.8
+last_verified_commit: 27cc751913f5561b5b480a1e95ad76cd2954d345
+intent_aliases:
+- 目录快捷方式 路径校验 在哪里
+- cwd 路径边界 谁负责
+tags:
+- session
+- workspace
+- fact
+applies_to:
+- src/openrelay/session/workspace.py
+- src/openrelay/session/shortcuts.py
+statement: 会话目录解析、工作区根选择与越界校验统一收敛在 SessionWorkspaceService；目录快捷方式复用同一套 guardrails，而不是各自维护路径逃逸与存在性判断。
+evidence:
+- path: src/openrelay/session/workspace.py
+  kind: file
+- path: src/openrelay/session/shortcuts.py
+  kind: file
+- path: tests/test_session_workspace.py
+  kind: file

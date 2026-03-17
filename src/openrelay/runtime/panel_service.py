@@ -14,6 +14,7 @@ from openrelay.session.browser import SessionBrowser, SessionSortMode
 from openrelay.session.shortcuts import SessionShortcutService
 from openrelay.session.workspace import SessionWorkspaceService
 
+from .card_sender import CommandCardSender
 from .commands import PanelCommandArgs
 from .replying import RuntimeReplyPolicy
 
@@ -36,20 +37,13 @@ class RuntimePanelService:
     presenter: RuntimePanelPresenter
     runtime_service: AgentRuntimeService | None = None
 
+    def _card_sender(self) -> CommandCardSender:
+        return CommandCardSender(self.messenger, self.reply_policy, self.reply_fallback)
+
     async def send_panel(self, message: IncomingMessage, session_key: str, session: SessionRecord, args: PanelCommandArgs) -> None:
         action_context = self.reply_policy.build_card_action_context(message, session_key)
         card, fallback_text = self.presenter.build_panel_payload(message, session_key, session, args, action_context)
-        try:
-            await self.messenger.send_interactive_card(
-                message.chat_id,
-                card,
-                reply_to_message_id=self.reply_policy.command_reply_target(message),
-                root_id=self.reply_policy.root_id_for_message(message),
-                force_new_message=self.reply_policy.should_force_new_message_for_command_card(message),
-                update_message_id=self.reply_policy.command_card_update_target(message),
-            )
-        except Exception:
-            await self.reply_fallback(message, fallback_text, "/panel")
+        await self._card_sender().send(message, card, fallback_text=fallback_text, command_name="/panel")
 
     async def send_session_list(
         self,
@@ -62,17 +56,7 @@ class RuntimePanelService:
         _ = session_key, sort_mode
         action_context = self.reply_policy.build_card_action_context(message, session_key)
         card, fallback_text = await self._build_backend_session_list_payload(message, session, page, action_context)
-        try:
-            await self.messenger.send_interactive_card(
-                message.chat_id,
-                card,
-                reply_to_message_id=self.reply_policy.command_reply_target(message),
-                root_id=self.reply_policy.root_id_for_message(message),
-                force_new_message=self.reply_policy.should_force_new_message_for_command_card(message),
-                update_message_id=self.reply_policy.command_card_update_target(message),
-            )
-        except Exception:
-            await self.reply_fallback(message, fallback_text, "/resume")
+        await self._card_sender().send(message, card, fallback_text=fallback_text, command_name="/resume")
 
     async def _build_backend_session_list_payload(
         self,

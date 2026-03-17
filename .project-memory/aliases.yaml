@@ -8,6 +8,9 @@ aliases:
   cwd clear develop 这些命令为什么复用同一个 session_id:
     id: scope_mutations_reuse_current_session
     kind: decision
+  cwd 路径边界 谁负责:
+    id: session_workspace_path_guardrails_centralized
+    kind: fact
   help 和 resume list 为什么不每次发新卡:
     id: single_card_navigation_updates_original_message
     kind: decision
@@ -59,6 +62,9 @@ aliases:
   怎么 trace Feishu 到 runtime 再到 backend:
     id: trace_feishu_message_to_backend_turn
     kind: workflow
+  目录快捷方式 路径校验 在哪里:
+    id: session_workspace_path_guardrails_centralized
+    kind: fact
   群聊和线程怎么隔离会话:
     id: session_key_scoping_semantics
     kind: fact

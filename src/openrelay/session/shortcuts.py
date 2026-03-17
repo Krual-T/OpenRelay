@@ -4,7 +4,7 @@ import shlex
 from dataclasses import dataclass
 from pathlib import Path
 
-from openrelay.core import AppConfig, DirectoryShortcut, SessionRecord, infer_release_channel, get_session_workspace_root
+from openrelay.core import AppConfig, DirectoryShortcut, SessionRecord, infer_release_channel
 from openrelay.storage import StateStore
 
 from .workspace import SessionWorkspaceService
@@ -18,7 +18,7 @@ class SessionShortcutService:
 
     def build_directory_shortcut_entries(self, session: SessionRecord, limit: int = 4) -> list[dict[str, str]]:
         channel = infer_release_channel(self.config, session)
-        workspace_root = get_session_workspace_root(self.config, session).resolve()
+        workspace_root = self.workspace.workspace_root(session)
         entries: list[dict[str, str]] = []
         for shortcut in self.list_directory_shortcuts():
             if "all" not in shortcut.channels and channel not in shortcut.channels:
@@ -55,7 +55,7 @@ class SessionShortcutService:
         if not requested_name:
             return None
         channel = infer_release_channel(self.config, session)
-        workspace_root = get_session_workspace_root(self.config, session).resolve()
+        workspace_root = self.workspace.workspace_root(session)
         for shortcut in self.list_directory_shortcuts():
             if shortcut.name.strip().lower() != requested_name:
                 continue
@@ -65,12 +65,10 @@ class SessionShortcutService:
         return None
 
     def _resolve_directory_shortcut_target(self, raw_path: str, workspace_root: Path) -> Path | None:
-        requested = Path(str(raw_path or "").strip()).expanduser()
-        if not requested:
+        normalized_path = str(raw_path or "").strip()
+        if not normalized_path:
             return None
-        target = requested.resolve() if requested.is_absolute() else (workspace_root / requested).resolve()
-        if target != workspace_root and workspace_root not in target.parents:
+        try:
+            return self.workspace.resolve_directory(normalized_path, workspace_root=workspace_root)
+        except ValueError:
             return None
-        if not target.exists() or not target.is_dir():
-            return None
-        return target
