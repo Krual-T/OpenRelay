@@ -24,6 +24,17 @@ def build_resume_card_command(*, page: int = 1) -> str:
     return f"/resume --page {max(page, 1)}"
 
 
+def _page_window(page: int, known_page_count: int, width: int = 5) -> list[int]:
+    if known_page_count <= 0:
+        return []
+    current = max(page, 1)
+    size = max(width, 1)
+    start = max(1, current - (size // 2))
+    end = min(known_page_count, start + size - 1)
+    start = max(1, end - size + 1)
+    return list(range(start, end + 1))
+
+
 def _session_text(entry: dict[str, Any]) -> str:
     title = str(entry.get("title") or entry.get("label") or entry.get("session_id") or "未命名会话")
     lines = [f"**{entry.get('index', '-')}. {title}**{' · 当前' if entry.get('active') else ''}"]
@@ -104,6 +115,7 @@ def build_backend_session_list_card(info: dict[str, Any]) -> dict[str, Any]:
     sessions = list(info.get("sessions") or [])
     action_context = info.get("action_context") if isinstance(info.get("action_context"), dict) else {}
     page = int(info.get("page") or 1)
+    known_page_count = int(info.get("known_page_count") or page)
     has_previous = bool(info.get("has_previous"))
     has_next = bool(info.get("has_next"))
     backend_name = str(info.get("backend_name") or "runtime").strip() or "runtime"
@@ -139,6 +151,15 @@ def build_backend_session_list_card(info: dict[str, Any]) -> dict[str, Any]:
     controls: list[dict[str, Any]] = []
     if has_previous:
         controls.append(build_button("上一页", build_resume_card_command(page=page - 1), "default", action_context))
+    for page_number in _page_window(page, max(known_page_count, page)):
+        controls.append(
+            build_button(
+                f"[{page_number}]" if page_number == page else str(page_number),
+                build_resume_card_command(page=page_number),
+                "primary" if page_number == page else "default",
+                action_context,
+            )
+        )
     if has_next:
         controls.append(build_button("下一页", build_resume_card_command(page=page + 1), "primary", action_context))
     if controls:

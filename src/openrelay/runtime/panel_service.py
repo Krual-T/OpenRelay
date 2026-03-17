@@ -100,7 +100,7 @@ class RuntimePanelService:
         rows, _cursor = await self.runtime_service.list_sessions(
             session.backend,
             ListSessionsRequest(
-                limit=max(BACKEND_SESSION_CARD_PAGE_SIZE * max(page, 1) + 1, BACKEND_SESSION_CARD_PAGE_SIZE + 1),
+                limit=max(BACKEND_SESSION_CARD_PAGE_SIZE * (max(page, 1) + 2), BACKEND_SESSION_CARD_PAGE_SIZE * 5) + 1,
                 cwd=session.cwd,
             ),
         )
@@ -157,6 +157,7 @@ class RuntimePanelService:
         card = build_backend_session_list_card(
             {
                 "page": max(page, 1),
+                "known_page_count": max((len(sessions) + BACKEND_SESSION_CARD_PAGE_SIZE - 1) // BACKEND_SESSION_CARD_PAGE_SIZE, max(page, 1)),
                 "has_previous": page > 1,
                 "has_next": start + BACKEND_SESSION_CARD_PAGE_SIZE < len(sessions),
                 "backend_name": session.backend,
