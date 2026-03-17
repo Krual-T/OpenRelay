@@ -11,9 +11,13 @@ from .events import (
     AssistantDeltaEvent,
     BackendNoticeEvent,
     PlanUpdatedEvent,
+    RateLimitsUpdatedEvent,
     ReasoningDeltaEvent,
     RuntimeEvent,
     SessionStartedEvent,
+    SkillsUpdatedEvent,
+    ThreadDiffUpdatedEvent,
+    ThreadStatusUpdatedEvent,
     ToolCompletedEvent,
     ToolProgressEvent,
     ToolStartedEvent,
@@ -79,6 +83,15 @@ class LiveTurnReducer:
                     self.state.pending_approval = None
             case UsageUpdatedEvent(usage=usage):
                 self.state.usage = usage
+            case ThreadStatusUpdatedEvent(status=status):
+                self.state.thread_status = status
+            case RateLimitsUpdatedEvent(rate_limits=rate_limits):
+                self.state.rate_limits = dict(rate_limits)
+            case SkillsUpdatedEvent(version=version, skills=skills):
+                self.state.skills_version = version
+                self.state.available_skills = skills
+            case ThreadDiffUpdatedEvent(diff_id=diff_id):
+                self.state.last_diff_id = diff_id
             case TurnCompletedEvent(final_text=final_text, usage=usage):
                 self.state.status = "completed"
                 self.state.pending_approval = None

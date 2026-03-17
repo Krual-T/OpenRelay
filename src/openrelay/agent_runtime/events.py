@@ -90,6 +90,27 @@ class UsageUpdatedEvent(RuntimeEvent):
 
 
 @dataclass(slots=True, frozen=True)
+class ThreadStatusUpdatedEvent(RuntimeEvent):
+    status: str = ""
+
+
+@dataclass(slots=True, frozen=True)
+class RateLimitsUpdatedEvent(RuntimeEvent):
+    rate_limits: dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass(slots=True, frozen=True)
+class SkillsUpdatedEvent(RuntimeEvent):
+    version: str = ""
+    skills: tuple[str, ...] = ()
+
+
+@dataclass(slots=True, frozen=True)
+class ThreadDiffUpdatedEvent(RuntimeEvent):
+    diff_id: str = ""
+
+
+@dataclass(slots=True, frozen=True)
 class TurnCompletedEvent(RuntimeEvent):
     final_text: str = ""
     usage: UsageSnapshot | None = None

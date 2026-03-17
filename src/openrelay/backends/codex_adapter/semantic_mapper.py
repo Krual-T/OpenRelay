@@ -119,8 +119,7 @@ class CodexSemanticMapper:
             terminal = self._map_terminal(envelope, descriptor, state)
             return () if terminal is None else (terminal,)
         if descriptor.policy == "system":
-            self._update_system_snapshot(envelope, descriptor, state)
-            return ()
+            return self._map_system_event(envelope, descriptor, state)
         return (self._observe_event(envelope, descriptor, title=f"Unexpected backend event: {envelope.method}"),)
 
     def _map_session_started(self, envelope: CodexRawEventEnvelope, descriptor: CodexEventDescriptor) -> CodexSemanticEvent:
@@ -332,6 +331,8 @@ class CodexSemanticMapper:
             self._reasoning_state(state, item_id)
             return ()
         if item_type == "userMessage":
+            return ()
+        if item_type in {"agentMessage", "plan"}:
             return ()
         tool = self._to_tool_state(item, status="running", state=state)
         if tool is None:
@@ -567,19 +568,67 @@ class CodexSemanticMapper:
             },
         )
 
-    def _update_system_snapshot(self, envelope: CodexRawEventEnvelope, descriptor: CodexEventDescriptor, state: Any) -> None:
+    def _map_system_event(
+        self,
+        envelope: CodexRawEventEnvelope,
+        descriptor: CodexEventDescriptor,
+        state: Any,
+    ) -> tuple[CodexSemanticEvent, ...]:
+        payload = self._update_system_snapshot(envelope, descriptor, state)
+        if not payload:
+            return ()
+        dedupe_parts = [descriptor.semantic_name, envelope.thread_id, envelope.turn_id]
+        if descriptor.semantic_name == "thread.status.changed":
+            dedupe_parts.append(str(payload.get("status") or ""))
+        elif descriptor.semantic_name == "account.rate_limits.updated":
+            dedupe_parts.append(str(payload.get("rate_limits") or {}))
+        elif descriptor.semantic_name == "skills.changed":
+            dedupe_parts.append(str(payload.get("version") or ""))
+            dedupe_parts.append(str(payload.get("skills") or ()))
+        elif descriptor.semantic_name == "thread.diff.updated":
+            dedupe_parts.append(str(payload.get("diff_id") or ""))
+        return (
+            CodexSemanticEvent(
+                semantic_name=descriptor.semantic_name,
+                policy=descriptor.policy,
+                source_method=envelope.method,
+                source_route=envelope.route,
+                thread_id=envelope.thread_id,
+                turn_id=envelope.turn_id,
+                dedupe_key=":".join(dedupe_parts),
+                payload=payload,
+            ),
+        )
+
+    def _update_system_snapshot(
+        self,
+        envelope: CodexRawEventEnvelope,
+        descriptor: CodexEventDescriptor,
+        state: Any,
+    ) -> dict[str, Any]:
         snapshot = getattr(state, "system_snapshot", None)
         if snapshot is None:
-            return
+            snapshot = {}
         if descriptor.semantic_name == "thread.status.changed":
-            snapshot["thread_status"] = _normalize_thread_status(envelope.params.get("status"))
-        elif descriptor.semantic_name == "thread.diff.updated":
-            snapshot["last_diff_id"] = str(envelope.params.get("diffId") or envelope.params.get("diff_id") or "")
-        elif descriptor.semantic_name == "skills.changed":
-            snapshot["skills_version"] = str(envelope.params.get("version") or envelope.params.get("skillsVersion") or "")
-        elif descriptor.semantic_name == "account.rate_limits.updated":
+            status = _normalize_thread_status(envelope.params.get("status"))
+            snapshot["thread_status"] = status
+            return {"status": status}
+        if descriptor.semantic_name == "thread.diff.updated":
+            diff_id = str(envelope.params.get("diffId") or envelope.params.get("diff_id") or "")
+            snapshot["last_diff_id"] = diff_id
+            return {"diff_id": diff_id}
+        if descriptor.semantic_name == "skills.changed":
+            version = str(envelope.params.get("version") or envelope.params.get("skillsVersion") or "")
+            skills = envelope.params.get("skills") if isinstance(envelope.params.get("skills"), list) else []
+            normalized_skills = tuple(str(skill) for skill in skills if str(skill).strip())
+            snapshot["skills_version"] = version
+            snapshot["skills"] = normalized_skills
+            return {"version": version, "skills": normalized_skills}
+        if descriptor.semantic_name == "account.rate_limits.updated":
             rate_limits = envelope.params.get("rateLimits") if isinstance(envelope.params.get("rateLimits"), dict) else envelope.params
             snapshot["rate_limits_payload"] = dict(rate_limits)
+            return {"rate_limits": dict(rate_limits)}
+        return {}
 
     def _usage_dedupe_key(self, envelope: CodexRawEventEnvelope, usage: UsageSnapshot) -> str:
         return (
