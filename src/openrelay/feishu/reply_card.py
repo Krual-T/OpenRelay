@@ -633,7 +633,7 @@ def build_process_panel_text(state: dict[str, Any] | None) -> str:
     return render_transcript_markdown(state)
 
 
-def render_transcript_markdown(state: dict[str, Any] | None) -> str:
+def render_transcript_markdown(state: dict[str, Any] | None, *, include_summary: bool = True) -> str:
     if not isinstance(state, dict):
         return ""
     history_items = state.get("transcript_items") if isinstance(state.get("transcript_items"), list) else state.get("history_items")
@@ -652,7 +652,7 @@ def render_transcript_markdown(state: dict[str, Any] | None) -> str:
         blocks.append(f"- Worked for {worked_for}")
     if reasoning_text and not rendered_history:
         blocks.append(f"---\n\n💭 **Thinking...**\n\n{reasoning_text}")
-    if summary_text:
+    if include_summary and summary_text:
         blocks.append(f"---\n\n{summary_text}")
 
     transcript = "\n\n".join(block for block in blocks if block).strip()
@@ -786,15 +786,14 @@ def build_complete_card(
     final_answer = extracted_answer or raw_text
     rendered_answer = optimize_markdown_style(final_answer)
 
-    if not transcript_content:
-        transcript_blocks: list[str] = []
-        if final_panel_text:
-            transcript_blocks.append(final_panel_text)
-        if rendered_answer:
-            transcript_blocks.append(rendered_answer if not transcript_blocks else f"---\n\n{rendered_answer}")
-        transcript_content = "\n\n".join(block for block in transcript_blocks if block).strip() or rendered_answer
-
-    elements: list[dict[str, Any]] = [{"tag": "markdown", "content": transcript_content}]
+    if transcript_content:
+        elements: list[dict[str, Any]] = [{"tag": "markdown", "content": transcript_content}]
+    else:
+        elements = []
+        process_panel = _build_process_panel_element(final_panel_text, panel_title)
+        if process_panel is not None:
+            elements.append(process_panel)
+        elements.append({"tag": "markdown", "content": rendered_answer})
 
     summary = str(summary_text or "").strip() or strip_markdown_for_summary(final_answer)
     config: dict[str, Any] = {"wide_screen_mode": True, "update_multi": True}

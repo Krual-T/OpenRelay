@@ -266,3 +266,32 @@ def test_live_turn_presenter_interleaves_plan_history_with_command_timeline() ->
     second_snapshot = presenter.build_snapshot(second_state, previous=first_snapshot)
 
     assert [item["type"] for item in second_snapshot["transcript_items"]] == ["command", "plan", "command", "plan"]
+
+
+def test_live_turn_presenter_builds_final_card_with_collapsed_execution_log() -> None:
+    presenter = LiveTurnPresenter()
+    state = LiveTurnViewModel(
+        backend="codex",
+        session_id="relay_1",
+        native_session_id="thread_1",
+        turn_id="turn_1",
+        status="completed",
+        assistant_text="最终答案",
+        tools=(
+            ToolState(
+                tool_id="cmd_1",
+                kind="command",
+                title="pytest",
+                status="completed",
+                preview="pytest -q",
+                detail="1 passed",
+            ),
+        ),
+    )
+
+    card = presenter.build_final_card(state)
+
+    assert card["body"]["elements"][0]["tag"] == "collapsible_panel"
+    assert card["body"]["elements"][0]["header"]["title"]["content"] == "Execution Log"
+    assert "Ran" in card["body"]["elements"][0]["elements"][0]["content"]
+    assert card["body"]["elements"][1] == {"tag": "markdown", "content": "最终答案"}
