@@ -46,7 +46,7 @@ def test_build_streaming_card_json_keeps_single_streaming_element_when_answer_st
     assert card["config"]["streaming_mode"] is True
     assert card["config"]["summary"]["content"] == DEFAULT_THINKING_TEXT
     assert card["body"]["elements"][0]["element_id"] == STREAMING_ELEMENT_ID
-    assert "🔵 **Explored**" in card["body"]["elements"][0]["content"]
+    assert "🔵 Explored" in card["body"]["elements"][0]["content"]
     assert "#### Answer\n找到结果。" in card["body"]["elements"][0]["content"]
     assert card["body"]["elements"][1]["element_id"] == "loading_icon"
 
@@ -62,8 +62,8 @@ def test_build_streaming_content_prefers_partial_text_then_reasoning() -> None:
             "started_at": "2026-03-11T00:00:00+00:00",
         }
     )
-    assert "• **Thinking**" in reasoning_content
-    assert "- 先看代码" in reasoning_content
+    assert "• Thinking" in reasoning_content
+    assert "└ 先看代码" in reasoning_content
     assert build_streaming_content({}) == ""
 
 
@@ -86,10 +86,10 @@ def test_build_streaming_content_returns_answer_only_after_answer_starts() -> No
         }
     )
 
-    assert "🔵 **Explored**" in content
+    assert "🔵 Explored" in content
     assert "---" in content
     assert content.endswith("找到结果，准备整理。")
-    assert content.index("🔵 **Explored**") < content.index("---")
+    assert content.index("🔵 Explored") < content.index("---")
 
 
 def test_build_streaming_content_interleaves_summary_blocks_with_history_items() -> None:
@@ -120,10 +120,10 @@ def test_build_streaming_content_interleaves_summary_blocks_with_history_items()
         }
     )
 
-    assert "🔵 **Explored**" in content
+    assert "🔵 Explored" in content
     assert "---\n\n第一段总结" in content
-    assert "🟢 **Ran**" in content
-    assert "- `sed -n '1,10p' src/openrelay/runtime/live.py`" in content
+    assert "🟢 Ran" in content
+    assert "🟢 Ran `sed -n '1,10p' src/openrelay/runtime/live.py`" in content
     assert "---\n\n第二段总结" in content
 
 
@@ -151,8 +151,8 @@ def test_build_streaming_content_keeps_summary_and_partial_text_in_one_transcrip
     )
 
     assert "---\n\n已经确认 reply_card 是入口。" in content
-    assert "🟢 **Ran**" in content
-    assert "- `git status --short`" in content
+    assert "🟢 Ran" in content
+    assert "🟢 Ran `git status --short`" in content
     assert content.endswith("---\n\n下一步检查 streaming session 的更新路径。")
 
 
@@ -174,11 +174,10 @@ def test_build_streaming_content_marks_failed_command_with_red_dot() -> None:
         }
     )
 
-    assert "🔴 **Ran**" in content
-    assert "- `pytest`" in content
-    assert "- exit 1" in content
-    assert "- `1 failed`" in content
-    assert "- `AssertionError`" in content
+    assert "🔴 Ran `pytest`" in content
+    assert "├ exit 1" in content
+    assert "├ `1 failed`" in content
+    assert "└ `AssertionError`" in content
 
 
 def test_build_streaming_content_renders_web_search_as_blue_exploration() -> None:
@@ -199,9 +198,9 @@ def test_build_streaming_content_renders_web_search_as_blue_exploration() -> Non
         }
     )
 
-    assert "🔵 **Searched**" in content
-    assert "- Search March 11 2026 AI news Reuters generative AI" in content
-    assert "- Search site:techcrunch.com AI March 11 2026" in content
+    assert "🔵 Searched" in content
+    assert "├ Search March 11 2026 AI news Reuters generative AI" in content
+    assert "└ Search site:techcrunch.com AI March 11 2026" in content
 
 
 def test_build_streaming_content_renders_plan_with_static_purple_bullets_and_strikethrough() -> None:
@@ -222,10 +221,10 @@ def test_build_streaming_content_renders_plan_with_static_purple_bullets_and_str
         }
     )
 
-    assert "🟣 **Plan**" in content
-    assert "- 🟣 ~~`completed` Inspect runtime~~" in content
-    assert "- 🟣 `in_progress` Adjust Feishu rendering" in content
-    assert "- 🟣 `pending` Verify snapshot output" in content
+    assert "🟣 Plan" in content
+    assert "├ 🟣 ~~`completed` Inspect runtime~~" in content
+    assert "├ 🟣 `in_progress` Adjust Feishu rendering" in content
+    assert "└ 🟣 `pending` Verify snapshot output" in content
 
 
 def test_build_streaming_content_renders_unexpected_backend_event_payload() -> None:
@@ -287,7 +286,7 @@ async def test_streaming_session_switches_to_answer_card_when_answer_starts(monk
 
     assert len(calls) == 1
     assert calls[0][0] == "update_content"
-    assert "🔵 **Explored**" in str(calls[0][1])
+    assert "🔵 Explored" in str(calls[0][1])
     assert "#### Answer\n找到结果。" in str(calls[0][1])
     assert session.state["current_content"].endswith("#### Answer\n找到结果。")
     assert session.state["card_signature"][0] == "plain"

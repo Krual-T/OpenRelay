@@ -478,55 +478,6 @@ def _streaming_history_bullet(item: dict[str, Any]) -> str:
     return "•"
 
 
-def _streaming_item_detail_lines(item: dict[str, Any]) -> list[str]:
-    item_type = str(item.get("type") or "").strip()
-    if item_type == "command":
-        lines: list[str] = []
-        command_value = str(item.get("command") or "").strip()
-        mode = str(item.get("mode") or "").strip()
-        if mode == "exploration":
-            detail = _describe_exploration_command(command_value)
-            if detail:
-                lines.append(detail)
-        else:
-            command_text = _sanitize_code_inline(command_value)
-            if command_text:
-                lines.append(command_text)
-        exit_code = item.get("exit_code")
-        if exit_code is not None and str(item.get("state") or "") != "running" and int(exit_code) != 0:
-            lines.append(f"exit {exit_code}")
-        lines.extend(_split_detail_lines(item.get("output_preview"), code=True))
-        return lines
-    if item_type == "web_search":
-        return _describe_web_search_queries(item)
-    if item_type == "reasoning":
-        return _split_detail_lines(clean_reasoning_prefix(item.get("text")))
-    if item_type == "file_change":
-        return _describe_file_changes(item)
-    if item_type == "plan":
-        steps = item.get("steps")
-        if isinstance(steps, list):
-            rendered_steps = []
-            for step in steps:
-                if not isinstance(step, dict):
-                    continue
-                rendered = _render_plan_step(item, step)
-                if rendered:
-                    rendered_steps.append(rendered)
-            if rendered_steps:
-                return rendered_steps
-        return _split_detail_lines(item.get("detail"))
-    if item_type == "collab":
-        lines = []
-        targets = _describe_collab_targets(item)
-        lines.extend(f"Agent `{target}`" for target in targets)
-        prompt = str(item.get("prompt") or "").strip()
-        if prompt:
-            lines.extend(_split_detail_lines(prompt))
-        return lines
-    return _split_detail_lines(item.get("detail"))
-
-
 def _render_streaming_history_item(item: dict[str, Any]) -> list[str]:
     item_type = str(item.get("type") or "").strip()
     if not item_type:
@@ -543,10 +494,72 @@ def _render_streaming_history_item(item: dict[str, Any]) -> list[str]:
     title = _normalize_history_title(item)
     if not title:
         return []
-    line = f"{_streaming_history_bullet(item)} **{title}**"
-    details = _streaming_item_detail_lines(item)
-    lines = [line]
-    lines.extend(f"- {detail}" for detail in details if detail)
+
+    lines = [f"{_streaming_history_bullet(item)} {title}"]
+    detail_entries: list[list[str]] = []
+
+    if item_type == "command":
+        command_value = str(item.get("command") or "").strip()
+        mode = str(item.get("mode") or "").strip()
+        command_text = _sanitize_code_inline(command_value)
+        if mode == "exploration":
+            detail = _describe_exploration_command(command_value)
+            if detail:
+                detail_entries.append([detail])
+        elif command_text:
+            lines[0] = f"{lines[0]} {command_text}"
+        exit_code = item.get("exit_code")
+        if exit_code is not None and str(item.get("state") or "") != "running" and int(exit_code) != 0:
+            detail_entries.append([f"exit {exit_code}"])
+        output_preview_lines = _split_detail_lines(item.get("output_preview"), code=True)
+        if output_preview_lines:
+            detail_entries.extend([[line] for line in output_preview_lines])
+        _append_tree_entries(lines, detail_entries)
+        return lines
+
+    if item_type == "web_search":
+        detail_entries.extend([[line] for line in _describe_web_search_queries(item)])
+        _append_tree_entries(lines, detail_entries)
+        return lines
+
+    if item_type == "reasoning":
+        detail_entries.extend([[line] for line in _split_detail_lines(clean_reasoning_prefix(item.get("text")))])
+        _append_tree_entries(lines, detail_entries)
+        return lines
+
+    if item_type == "file_change":
+        detail_entries.extend([[line] for line in _describe_file_changes(item)])
+        _append_tree_entries(lines, detail_entries)
+        return lines
+
+    if item_type == "plan":
+        steps = item.get("steps")
+        if isinstance(steps, list):
+            for step in steps:
+                if not isinstance(step, dict):
+                    continue
+                rendered_step = _render_plan_step(item, step)
+                if rendered_step:
+                    detail_entries.append([rendered_step])
+        if not detail_entries:
+            detail_entries.extend([[line] for line in _split_detail_lines(item.get("detail"))])
+        _append_tree_entries(lines, detail_entries)
+        return lines
+
+    if item_type == "collab":
+        targets = _describe_collab_targets(item)
+        if targets:
+            lines[0] = f"{lines[0]} `{targets[0]}`"
+            for target in targets[1:]:
+                detail_entries.append([f"Agent `{target}`"])
+        prompt = str(item.get("prompt") or "").strip()
+        if prompt:
+            detail_entries.extend([[line] for line in _split_detail_lines(prompt)])
+        _append_tree_entries(lines, detail_entries)
+        return lines
+
+    detail_entries.extend([[line] for line in _split_detail_lines(item.get("detail"))])
+    _append_tree_entries(lines, detail_entries)
     return lines
 
 
