@@ -171,9 +171,9 @@ def test_live_turn_presenter_renders_system_state_items() -> None:
     system_items = [item for item in snapshot["history_items"] if item["type"] == "system"]
 
     assert any(item["title"] == "Thread status" and item["detail"] == "active" for item in system_items)
-    assert any(item["title"] == "Rate limits" and "codex: 37%" in item["detail"] for item in system_items)
     assert any(item["title"] == "Available skills" and "skills-v3: search, apply_patch" == item["detail"] for item in system_items)
     assert any(item["title"] == "Thread diff" and item["detail"] == "diff_9" for item in system_items)
+    assert all(item["title"] != "Rate limits" for item in system_items)
 
 
 def test_live_turn_presenter_renders_terminal_interaction_item() -> None:
