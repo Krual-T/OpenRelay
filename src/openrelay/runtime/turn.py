@@ -420,7 +420,6 @@ class BackendTurnSession:
         if self.streaming is None or not self.streaming.has_started():
             return
         try:
-            process_text = self.presenter.build_process_text(self.live_state)
-            await self.streaming.close(self.presenter.build_reply_card("已停止当前回复。", process_text=process_text))
+            await self.streaming.close(self.presenter.build_final_card(self.live_state, fallback_text="已停止当前回复。"))
         except Exception:
             LOGGER.exception("streaming cancel close failed for execution_key=%s", self.execution_key)

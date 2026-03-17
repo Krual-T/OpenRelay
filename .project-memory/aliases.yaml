@@ -50,6 +50,9 @@ aliases:
   为什么 panel 翻页要更新原卡:
     id: single_card_navigation_updates_original_message
     kind: decision
+  为什么飞书 live turn 改成 transcript-first:
+    id: feishu_live_turn_transcript_first
+    kind: decision
   哪些部分是固定的 哪些部分是打字机:
     id: feishu_streaming_reply_card_structure
     kind: fact
