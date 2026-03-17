@@ -166,13 +166,13 @@ flowchart TB
 当前内置 backend：
 
 - `codex`
-  - 描述位于 [`src/openrelay/backends/registry.py`](/home/Shaokun.Tang/Projects/openrelay/src/openrelay/backends/registry.py)
-  - adapter 位于 [`src/openrelay/backends/codex_adapter/backend.py`](/home/Shaokun.Tang/Projects/openrelay/src/openrelay/backends/codex_adapter/backend.py)
-  - 通过 `CodexSessionClient + CodexRpcTransport + CodexProtocolMapper` 接到 `codex app-server`
+    - 描述位于 [`src/openrelay/backends/registry.py`](/home/Shaokun.Tang/Projects/openrelay/src/openrelay/backends/registry.py)
+    - adapter 位于 [`src/openrelay/backends/codex_adapter/backend.py`](/home/Shaokun.Tang/Projects/openrelay/src/openrelay/backends/codex_adapter/backend.py)
+    - 通过 `CodexSessionClient + CodexRpcTransport + CodexProtocolMapper` 接到 `codex app-server`
 - `claude`
-  - adapter 位于 [`src/openrelay/backends/claude_adapter/backend.py`](/home/Shaokun.Tang/Projects/openrelay/src/openrelay/backends/claude_adapter/backend.py)
-  - 当前通过 `ClaudeSessionClient + ClaudeCliTransport + ClaudeResponseMapper` 接到 CLI
-  - 能力集仍然最小，更多是同构接口占位，而不是完整 parity
+    - adapter 位于 [`src/openrelay/backends/claude_adapter/backend.py`](/home/Shaokun.Tang/Projects/openrelay/src/openrelay/backends/claude_adapter/backend.py)
+    - 当前通过 `ClaudeSessionClient + ClaudeCliTransport + ClaudeResponseMapper` 接到 CLI
+    - 能力集仍然最小，更多是同构接口占位，而不是完整 parity
 
 backend 只需要实现 `AgentBackend` 协议，不允许把 provider method / item type 上浮到 runtime 主层。
 
@@ -389,12 +389,12 @@ sequenceDiagram
 当前两个内置 backend 的状态：
 
 - `codex`
-  - 是当前完整主路径
-  - 支持 session list / read / compact / reasoning stream / plan update / command approval / file change approval
+    - 是当前完整主路径
+    - 支持 session list / read / compact / reasoning stream / plan update / command approval / file change approval
 - `claude`
-  - 已接入统一接口
-  - 仍以最小 capability 运行
-  - 更多是为同构 runtime 主线预留，而不是等价替代 codex
+    - 已接入统一接口
+    - 仍以最小 capability 运行
+    - 更多是为同构 runtime 主线预留，而不是等价替代 codex
 
 ## 10. 当前架构特征
 
