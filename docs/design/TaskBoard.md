@@ -12,6 +12,7 @@
   - 首页已补齐项目定位、核心卖点、架构分层、快速开始、命令面与 backend 状态。
   - 文案已明确当前主线是 `Codex app-server`，`Claude` 仍是最小适配状态，避免宣传口径和真实能力脱节。
   - 首页已弱化 `main/develop` 这类实现细节，改为强调“按目录承接不同项目的 Codex 定义、skills 与能力边界”这一真实优势，并补充与 OpenClaw 风格方案的取舍对比。
+  - 首页已去掉对 webhook 的宣传，改为强调飞书长连接主路径，以及“不同目录承接不同 agent 能力、可插拔 skills 与飞书文档相关集成”这类真实使用场景。
 - **主要证据**：
   - `README.md`
   - `static/openrelay_logo.png`
