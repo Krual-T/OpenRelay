@@ -258,6 +258,68 @@ class CodexConsumptionMode(StrEnum):
 - `_map_turn_terminal(...)`
 - `_map_observe_event(...)`
 
+### 7.1 按消息类型拆开的 mapper 责任
+
+为了避免后续又回到“一个大分支里补特判”，`CodexSemanticMapper` 内部应该按消息职责分组，而不是按“哪里报过 bug”分组。
+
+建议保持下面这组稳定边界：
+
+| method / 语义 | 入口方法 | 主要职责 | 注意点 |
+| --- | --- | --- | --- |
+| `thread/started` / `session.started` | `_map_session_started()` | 提取 native session id/title，建立 thread 绑定语义。 | 不要混入 turn 初始化逻辑。 |
+| `turn/started` / `turn.started` | `_map_turn_started()` | 标记 turn 生命周期开始。 | 只负责 turn 级 identity，不做 item 初始化。 |
+| `item/agentMessage/delta` / `assistant.delta` | `_map_assistant_delta()` | 聚合 assistant 文本增量并投影为实时正文。 | 去重 key 必须包含 `item_id + delta`。 |
+| `item/reasoning/textDelta`、`item/reasoning/summaryTextDelta` / `reasoning.delta` | `_map_reasoning()` | 按 content/summary 两条子通道聚合 reasoning 文本。 | 不能把 content 与 summary 混成一个索引空间。 |
+| `item/plan/delta`、`turn/plan/updated` / `plan.delta`、`plan.updated` | `_map_plan()` | 处理非结构化计划增量与结构化计划列表。 | `item/plan/delta` 更接近展示流，不应伪装成结构化 plan step。 |
+| `item/commandExecution/outputDelta`、`item/fileChange/outputDelta`、`item/mcpToolCall/progress` / `tool.progress` | `_map_tool_progress()` | 聚合工具过程输出。 | 不同工具类型要分开存储，避免 command/file-change 串流。 |
+| `serverRequest/resolved` / `approval.resolved` | `_map_approval_resolved()` | 关闭 approval / server request 等待态。 | 只处理“已解决”，request 本身仍由 turn stream 闭环。 |
+| `item/started` / `item.started` | `_map_item_started()` | 基于 `item.type` 决定这是 tool started、plan started、ignore 还是 observe。 | `userMessage` 必须直接忽略；未知 `item.type` 要完整 observe。 |
+| `item/completed` / `item.completed` | `_map_item_completed()` | 基于 `item.type` 投影出 assistant completed、tool completed、plan updated 等。 | 同语义不能和 delta 路径重复消费；未知类型要完整 observe。 |
+| `thread/tokenUsage/updated` / `usage.updated` | `_extract_usage()` + `usage.updated` 分支 | 提取 token/context usage 并更新状态。 | schema 不稳定时宁可不产出事件，也不要伪造 usage。 |
+| `turn/completed`、`error` / terminal | `_map_terminal()` | 统一生成 turn completed / failed / interrupted 收口事件。 | 需要显式保证同一 turn 只关闭一次。 |
+| `account/rateLimits/updated`、`thread/status/changed`、`skills/changed`、`turn/diff/updated` / 系统快照 | `_update_system_snapshot()` | 写入系统状态快照，供后续上层状态接入。 | 不要在这个方法里偷偷产出 render 事件。 |
+| 未注册 method 或未知 item type | `_observe_event()` | 以 backend notice 形式展示完整 payload。 | 这是明确策略，不是异常兜底。 |
+
+### 7.2 `item/started` / `item/completed` 的分流规则
+
+`item/*` 是 typed contract 里最容易“同语义重复消费”的地方，因为它既是生命周期事件，又承载真实 item 数据。
+
+建议明确分成 4 类：
+
+| `item.type` | `item/started` | `item/completed` | 处理原则 |
+| --- | --- | --- | --- |
+| `userMessage` | ignore | ignore | 这是用户输入回声，不能驱动 UI 或状态机。 |
+| `assistantMessage` | 通常不单独产出 render 事件 | 产出 assistant 完成态 | 增量正文主要来自 `item/agentMessage/delta`，完成态只在 completed 收口一次。 |
+| `commandExecution`、`fileChange`、`mcpToolCall` | 产出 tool.started | 产出 tool.completed | 过程输出由各自的 `outputDelta/progress` 路径提供，开始与结束由 lifecycle 提供。 |
+| `plan` | 可选择 observe 或 started 占位 | 产出 `plan.updated` | 避免和 `turn/plan/updated` 重复消费，需要以语义指纹去重。 |
+| `reasoning` | 通常不单独展示 | 可根据 summary/content 聚合结果决定是否补完成态 | 不应重复追加已通过 delta 路径展示过的内容。 |
+| 未知类型 | observe | observe | 完整展示原始 payload，便于后续分类。 |
+
+这里的核心原则不是“尽量都接”，而是：
+
+- 增量路径负责流式内容
+- 生命周期路径负责开始/结束信号
+- 同一语义只允许进入主状态机一次
+
+### 7.3 系统消息后续要接到哪里
+
+当前 `account/rateLimits/updated`、`thread/status/changed`、`skills/changed`、`turn/diff/updated` 只写入 `CodexTurnState.system_snapshot` 一类的内部状态，还没有真正进入上层可消费状态。
+
+下一步实现时，建议分别接到下面这些职责位：
+
+| 消息 | 建议接入点 | 作用 |
+| --- | --- | --- |
+| `thread/status/changed` | `CodexTurnStream` 所维护的 turn/thread 活跃状态，必要时透出到 runtime 查询面 | 让上层知道当前 thread 是 active 还是 idle。 |
+| `account/rateLimits/updated` | runtime status 查询或面板数据源 | 让用户能看到限额而不是只存在底层快照。 |
+| `skills/changed` | backend capability snapshot | 让后续技能面或诊断输出可读取最新能力列表。 |
+| `turn/diff/updated` | transcript / history sync 入口 | 为后续真实历史同步留正式接点。 |
+
+这里不要再用含糊词汇描述。实际含义就是：
+
+- 现在这些消息“看到了”
+- 但上层还“拿不到”
+- 后续要把它们接到明确的状态出口上
+
 这里承接当前 `mapper.py` 里以下方法的真实业务逻辑：
 
 - `_map_agent_delta()`

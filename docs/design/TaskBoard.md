@@ -47,6 +47,7 @@
   - 官方 `0.115.0` external app-server transport 已停止发 `codex/event/*`。
   - 本机已升级到 `codex-cli 0.115.0` 并抓到真实 external typed 事件样本：
     `thread/status/changed`、`turn/started`、`item/started`、`item/completed`、`item/agentMessage/delta`、`thread/tokenUsage/updated`、`account/rateLimits/updated`、`turn/completed`
+  - 设计文档已补齐 `codex >= 0.115.0` external typed contract 的全量消息矩阵，逐条写明作用、分类、当前状态与实测情况。
   - `docs/design/codex-app-server-consumption-comparison.md`
   - `docs/design/codex-app-server-event-consumption-plan.md`
   - `docs/design/codex-app-server-event-consumption-detailed-design.md`
