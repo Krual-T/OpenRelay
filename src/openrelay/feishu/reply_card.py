@@ -1020,9 +1020,7 @@ def build_streaming_content(live_state: dict[str, Any] | None = None) -> str:
     rendered_history = _render_streaming_history_items(history_items)
     partial_text = str(live_state.get("partial_text") or "").strip()
     partial_reasoning, partial_answer = split_reasoning_text(partial_text)
-    summary_text = optimize_markdown_style(
-        partial_answer or strip_reasoning_tags(partial_text)
-    ).strip()
+    answer_text = optimize_markdown_style(partial_answer).strip()
     reasoning_text = clean_reasoning_prefix(partial_reasoning).strip()
 
     blocks: list[str] = []
@@ -1030,8 +1028,8 @@ def build_streaming_content(live_state: dict[str, Any] | None = None) -> str:
         blocks.append(rendered_history)
     if reasoning_text and not rendered_history:
         blocks.append(f"---\n\n💭 **Thinking...**\n\n{reasoning_text}")
-    if summary_text:
-        blocks.append(f"---\n\n{summary_text}")
+    if answer_text:
+        blocks.append(f"---\n\n{answer_text}")
     content = "\n\n".join(block for block in blocks if block).strip()
     if any(
         isinstance(item, dict) and item.get("type") == "plan" for item in history_items

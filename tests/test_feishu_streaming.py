@@ -164,6 +164,20 @@ def test_build_streaming_content_keeps_summary_and_partial_text_in_one_transcrip
     assert content.endswith("---\n\n下一步检查 streaming session 的更新路径。")
 
 
+def test_build_streaming_content_keeps_history_summary_separate_from_partial_answer() -> None:
+    content = build_streaming_content(
+        {
+            "history_items": [
+                {"type": "summary", "state": "completed", "text": "上一段总结"},
+            ],
+            "partial_text": "# Final Answer\n新的正文",
+        }
+    )
+
+    assert content.startswith("---\n\n上一段总结")
+    assert content.endswith("---\n\n#### Final Answer\n新的正文")
+
+
 def test_build_streaming_content_marks_failed_command_with_red_dot() -> None:
     content = build_streaming_content(
         {
