@@ -185,10 +185,19 @@ def _render_diff_line(line: str, *, max_length: int) -> str:
     ):
         return _font("grey", shortened)
     if line.startswith("+"):
-        return _font("green", shortened)
+        return _render_diff_change_line("green", shortened)
     if line.startswith("-"):
-        return _font("red", shortened)
+        return _render_diff_change_line("red", shortened)
     return _font("wathet", shortened) if line.startswith("diff --git") else _escape(shortened)
+
+
+def _render_diff_change_line(color: str, text: str) -> str:
+    prefix = text[:1]
+    content = text[1:]
+    rendered_prefix = _text_tag(color, prefix)
+    if not content:
+        return rendered_prefix
+    return f"{rendered_prefix}&nbsp;{_font(color, content)}"
 
 
 def _render_output_line(line: str, *, max_length: int) -> str:
@@ -416,6 +425,13 @@ def _font(color: str | None, text: str) -> str:
     if color is None:
         return escaped
     return f"<font color='{color}'>{escaped}</font>"
+
+
+def _text_tag(color: str, text: str) -> str:
+    escaped = _escape(text)
+    if not escaped:
+        return ""
+    return f"<text_tag color='{color}'>{escaped}</text_tag>"
 
 
 def _escape(text: str) -> str:

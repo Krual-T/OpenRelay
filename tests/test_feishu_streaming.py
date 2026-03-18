@@ -210,8 +210,8 @@ def test_build_streaming_content_highlights_diff_output_with_codex_colors() -> N
     assert "<font color='grey'>---&nbsp;a/src/openrelay/feishu/reply_card.py</font>" in content
     assert "<font color='grey'>+++&nbsp;b/src/openrelay/feishu/reply_card.py</font>" in content
     assert "<font color='grey'>@@&nbsp;-1,2&nbsp;+1,2&nbsp;@@</font>" in content
-    assert "<font color='red'>-old&nbsp;line</font>" in content
-    assert "<font color='green'>+new&nbsp;line</font>" in content
+    assert "<text_tag color='red'>-</text_tag>&nbsp;<font color='red'>old&nbsp;line</font>" in content
+    assert "<text_tag color='green'>+</text_tag>&nbsp;<font color='green'>new&nbsp;line</font>" in content
 
 
 def test_build_streaming_content_preserves_output_indentation_without_code_fence() -> None:
