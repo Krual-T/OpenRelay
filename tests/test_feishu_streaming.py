@@ -228,8 +228,77 @@ def test_build_streaming_content_highlights_diff_output_with_codex_colors() -> N
     assert "<font color='grey'>---&nbsp;a/src/openrelay/feishu/reply_card.py</font>" in content
     assert "<font color='grey'>+++&nbsp;b/src/openrelay/feishu/reply_card.py</font>" in content
     assert "<font color='grey'>@@&nbsp;-1,2&nbsp;+1,2&nbsp;@@</font>" in content
-    assert "<text_tag color='red'>-</text_tag>&nbsp;<font color='red'>old&nbsp;line</font>" in content
-    assert "<text_tag color='green'>+</text_tag>&nbsp;<font color='green'>new&nbsp;line</font>" in content
+    assert "<text_tag color='red'>-</text_tag>" in content
+    assert "<font color='red'>old</font>" in content
+    assert "<font color='red'>&nbsp;</font>" in content
+    assert "<font color='red'>line</font>" in content
+    assert "<text_tag color='green'>+</text_tag>" in content
+    assert "<font color='green'>new</font>" in content
+    assert "<font color='green'>line</font>" in content
+
+
+def test_build_streaming_content_renders_full_diff_without_truncating_changed_lines() -> None:
+    content = build_streaming_content(
+        {
+            "history_items": [
+                {
+                    "type": "file_change",
+                    "state": "completed",
+                    "title": "Updated files",
+                    "changes": [
+                        {"path": "docs/edit-update-demo.txt", "kind": {"type": "add"}},
+                    ],
+                    "detail": (
+                        "diff --git a/docs/edit-update-demo.txt b/docs/edit-update-demo.txt\n"
+                        "new file mode 100644\n"
+                        "index 0000000..827d0d8\n"
+                        "--- /dev/null\n"
+                        "+++ b/docs/edit-update-demo.txt\n"
+                        "@@ -0,0 +1,3 @@\n"
+                        "+hello\n"
+                        "+world\n"
+                        "+done\n"
+                    ),
+                }
+            ]
+        }
+    )
+
+    assert "<font color='wathet'>diff&nbsp;--git&nbsp;a/docs/edit-update-demo.txt&nbsp;b/docs/edit-update-demo.txt</font>" in content
+    assert "<text_tag color='green'>+</text_tag><font color='green'>hello</font>" in content
+    assert "<text_tag color='green'>+</text_tag><font color='green'>world</font>" in content
+    assert "...&nbsp;+3&nbsp;lines" not in content
+
+
+def test_build_streaming_content_syntax_highlights_diff_lines_by_file_type() -> None:
+    content = build_streaming_content(
+        {
+            "history_items": [
+                {
+                    "type": "file_change",
+                    "state": "completed",
+                    "title": "Updated files",
+                    "changes": [
+                        {"path": "src/demo.py", "kind": {"type": "update"}},
+                    ],
+                    "detail": (
+                        "diff --git a/src/demo.py b/src/demo.py\n"
+                        "--- a/src/demo.py\n"
+                        "+++ b/src/demo.py\n"
+                        "@@ -1 +1 @@\n"
+                        "-print('old')\n"
+                        "+print('new')\n"
+                    ),
+                }
+            ]
+        }
+    )
+
+    assert "<text_tag color='red'>-</text_tag>" in content
+    assert "<text_tag color='green'>+</text_tag>" in content
+    assert "<font color='purple'>print</font>" in content
+    assert "<font color='green'>new</font>" in content
+    assert ">old</font>" in content
 
 
 def test_build_streaming_content_preserves_output_indentation_without_code_fence() -> None:
@@ -563,8 +632,8 @@ def test_build_streaming_content_renders_turn_diff_fallback_for_file_change() ->
     assert "=====output=====" in content
     assert "<font color='grey'>---&nbsp;a/tool-demo-edit.txt</font>" in content
     assert "<font color='grey'>+++&nbsp;b/tool-demo-edit.txt</font>" in content
-    assert "<text_tag color='red'>-</text_tag>&nbsp;<font color='red'>状态:&nbsp;旧值</font>" in content
-    assert "<text_tag color='green'>+</text_tag>&nbsp;<font color='green'>状态:&nbsp;已更新</font>" in content
+    assert "<text_tag color='red'>-</text_tag><font color='red'>状态:&nbsp;旧值</font>" in content
+    assert "<text_tag color='green'>+</text_tag><font color='green'>状态:&nbsp;已更新</font>" in content
 
 
 def test_build_streaming_content_renders_unexpected_backend_event_payload() -> None:

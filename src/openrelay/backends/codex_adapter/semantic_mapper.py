@@ -305,6 +305,15 @@ class CodexSemanticMapper:
         storage = state.file_change_output_by_id if envelope.method == "item/fileChange/outputDelta" else state.command_output_by_id
         delta = self._delta(envelope.params)
         storage[envelope.item_id] = f"{storage.get(envelope.item_id, '')}{delta}"
+        if envelope.method == "item/fileChange/outputDelta":
+            LOGGER.info(
+                "file change output delta thread_id=%s turn_id=%s item_id=%s delta=%r aggregated=%r",
+                envelope.thread_id,
+                envelope.turn_id,
+                envelope.item_id,
+                delta,
+                storage[envelope.item_id],
+            )
         return CodexSemanticEvent(
             semantic_name="tool.progress",
             policy=descriptor.policy,
@@ -629,6 +638,13 @@ class CodexSemanticMapper:
             return {"status": status}
         if descriptor.semantic_name == "thread.diff.updated":
             diff = str(envelope.params.get("diff") or "")
+            LOGGER.info(
+                "thread diff updated thread_id=%s turn_id=%s has_diff=%s diff_preview=%r",
+                envelope.thread_id,
+                envelope.turn_id,
+                bool(diff.strip()),
+                diff[:200],
+            )
             snapshot["latest_diff"] = diff
             return {"diff": diff}
         if descriptor.semantic_name == "skills.changed":

@@ -241,6 +241,41 @@ def test_live_turn_presenter_uses_latest_turn_diff_when_file_change_detail_is_em
 
     assert file_change["detail"] == "--- a/foo.py\n+++ b/foo.py\n@@ -1 +1 @@\n-old\n+new"
 
+
+def test_live_turn_presenter_prefers_latest_turn_diff_over_plain_file_change_output() -> None:
+    presenter = LiveTurnPresenter()
+    state = LiveTurnViewModel(
+        backend="codex",
+        session_id="relay_1",
+        native_session_id="thread_1",
+        turn_id="turn_1",
+        status="running",
+        latest_diff="--- a/foo.py\n+++ b/foo.py\n@@ -1 +1 @@\n-old\n+new",
+        tools=(
+            ToolState(
+                tool_id="fc_1",
+                kind="file_change",
+                title="File changes",
+                status="completed",
+                preview="foo.py",
+                detail="Success. Updated the following files:\nM foo.py",
+                provider_payload={
+                    "changes": [
+                        {
+                            "path": "foo.py",
+                            "kind": {"type": "update"},
+                        }
+                    ]
+                },
+            ),
+        ),
+    )
+
+    snapshot = presenter.build_snapshot(state)
+    file_change = next(item for item in snapshot["history_items"] if item["type"] == "file_change")
+
+    assert file_change["detail"] == "--- a/foo.py\n+++ b/foo.py\n@@ -1 +1 @@\n-old\n+new"
+
 def test_live_turn_presenter_preserves_plan_history_in_transcript() -> None:
     presenter = LiveTurnPresenter()
     first_state = LiveTurnViewModel(

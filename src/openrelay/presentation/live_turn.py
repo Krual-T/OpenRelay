@@ -11,6 +11,18 @@ from openrelay.feishu import build_complete_card, render_transcript_markdown
 LOGGER = logging.getLogger("openrelay.presentation.live_turn")
 
 
+def _looks_like_diff(text: object) -> bool:
+    value = str(text or "").strip()
+    if not value:
+        return False
+    lines = value.splitlines()
+    if any(line.startswith(("diff --git", "index ", "@@ ", "+++ ", "--- ")) for line in lines[:6]):
+        return True
+    plus = sum(1 for line in lines if line.startswith("+") and not line.startswith("+++"))
+    minus = sum(1 for line in lines if line.startswith("-") and not line.startswith("---"))
+    return plus > 0 and minus > 0
+
+
 class LiveTurnPresenter:
     def create_initial_snapshot(
         self,
@@ -396,7 +408,15 @@ class LiveTurnPresenter:
                 "queries": [tool.preview] if tool.preview else [],
             }
         if tool.kind == "file_change":
-            detail = tool.detail or state.latest_diff
+            detail = tool.detail
+            if state.latest_diff and (not detail or not _looks_like_diff(detail)):
+                LOGGER.info(
+                    "file change detail using latest diff tool_id=%s tool_detail_preview=%r latest_diff_preview=%r",
+                    tool.tool_id,
+                    str(detail or "")[:200],
+                    str(state.latest_diff or "")[:200],
+                )
+                detail = state.latest_diff
             return {
                 "type": "file_change",
                 "state": "running" if tool.status == "running" else "completed",

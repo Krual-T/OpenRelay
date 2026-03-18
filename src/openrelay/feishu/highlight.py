@@ -155,21 +155,22 @@ def render_output_block(
     ]
     if not normalized_lines:
         return ""
-    visible_lines = normalized_lines[:max_lines]
-    hidden = max(0, len(normalized_lines) - len(visible_lines))
     lexer_name = _infer_output_lexer_name(
-        "\n".join(visible_lines), str(command or "")
+        "\n".join(normalized_lines[:max_lines]), str(command or "")
     )
     if lexer_name == "diff":
-        rendered_lines = [
-            _render_diff_line(line, max_length=max_length) for line in visible_lines
-        ]
-    elif lexer_name is not None and lexer_name not in {"plain_text", "text"}:
-        rendered_lines = _highlight_with_pygments("\n".join(visible_lines), lexer_name)
+        visible_lines = normalized_lines
+        hidden = 0
+        rendered_lines = _render_diff_lines(visible_lines, max_length=max_length)
     else:
-        rendered_lines = [
-            _render_output_line(line, max_length=max_length) for line in visible_lines
-        ]
+        visible_lines = normalized_lines[:max_lines]
+        hidden = max(0, len(normalized_lines) - len(visible_lines))
+        if lexer_name is not None and lexer_name not in {"plain_text", "text"}:
+            rendered_lines = _highlight_with_pygments("\n".join(visible_lines), lexer_name)
+        else:
+            rendered_lines = [
+                _render_output_line(line, max_length=max_length) for line in visible_lines
+            ]
     if hidden > 0:
         rendered_lines.append(_font("grey", f"... +{hidden} lines"))
     return "<br>".join(line for line in rendered_lines if line)
@@ -195,6 +196,54 @@ def _highlight_with_pygments(text: str, lexer_name: str) -> list[str]:
     return lines
 
 
+def _highlight_single_line_with_pygments(
+    text: str,
+    lexer_name: str,
+    *,
+    default_color: str | None = None,
+) -> str:
+    try:
+        lexer = get_lexer_by_name(lexer_name)
+    except Exception:
+        lexer = TextLexer()
+    parts: list[str] = []
+    for token_type, value in lex(text, lexer):
+        if not value:
+            continue
+        parts.append(_render_token(token_type, value, default_color=default_color))
+    return "".join(parts) or _font(default_color, text)
+
+
+def _render_diff_lines(lines: list[str], *, max_length: int) -> list[str]:
+    rendered: list[str] = []
+    current_lexer: str | None = None
+    for line in lines:
+        shortened = _shorten(line, max_length)
+        if line.startswith("diff --git"):
+            current_lexer = _infer_diff_lexer_from_git_header(line) or current_lexer
+            rendered.append(_font("wathet", shortened))
+            continue
+        if line.startswith(("--- ", "+++ ")):
+            current_lexer = _infer_diff_lexer_from_marker(line) or current_lexer
+            rendered.append(_font("grey", shortened))
+            continue
+        if line.startswith("@@") or DIFF_HEADER_RE.match(line):
+            rendered.append(_font("grey", shortened))
+            continue
+        if line.startswith("+"):
+            rendered.append(
+                _render_diff_change_line("green", shortened, lexer_name=current_lexer)
+            )
+            continue
+        if line.startswith("-"):
+            rendered.append(
+                _render_diff_change_line("red", shortened, lexer_name=current_lexer)
+            )
+            continue
+        rendered.append(_escape(shortened))
+    return rendered
+
+
 def _render_diff_line(line: str, *, max_length: int) -> str:
     shortened = _shorten(line, max_length)
     if (
@@ -211,13 +260,26 @@ def _render_diff_line(line: str, *, max_length: int) -> str:
     return _font("wathet", shortened) if line.startswith("diff --git") else _escape(shortened)
 
 
-def _render_diff_change_line(color: str, text: str) -> str:
+def _render_diff_change_line(
+    color: str,
+    text: str,
+    *,
+    lexer_name: str | None = None,
+) -> str:
     prefix = text[:1]
     content = text[1:]
     rendered_prefix = _text_tag(color, prefix)
     if not content:
         return rendered_prefix
-    return f"{rendered_prefix}&nbsp;{_font(color, content)}"
+    if lexer_name is not None and lexer_name not in {"plain_text", "text"}:
+        rendered_content = _highlight_single_line_with_pygments(
+            content,
+            lexer_name,
+            default_color=color,
+        )
+    else:
+        rendered_content = _font(color, content)
+    return f"{rendered_prefix}{rendered_content}"
 
 
 def _render_output_line(line: str, *, max_length: int) -> str:
@@ -230,11 +292,13 @@ def _render_output_line(line: str, *, max_length: int) -> str:
     return _render_semantic_line(shortened)
 
 
-def _render_token(token_type: object, value: str) -> str:
+def _render_token(
+    token_type: object,
+    value: str,
+    default_color: str | None = None,
+) -> str:
     color = _lookup_color_name(token_type)
-    if color is None:
-        return _escape(value)
-    return _font(color, value)
+    return _font(color or default_color, value)
 
 
 def _lookup_color_name(token_type: object) -> str | None:
@@ -545,6 +609,35 @@ def _extract_viewed_path(command: str) -> PurePosixPath | None:
             continue
         return PurePosixPath(token)
     return None
+
+
+def _infer_diff_lexer_from_git_header(line: str) -> str | None:
+    parts = line.split()
+    if len(parts) < 4:
+        return None
+    for candidate in parts[2:4]:
+        lexer_name = _infer_diff_lexer_from_path(candidate)
+        if lexer_name is not None:
+            return lexer_name
+    return None
+
+
+def _infer_diff_lexer_from_marker(line: str) -> str | None:
+    _marker, _space, path = line.partition(" ")
+    return _infer_diff_lexer_from_path(path)
+
+
+def _infer_diff_lexer_from_path(value: str) -> str | None:
+    normalized = value.strip().strip("\"'")
+    if not normalized or normalized == "/dev/null":
+        return None
+    if normalized.startswith(("a/", "b/")):
+        normalized = normalized[2:]
+    suffix = PurePosixPath(normalized).suffix.lower()
+    lexer_name = EXTENSION_LANGUAGE.get(suffix)
+    if lexer_name in {"plain_text", "text"}:
+        return None
+    return lexer_name
 
 
 def _should_highlight_path(value: str) -> bool:
