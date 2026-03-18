@@ -977,8 +977,14 @@ def _streaming_inline_content(live_state: dict[str, Any] | None = None) -> str:
 def build_streaming_card_signature(
     live_state: dict[str, Any] | None = None,
 ) -> tuple[str, str]:
-    _ = live_state
-    return ("plain", "")
+    live_state = live_state or {}
+    history_items = (
+        live_state.get("transcript_items")
+        if isinstance(live_state.get("transcript_items"), list)
+        else live_state.get("history_items")
+    )
+    history_items = history_items if isinstance(history_items, list) else []
+    return ("plain", _render_streaming_history_items(history_items))
 
 
 def build_thinking_card_json() -> dict[str, Any]:

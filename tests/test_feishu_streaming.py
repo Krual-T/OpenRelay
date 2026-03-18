@@ -126,9 +126,9 @@ def test_build_streaming_content_interleaves_summary_blocks_with_history_items()
     assert "🔵 Explored" in content
     assert "---\n\n第一段总结" in content
     assert "🟢 Ran" in content
-    assert "<font color='green'>sed</font>" in content
-    assert "<font color='carmine'>-n</font>" in content
-    assert "<font color='blue'>src/openrelay/runtime/live.py</font>" in content
+    assert "<font color='blue'>sed</font>" in content
+    assert "<font color='purple'>-n</font>" in content
+    assert "<font color='wathet'>src/openrelay/runtime/live.py</font>" in content
     assert "=====output=====" in content
     assert "---\n\n第二段总结" in content
 
@@ -158,8 +158,8 @@ def test_build_streaming_content_keeps_summary_and_partial_text_in_one_transcrip
 
     assert "---\n\n已经确认 reply_card 是入口。" in content
     assert "🟢 Ran" in content
-    assert "<font color='green'>git</font>" in content
-    assert "<font color='carmine'>--short</font>" in content
+    assert "<font color='blue'>git</font>" in content
+    assert "<font color='purple'>--short</font>" in content
     assert "<font color='wathet'>docs/architecture.md</font>" in content
     assert content.endswith("---\n\n下一步检查 streaming session 的更新路径。")
 
@@ -183,7 +183,7 @@ def test_build_streaming_content_marks_failed_command_with_red_dot() -> None:
     )
 
     assert "🔴 Ran" in content
-    assert "<font color='green'>pytest</font>" in content
+    assert "<font color='blue'>pytest</font>" in content
     assert "exit 1" in content
     assert "=====output=====" in content
     assert "<font color='orange'>1</font>&nbsp;<font color='red'>failed</font>" in content
@@ -233,9 +233,9 @@ def test_build_streaming_content_preserves_output_indentation_without_code_fence
 
     assert "```text" not in content
     assert "=====output=====" in content
-    assert "<font color='wathet'>def</font>" in content
+    assert "<font color='purple'>def</font>" in content
     assert "<font color='blue'>main</font>" in content
-    assert "&nbsp;&nbsp;&nbsp;&nbsp;<font color='green'>print</font>" in content
+    assert "&nbsp;&nbsp;&nbsp;&nbsp;<font color='purple'>print</font>" in content
 
 
 def test_build_streaming_content_wraps_long_command_into_pipe_lines() -> None:
@@ -255,9 +255,9 @@ def test_build_streaming_content_wraps_long_command_into_pipe_lines() -> None:
     )
 
     assert "🟢 Ran" in content
-    assert "<font color='green'>uv</font>" in content
-    assert "<font color='blue'>scripts/export_schema.py</font>" in content
-    assert "<font color='carmine'>--format</font>" in content
+    assert "<font color='blue'>uv</font>" in content
+    assert "<font color='wathet'>scripts/export_schema.py</font>" in content
+    assert "<font color='purple'>--format</font>" in content
 
 
 def test_build_streaming_content_composes_plain_output_colors() -> None:
@@ -364,8 +364,8 @@ def test_build_streaming_content_wraps_command_by_target_character_width() -> No
         }
     )
 
-    assert "<font color='blue'>/bin/bash</font>" in content
-    assert "<font color='carmine'>-lc</font>" in content
+    assert "<font color='wathet'>/bin/bash</font>" in content
+    assert "<font color='purple'>-lc</font>" in content
     assert '<font color=\'green\'>"sed</font>' in content
     assert '<font color=\'green\'>src/openrelay/feishu/reply_card.py"</font>' in content
 
@@ -498,11 +498,25 @@ async def test_streaming_session_switches_to_answer_card_when_answer_starts(monk
     )
 
     assert len(calls) == 1
-    assert calls[0][0] == "update_content"
+    assert calls[0][0] == "update_json"
     assert "🔵 Explored" in str(calls[0][1])
-    assert "#### Answer\n找到结果。" in str(calls[0][1])
+    assert "#### Answer\n找到结果。" in str(calls[0][1]["body"]["elements"][0]["content"])
     assert session.state["current_content"].endswith("#### Answer\n找到结果。")
-    assert session.state["card_signature"][0] == "plain"
+    assert session.state["card_signature"] == build_streaming_card_signature(
+        {
+            "history_items": [
+                {
+                    "type": "command",
+                    "state": "completed",
+                    "title": "Explored codebase",
+                    "mode": "exploration",
+                    "command": "rg -n Voyager",
+                    "exit_code": 0,
+                    "output_preview": "Gemini Voyager",
+                }
+            ]
+        }
+    )
 
 
 @pytest.mark.asyncio
@@ -732,7 +746,7 @@ async def test_streaming_session_appends_delta_when_transcript_is_prefix(monkeyp
         "card_id": "c1",
         "sequence": 1,
         "current_content": current_content,
-        "card_signature": ("plain", ""),
+        "card_signature": build_streaming_card_signature(initial_state),
     }
     calls: list[tuple[str, object]] = []
 
@@ -781,7 +795,7 @@ async def test_streaming_session_rebuilds_card_when_transcript_rewrites_prefix(m
         "card_id": "c1",
         "sequence": 1,
         "current_content": build_streaming_content(live_state),
-        "card_signature": ("plain", ""),
+        "card_signature": build_streaming_card_signature(live_state),
     }
     calls: list[tuple[str, object]] = []
 
@@ -799,6 +813,61 @@ async def test_streaming_session_rebuilds_card_when_transcript_rewrites_prefix(m
         dict(live_state["history_items"][0]) | {"state": "failed", "title": "Ran shell command", "mode": "command", "exit_code": 1}
     ]
     await session.update(rewritten_state)
+
+    assert len(calls) == 1
+    assert calls[0][0] == "update_json"
+
+
+@pytest.mark.asyncio
+async def test_streaming_session_rebuilds_card_when_plan_changes_even_if_content_appends(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    session = FeishuStreamingSession(object())
+    initial_state = {
+        "history_items": [
+            {
+                "type": "command",
+                "state": "completed",
+                "title": "Ran shell command",
+                "mode": "command",
+                "command": "git diff -- src/openrelay/feishu/reply_card.py",
+                "exit_code": 0,
+                "output_preview": "+new line",
+            }
+        ],
+        "partial_text": "第一段",
+    }
+    session.state = {
+        "card_id": "c1",
+        "sequence": 1,
+        "current_content": build_streaming_content(initial_state),
+        "card_signature": build_streaming_card_signature(initial_state),
+    }
+    calls: list[tuple[str, object]] = []
+
+    async def fake_update_card_json(card_json: dict[str, object]) -> None:
+        calls.append(("update_json", card_json))
+
+    async def fake_update_card_content(text: str) -> None:
+        calls.append(("update_content", text))
+
+    monkeypatch.setattr(session, "update_card_json", fake_update_card_json)
+    monkeypatch.setattr(session, "update_card_content", fake_update_card_content)
+
+    await session.update(
+        {
+            "history_items": [
+                *initial_state["history_items"],
+                {
+                    "type": "plan",
+                    "state": "running",
+                    "title": "Plan",
+                    "steps": [{"step": "Adjust Feishu rendering", "status": "in_progress"}],
+                },
+            ],
+            "partial_text": "第一段\n第二段",
+        }
+    )
 
     assert len(calls) == 1
     assert calls[0][0] == "update_json"

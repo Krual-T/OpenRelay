@@ -280,6 +280,7 @@ class FeishuStreamingSession:
                 self.state["card_signature"] = next_signature
             else:
                 await self.update_card_content(next_content)
+                self.state["card_signature"] = next_signature
             self.state["current_content"] = next_content
 
     async def close(self, final_card: dict[str, Any] | None = None) -> None:
