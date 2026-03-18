@@ -8,6 +8,9 @@ from pathlib import PurePosixPath
 from pygments import lex
 from pygments.lexers import TextLexer, get_lexer_by_name
 from pygments.token import Token
+from rich.console import Console
+from rich.style import Style
+from rich.text import Text
 
 FEISHU_COLOR_RGBS: dict[str, tuple[int, int, int]] = {
     "grey": (143, 149, 158),
@@ -114,6 +117,8 @@ EXTENSION_LANGUAGE = {
     ".yml": "yaml",
 }
 
+RICH_WRAP_CONSOLE = Console(force_terminal=False, color_system="truecolor", width=200)
+
 
 @dataclass(frozen=True)
 class ShellSegment:
@@ -128,10 +133,9 @@ def render_command_chunks(
     if not command:
         return []
     visible_budget = max(12, target_length - 2)
-    segments = _build_shell_segments(command)
-    chunks = _wrap_shell_segments(segments, visible_budget)
-    visible_chunks = [_render_shell_line(chunk) for chunk in chunks[:max_lines]]
-    if len(chunks) > max_lines and visible_chunks:
+    wrapped_lines = _wrap_shell_segments(_build_shell_segments(command), visible_budget)
+    visible_chunks = [_render_shell_line(line) for line in wrapped_lines[:max_lines]]
+    if len(wrapped_lines) > max_lines and visible_chunks:
         visible_chunks[-1] = f"{visible_chunks[-1]} {_font('grey', '...')}"
     return visible_chunks
 
@@ -263,6 +267,13 @@ def _build_shell_segments(text: str) -> list[ShellSegment]:
     return segments
 
 
+def _build_shell_rich_text(text: str) -> Text:
+    rich_text = Text(no_wrap=False, overflow="fold", end="")
+    for segment in _build_shell_segments(text):
+        rich_text.append(segment.text, style=_shell_rich_style(segment.role))
+    return rich_text
+
+
 def _scan_shell_tokens(text: str) -> list[str]:
     tokens: list[str] = []
     index = 0
@@ -374,32 +385,17 @@ def _wrap_shell_segments(
         current_length = 0
 
     for segment in segments:
-        parts = _split_segment_for_width(segment, target_length)
-        for part in parts:
-            part_length = len(part.text)
-            if not current and part.text.isspace():
+        part_length = len(segment.text)
+        if not current and segment.text.isspace():
+            continue
+        if current and current_length + part_length > target_length:
+            flush()
+            if segment.text.isspace():
                 continue
-            if current and current_length + part_length > target_length:
-                flush()
-                if part.text.isspace():
-                    continue
-            current.append(part)
-            current_length += part_length
+        current.append(segment)
+        current_length += part_length
     flush()
     return lines
-
-
-def _split_segment_for_width(
-    segment: ShellSegment, target_length: int
-) -> list[ShellSegment]:
-    if len(segment.text) <= target_length:
-        return [segment]
-    if segment.text.isspace():
-        return [ShellSegment(" ", segment.role)]
-    parts = re.findall(r"[^\s]+\s*|\s+", segment.text)
-    if len(parts) > 1:
-        return [ShellSegment(part, segment.role) for part in parts if part]
-    return [segment]
 
 
 def _trim_shell_line(segments: list[ShellSegment]) -> list[ShellSegment]:
@@ -410,13 +406,6 @@ def _trim_shell_line(segments: list[ShellSegment]) -> list[ShellSegment]:
     while end > start and segments[end - 1].text.isspace():
         end -= 1
     return segments[start:end]
-
-
-def _render_shell_line(segments: list[ShellSegment]) -> str:
-    parts: list[str] = []
-    for segment in segments:
-        parts.append(_themed_font(segment.role, segment.text) if segment.role else _escape(segment.text))
-    return "".join(parts)
 
 
 def _looks_like_redirection(token: str) -> bool:
@@ -583,6 +572,23 @@ def _shorten(text: str, max_length: int) -> str:
     return f"{text[: max_length - 3]}..."
 
 
+def _render_rich_text_line(line: Text) -> str:
+    parts: list[str] = []
+    for segment in line.render(RICH_WRAP_CONSOLE):
+        if not segment.text:
+            continue
+        color = _rich_style_to_hex(segment.style)
+        parts.append(_font(color, segment.text) if color else _escape(segment.text))
+    return "".join(parts).strip()
+
+
+def _render_shell_line(segments: list[ShellSegment]) -> str:
+    rich_text = Text(end="")
+    for segment in segments:
+        rich_text.append(segment.text, style=_shell_rich_style(segment.role))
+    return _render_rich_text_line(rich_text)
+
+
 def _font(color: str | None, text: str) -> str:
     escaped = _escape(text)
     if not escaped:
@@ -599,11 +605,31 @@ def _themed_font(role: str | None, text: str) -> str:
     return _font(_map_rgb_to_feishu(rgb) if rgb is not None else None, text)
 
 
+def _shell_rich_style(role: str | None) -> Style | None:
+    if role is None:
+        return None
+    rgb = SHELL_THEME_RGBS.get(role)
+    if rgb is None:
+        return None
+    return Style(color=_rgb_to_hex(rgb))
+
+
 def _map_rgb_to_feishu(rgb: tuple[int, int, int]) -> str:
     return min(
         FEISHU_COLOR_RGBS.items(),
         key=lambda item: _color_distance(rgb, item[1]),
     )[0]
+
+
+def _rgb_to_hex(rgb: tuple[int, int, int]) -> str:
+    return "#{:02X}{:02X}{:02X}".format(*rgb)
+
+
+def _rich_style_to_hex(style: Style | None) -> str | None:
+    if style is None or style.color is None or style.color.triplet is None:
+        return None
+    triplet = style.color.triplet
+    return _rgb_to_hex((triplet.red, triplet.green, triplet.blue))
 
 
 def _color_distance(

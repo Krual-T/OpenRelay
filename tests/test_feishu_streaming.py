@@ -128,9 +128,9 @@ def test_build_streaming_content_interleaves_summary_blocks_with_history_items()
     assert "🔵 Explored" in content
     assert "---\n\n第一段总结" in content
     assert "🟢 Ran" in content
-    assert "<font color='blue'>sed</font>" in content
-    assert "<font color='purple'>-n</font>" in content
-    assert "<font color='wathet'>src/openrelay/runtime/live.py</font>" in content
+    assert "<font color='#2F6FDF'>sed</font>" in content
+    assert "<font color='#6B5FD2'>-n</font>" in content
+    assert "<font color='#3F88C5'>src/openrelay/runtime/live.py</font>" in content
     assert "=====output=====" in content
     assert "---\n\n第二段总结" in content
 
@@ -160,8 +160,8 @@ def test_build_streaming_content_keeps_summary_and_partial_text_in_one_transcrip
 
     assert "---\n\n已经确认 reply_card 是入口。" in content
     assert "🟢 Ran" in content
-    assert "<font color='blue'>git</font>" in content
-    assert "<font color='purple'>--short</font>" in content
+    assert "<font color='#2F6FDF'>git</font>" in content
+    assert "<font color='#6B5FD2'>--short</font>" in content
     assert "<font color='wathet'>docs/architecture.md</font>" in content
     assert content.endswith("---\n\n下一步检查 streaming session 的更新路径。")
 
@@ -199,7 +199,7 @@ def test_build_streaming_content_marks_failed_command_with_red_dot() -> None:
     )
 
     assert "🔴 Ran" in content
-    assert "<font color='blue'>pytest</font>" in content
+    assert "<font color='#2F6FDF'>pytest</font>" in content
     assert "exit 1" in content
     assert "=====output=====" in content
     assert "<font color='orange'>1</font>&nbsp;<font color='red'>failed</font>" in content
@@ -271,9 +271,9 @@ def test_build_streaming_content_wraps_long_command_into_pipe_lines() -> None:
     )
 
     assert "🟢 Ran" in content
-    assert "<font color='blue'>uv</font>" in content
-    assert "<font color='wathet'>scripts/export_schema.py</font>" in content
-    assert "<font color='purple'>--format</font>" in content
+    assert "<font color='#2F6FDF'>uv</font>" in content
+    assert "<font color='#3F88C5'>scripts/export_schema.py</font>" in content
+    assert "<font color='#6B5FD2'>--format</font>" in content
 
 
 def test_render_command_chunks_wraps_shell_script_argument_without_losing_string_style() -> None:
@@ -284,13 +284,13 @@ def test_render_command_chunks_wraps_shell_script_argument_without_losing_string
     )
 
     assert len(chunks) == 5
-    assert chunks[0].startswith("<font color='wathet'>/bin/bash</font>")
-    assert "<font color='purple'>-lc</font>" in chunks[0]
-    assert "<font color='green'>\"printf</font>" in chunks[0]
-    assert "<font color='green'>skill:</font>" in chunks[1]
-    assert "<font color='green'>project-memory,</font>" in chunks[1]
-    assert any("<font color='green'>recorded</font>" in chunk for chunk in chunks)
-    assert any("<font color='green'>summary.\\n'</font>" in chunk for chunk in chunks)
+    assert chunks[0].startswith("<font color='#3F88C5'>/bin/bash</font>")
+    assert "<font color='#6B5FD2'>-lc</font>" in chunks[0]
+    assert "<font color='#308756'>\"printf</font>" in chunks[0]
+    assert "<font color='#308756'>skill:</font>" in chunks[1]
+    assert "<font color='#308756'>project-memory,</font>" in chunks[1]
+    assert any("<font color='#308756'>recorded</font>" in chunk for chunk in chunks)
+    assert any("<font color='#308756'>summary.\\n'</font>" in chunk for chunk in chunks)
 
 
 def test_build_streaming_content_composes_plain_output_colors() -> None:
@@ -376,9 +376,9 @@ def test_build_streaming_content_does_not_infer_json_lexer_from_output_target_pa
     )
 
     assert "<font color='green'>saved</font>" in content
-    assert "<font color='wathet'>docs/schema.json</font>" in content
+    assert "<font color='#3F88C5'>docs/schema.json</font>" in content
     assert "<font color='orange'>0.12</font>" in content
-    assert "<font color='wathet'>docs/schema.json</font>" in content
+    assert "<font color='#3F88C5'>docs/schema.json</font>" in content
 
 
 def test_build_streaming_content_wraps_command_by_target_character_width() -> None:
@@ -397,10 +397,10 @@ def test_build_streaming_content_wraps_command_by_target_character_width() -> No
         }
     )
 
-    assert "<font color='wathet'>/bin/bash</font>" in content
-    assert "<font color='purple'>-lc</font>" in content
-    assert '<font color=\'green\'>"sed</font>' in content
-    assert '<font color=\'green\'>src/openrelay/feishu/reply_card.py"</font>' in content
+    assert "<font color='#3F88C5'>/bin/bash</font>" in content
+    assert "<font color='#6B5FD2'>-lc</font>" in content
+    assert '<font color=\'#308756\'>"sed</font>' in content
+    assert '<font color=\'#308756\'>src/openrelay/feishu/reply_card.py"</font>' in content
 
 
 def test_build_streaming_content_keeps_tree_prefix_outside_command_highlight() -> None:
@@ -419,10 +419,10 @@ def test_build_streaming_content_keeps_tree_prefix_outside_command_highlight() -
         }
     )
 
-    assert "\n│ <font color='wathet'>/bin/bash</font>" in content
-    assert "\n│ <font color='green'>skill:</font>" in content
-    assert "\n└ <font color='green'>recorded</font>" in content
-    assert "<font color='green'>summary.\\n'</font>" in content
+    assert "\n│ <font color='#3F88C5'>/bin/bash</font>" in content
+    assert "\n│ <font color='#308756'>skill:</font>" in content
+    assert "\n└ <font color='#308756'>recorded</font>" in content
+    assert "<font color='#308756'>summary.\\n'</font>" in content
     assert "<font color='grey'>│</font>" not in content
     assert "<font color='grey'>└</font>" not in content
 
