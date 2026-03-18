@@ -458,19 +458,25 @@ def _describe_file_changes(item: dict[str, Any]) -> list[str]:
         kind = change.get("kind") if isinstance(change.get("kind"), dict) else {}
         change_type = normalize_inline(kind.get("type"))
         if change_type == "add":
-            lines.append(f"Add `{path}`")
+            lines.append(f"{_file_change_tag('green', 'Add')} `{path}`")
             continue
         if change_type == "delete":
-            lines.append(f"Delete `{path}`")
+            lines.append(f"{_file_change_tag('red', 'Delete')} `{path}`")
             continue
         if change_type == "update":
             moved_to = normalize_inline(kind.get("move_path"))
             lines.append(
-                f"Edit `{path}`" if not moved_to else f"Move `{path}` -> `{moved_to}`"
+                f"{_file_change_tag('orange', 'Edit')} `{path}`"
+                if not moved_to
+                else f"{_file_change_tag('blue', 'Move')} `{path}` -> `{moved_to}`"
             )
             continue
         lines.append(path)
     return lines
+
+
+def _file_change_tag(color: str, text: str) -> str:
+    return f"<text_tag color='{color}'>{text}</text_tag>"
 
 
 def _describe_collab_targets(item: dict[str, Any]) -> list[str]:
@@ -628,6 +634,7 @@ def _render_history_item(item: dict[str, Any], spinner_frame: int) -> list[str]:
 
     if item_type == "file_change":
         detail_entries.extend([[line] for line in _describe_file_changes(item)])
+        detail_entries.extend(_build_output_entries(item.get("detail"), command="git diff"))
         _append_section_block(lines, detail_entries)
         return lines
 
@@ -777,6 +784,7 @@ def _render_streaming_history_item(item: dict[str, Any]) -> list[str]:
 
     if item_type == "file_change":
         detail_entries.extend([[line] for line in _describe_file_changes(item)])
+        detail_entries.extend(_build_output_entries(item.get("detail"), command="git diff"))
         _append_section_block(lines, detail_entries)
         return lines
 

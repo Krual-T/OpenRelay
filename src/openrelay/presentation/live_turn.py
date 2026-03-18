@@ -398,6 +398,7 @@ class LiveTurnPresenter:
                 "title": "Updating files" if tool.status == "running" else "Updated files",
                 "file_change_id": tool.tool_id,
                 "changes": tool.provider_payload.get("changes") if isinstance(tool.provider_payload.get("changes"), list) else [],
+                "detail": tool.detail,
             }
         if tool.kind == "custom":
             return {

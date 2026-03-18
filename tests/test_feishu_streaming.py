@@ -487,14 +487,19 @@ def test_build_streaming_content_renders_updated_files_with_section_separator() 
                         {"path": "src/openrelay/feishu/reply_card.py", "kind": {"type": "update"}},
                         {"path": "tests/test_feishu_streaming.py", "kind": {"type": "update"}},
                     ],
+                    "detail": "--- a/src/openrelay/feishu/reply_card.py\n+++ b/src/openrelay/feishu/reply_card.py\n@@ -1 +1 @@\n-old line\n+new line",
                 }
             ]
         }
     )
 
     assert "🟠 Updated files" in content
-    assert "🟠 Updated files  \n│  \nEdit `src/openrelay/feishu/reply_card.py`" in content
-    assert "Edit `tests/test_feishu_streaming.py`" in content
+    assert "🟠 Updated files  \n│  \n<text_tag color='orange'>Edit</text_tag> `src/openrelay/feishu/reply_card.py`" in content
+    assert "<text_tag color='orange'>Edit</text_tag> `tests/test_feishu_streaming.py`" in content
+    assert "=====output=====" in content
+    assert "<font color='grey'>---&nbsp;a/src/openrelay/feishu/reply_card.py</font>" in content
+    assert "<text_tag color='red'>-</text_tag>&nbsp;<font color='red'>old&nbsp;line</font>" in content
+    assert "<text_tag color='green'>+</text_tag>&nbsp;<font color='green'>new&nbsp;line</font>" in content
 
 
 def test_build_streaming_content_renders_unexpected_backend_event_payload() -> None:
