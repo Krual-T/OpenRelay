@@ -577,7 +577,7 @@ def _render_rich_text_line(line: Text) -> str:
     for segment in line.render(RICH_WRAP_CONSOLE):
         if not segment.text:
             continue
-        color = _rich_style_to_hex(segment.style)
+        color = _rich_style_to_feishu_color(segment.style)
         parts.append(_font(color, segment.text) if color else _escape(segment.text))
     return "".join(parts).strip()
 
@@ -625,11 +625,11 @@ def _rgb_to_hex(rgb: tuple[int, int, int]) -> str:
     return "#{:02X}{:02X}{:02X}".format(*rgb)
 
 
-def _rich_style_to_hex(style: Style | None) -> str | None:
+def _rich_style_to_feishu_color(style: Style | None) -> str | None:
     if style is None or style.color is None or style.color.triplet is None:
         return None
     triplet = style.color.triplet
-    return _rgb_to_hex((triplet.red, triplet.green, triplet.blue))
+    return _map_rgb_to_feishu((triplet.red, triplet.green, triplet.blue))
 
 
 def _color_distance(
