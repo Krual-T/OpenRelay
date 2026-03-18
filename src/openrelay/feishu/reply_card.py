@@ -421,7 +421,7 @@ def _render_history_item(item: dict[str, Any], spinner_frame: int) -> list[str]:
         exit_code = item.get("exit_code")
         if exit_code is not None and str(item.get("state") or "") != "running" and int(exit_code) != 0:
             detail_entries.append([f"exit {exit_code}"])
-        output_preview_lines = _split_detail_lines(item.get("output_preview"), code=True)
+        output_preview_lines = _split_detail_lines(item.get("output_preview"), code=False)
         if output_preview_lines:
             detail_entries.append(["--- Output ---"])
             detail_entries.extend([[line] for line in output_preview_lines])
@@ -552,7 +552,7 @@ def _render_streaming_history_item(item: dict[str, Any]) -> list[str]:
         exit_code = item.get("exit_code")
         if exit_code is not None and str(item.get("state") or "") != "running" and int(exit_code) != 0:
             detail_entries.append([f"exit {exit_code}"])
-        output_preview_lines = _split_detail_lines(item.get("output_preview"), code=True)
+        output_preview_lines = _split_detail_lines(item.get("output_preview"), code=False)
         if output_preview_lines:
             detail_entries.append(["--- Output ---"])
             detail_entries.extend([[line] for line in output_preview_lines])

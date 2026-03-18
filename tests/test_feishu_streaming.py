@@ -89,7 +89,7 @@ def test_build_streaming_content_returns_answer_only_after_answer_starts() -> No
     assert "🔵 Explored" in content
     assert "Search Voyager" in content
     assert "--- Output ---" in content
-    assert "`Gemini Voyager`" in content
+    assert "Gemini Voyager" in content
     assert "---" in content
     assert content.endswith("找到结果，准备整理。")
     assert content.index("🔵 Explored") < content.index("---")
@@ -181,8 +181,8 @@ def test_build_streaming_content_marks_failed_command_with_red_dot() -> None:
     assert "🔴 Ran  \n│  \n│ `pytest`" in content
     assert "exit 1" in content
     assert "--- Output ---" in content
-    assert "`1 failed`" in content
-    assert "`AssertionError`" in content
+    assert "1 failed" in content
+    assert "AssertionError" in content
 
 
 def test_build_streaming_content_wraps_long_command_into_pipe_lines() -> None:
