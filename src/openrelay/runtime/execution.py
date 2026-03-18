@@ -5,10 +5,11 @@ from collections import defaultdict, deque
 
 from openrelay.core import ActiveRun, IncomingMessage
 
+from .dispatch_models import DispatchDecision
 from .follow_up import QueuedFollowUp
 
 
-ExecutionInput = IncomingMessage | QueuedFollowUp
+ExecutionInput = IncomingMessage | QueuedFollowUp | DispatchDecision
 
 
 class RuntimeExecutionCoordinator:

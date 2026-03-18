@@ -32,10 +32,12 @@ from openrelay.session import (
 from openrelay.storage import StateStore
 
 from .commands import RuntimeCommandHooks, RuntimeCommandRouter
+from .dispatch_models import DispatchDecision
 from .execution import ExecutionInput, RuntimeExecutionCoordinator
 from .follow_up import QueuedFollowUp
 from .help import HelpRenderer
 from .help_service import RuntimeHelpService
+from .message_dispatch import MessageDispatchService
 from .panel_service import RuntimePanelService
 from .replying import ReplyRoute, RuntimeReplyPolicy
 from .restart import RuntimeRestartController
@@ -80,6 +82,7 @@ class RuntimeOrchestrator:
         self.session_scope = SessionScopeResolver(config, store, LOGGER)
         self.reply_policy = RuntimeReplyPolicy(config, self.session_scope)
         self.session_lifecycle = SessionLifecycleResolver(config, store)
+        self.message_dispatch = MessageDispatchService(self.session_scope, self.session_lifecycle)
         self.release_command_service = ReleaseCommandService(config, store, self.session_presentation, self.session_mutations)
         self.help_renderer = HelpRenderer(config, store, self.session_presentation, self.session_workspace, self.session_shortcuts)
         self.help_service = RuntimeHelpService(
@@ -190,76 +193,71 @@ class RuntimeOrchestrator:
                 await self._reply(message, "你没有权限使用 openrelay。", command_reply=True)
                 return
 
-            session_key = self.session_scope.build_session_key(message)
-            self.session_scope.remember_inbound_aliases(message, session_key)
-            session = self.session_lifecycle.load_for_message(
-                session_key,
-                is_top_level_control_command=self.session_scope.is_top_level_control_command(message),
-                is_top_level_message=self.session_scope.is_top_level_message(message),
-                control_key=self.session_scope.compose_key(message),
-            )
-            LOGGER.info(
-                "dispatch resolved session event_id=%s message_id=%s session_key=%s session_id=%s native_session_id=%s root_id=%s thread_id=%s parent_id=%s",
-                message.event_id,
-                message.message_id,
-                session_key,
-                session.session_id,
-                session.native_session_id,
-                message.root_id,
-                message.thread_id,
-                message.parent_id,
-            )
-            execution_key = self._build_execution_key(session_key, session, force_session_scope=self.session_scope.is_top_level_control_command(message))
-            if self._is_stop_command(message.text):
-                await self._handle_stop(message, self._resolve_stop_execution_key(message, session_key, session))
+            decision = self.message_dispatch.resolve_and_decide(message)
+            resolved = decision.resolved
+            self._log_dispatch_resolution(message, resolved.session_key, resolved.session, "dispatch")
+            if decision.kind == "stop":
+                await self._handle_stop(message, self._resolve_stop_execution_key(message, resolved.session_key, resolved.session))
                 return
 
-            if self.execution_coordinator.is_locked(execution_key) and self._should_bypass_active_run(message.text):
-                handled = await self._handle_command(message, session_key, session)
+            if self.execution_coordinator.is_locked(decision.execution_key) and self._should_bypass_active_run(message.text):
+                handled = await self._handle_command(message, resolved.session_key, resolved.session)
                 if handled:
                     return
-            if self.execution_coordinator.is_locked(execution_key) and await self.execution_coordinator.try_handle_live_input(execution_key, message):
+            if self.execution_coordinator.is_locked(decision.execution_key) and await self.execution_coordinator.try_handle_live_input(decision.execution_key, message):
                 return
-            if self.execution_coordinator.is_locked(execution_key):
-                queued_follow_up = self.execution_coordinator.enqueue_pending_input(execution_key, message)
+            if self.execution_coordinator.is_locked(decision.execution_key):
+                queued_follow_up = self.execution_coordinator.enqueue_pending_input(decision.execution_key, message)
                 if queued_follow_up is not None:
                     await self._reply(message, queued_follow_up.acknowledgement_text())
                 return
 
-            async with self.execution_coordinator.lock_for(execution_key):
-                await self._handle_message_serialized(message, execution_key)
+            async with self.execution_coordinator.lock_for(decision.execution_key):
+                await self._handle_message_serialized(decision, decision.execution_key)
         except Exception:
             LOGGER.exception("dispatch_message failed for event_id=%s chat_id=%s", message.event_id, message.chat_id)
 
-    async def _handle_message_serialized(self, message: IncomingMessage, execution_key: str) -> None:
-        pending_input: ExecutionInput | None = message
+    async def _handle_message_serialized(self, initial_input: ExecutionInput, execution_key: str) -> None:
+        pending_input: ExecutionInput | None = initial_input
         while pending_input is not None:
             await self._handle_single_serialized_input(pending_input, execution_key)
             pending_input = self.execution_coordinator.dequeue_pending_input(execution_key)
 
     async def _handle_single_serialized_input(self, pending_input: ExecutionInput, execution_key: str) -> None:
-        message = pending_input.to_message() if isinstance(pending_input, QueuedFollowUp) else pending_input
-        session_key = self.session_scope.build_session_key(message)
-        self.session_scope.remember_inbound_aliases(message, session_key)
-        session = self.session_lifecycle.load_for_message(
-            session_key,
-            is_top_level_control_command=self.session_scope.is_top_level_control_command(message),
-            is_top_level_message=self.session_scope.is_top_level_message(message),
-            control_key=self.session_scope.compose_key(message),
-        )
-        LOGGER.info(
-            "serialized input resolved session event_id=%s message_id=%s session_key=%s session_id=%s native_session_id=%s",
-            message.event_id,
-            message.message_id,
-            session_key,
-            session.session_id,
-            session.native_session_id,
-        )
+        if isinstance(pending_input, DispatchDecision):
+            decision = pending_input
+            message = decision.resolved.message
+        else:
+            message = pending_input.to_message() if isinstance(pending_input, QueuedFollowUp) else pending_input
+            decision = self.message_dispatch.resolve_and_decide(message)
+            self._log_dispatch_resolution(message, decision.resolved.session_key, decision.resolved.session, "serialized input")
+        session_key = decision.resolved.session_key
+        session = decision.resolved.session
         if message.text.startswith("/"):
             handled = await self._handle_command(message, session_key, session)
             if handled:
                 return
         await self._run_backend_turn(message, execution_key, session)
+
+    def _log_dispatch_resolution(
+        self,
+        message: IncomingMessage,
+        session_key: str,
+        session: SessionRecord,
+        stage: str,
+    ) -> None:
+        LOGGER.info(
+            "%s resolved session event_id=%s message_id=%s session_key=%s session_id=%s native_session_id=%s root_id=%s thread_id=%s parent_id=%s",
+            stage,
+            message.event_id,
+            message.message_id,
+            session_key,
+            session.session_id,
+            session.native_session_id,
+            message.root_id,
+            message.thread_id,
+            message.parent_id,
+        )
 
     async def _run_backend_turn(self, message: IncomingMessage, execution_key: str, session: SessionRecord) -> None:
         if not self._supports_runtime_backend(session.backend):

@@ -17,6 +17,7 @@ class SessionMutationService:
     config: AppConfig
     store: StateStore
     session_ux: SessionPresentation
+    bindings: SessionBindingStore
 
     def __init__(self, config: AppConfig, store: StateStore, session_ux: SessionPresentation) -> None:
         self.config = config

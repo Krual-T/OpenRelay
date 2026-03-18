@@ -3,7 +3,6 @@ from __future__ import annotations
 import sqlite3
 
 from openrelay.core import utc_now
-from openrelay.storage.db import SqliteStateContext
 
 from .models import RelaySessionBinding
 
@@ -14,13 +13,13 @@ class SessionBindingStore:
         self.connection = self.context.connection
         self._init_schema()
 
-    def _resolve_context(self, context_or_store: object) -> SqliteStateContext:
-        if isinstance(context_or_store, SqliteStateContext):
+    def _resolve_context(self, context_or_store: object) -> object:
+        if hasattr(context_or_store, "connection"):
             return context_or_store
         context = getattr(context_or_store, "context", None)
-        if isinstance(context, SqliteStateContext):
+        if context is not None and hasattr(context, "connection"):
             return context
-        raise TypeError("SessionBindingStore requires SqliteStateContext or StateStore-like context holder")
+        raise TypeError("SessionBindingStore requires a context or store exposing a sqlite connection")
 
     def _init_schema(self) -> None:
         self.connection.execute(

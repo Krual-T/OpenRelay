@@ -25,7 +25,7 @@ class FeishuLiveTurnRenderer:
     def build_final_card(self, state: dict[str, Any] | TurnViewSnapshot | LiveTurnViewModel, *, fallback_text: str = "") -> dict[str, Any]:
         snapshot = self._snapshot_dict(state)
         text = str(fallback_text or snapshot.get("partial_text") or "").strip() or "回复为空。"
-        process_text = self.render_transcript_markdown(snapshot, include_summary=False)
+        process_text = self.render_transcript_markdown(snapshot, include_summary=False).replace("</text_tag><font", "</text_tag>&nbsp;<font")
         return build_complete_card(text, panel_text=process_text)
 
     def render_transcript_markdown(
@@ -34,7 +34,7 @@ class FeishuLiveTurnRenderer:
         *,
         include_summary: bool = True,
     ) -> str:
-        return self.builder.build_transcript_markdown(state, include_summary=include_summary)
+        return render_transcript_markdown(self._snapshot_dict(state), include_summary=include_summary)
 
     def build_streaming_card_json(self, state: dict[str, Any] | TurnViewSnapshot | LiveTurnViewModel) -> dict[str, Any]:
         return build_streaming_card_json(self._snapshot_dict(state))

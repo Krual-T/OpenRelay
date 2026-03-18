@@ -4,7 +4,28 @@
 
 ## Landed
 
-- 当前无保留的已落地任务；历史已完成条目已从任务板移除。
+- [x] OR-TASK-009 架构重构总体设计与分阶段实施收敛
+  - **目标**：从模块职责划分和长期演化角度，为下一轮架构重构固定总体边界、事实来源、依赖方向和分阶段实施顺序。
+  - **完成情况**：总体设计稿、详细设计稿、端到端执行蓝图与首轮端到端代码重构已落地；storage/session repository 边界、command parser/registry/handler 拆分、turn lifecycle facade 化、typed live turn view model 与 Feishu renderer 分层，以及 orchestrator 单次 resolve 接线均已进入主路径。
+  - **落地证据**：
+    - `docs/design/or-task-009-architecture-refactor-overall-design.md`
+    - `docs/design/or-task-009-architecture-refactor-detailed-design.md`
+    - `docs/design/or-task-009-end-to-end-refactor-blueprint.md`
+    - `src/openrelay/storage/db.py`
+    - `src/openrelay/storage/repositories.py`
+    - `src/openrelay/session/repositories.py`
+    - `src/openrelay/session/defaults.py`
+    - `src/openrelay/runtime/message_dispatch.py`
+    - `src/openrelay/runtime/command_router.py`
+    - `src/openrelay/runtime/turn_application.py`
+    - `src/openrelay/runtime/turn_run_controller.py`
+    - `src/openrelay/runtime/turn_runtime_event_bridge.py`
+    - `src/openrelay/presentation/models.py`
+    - `src/openrelay/presentation/live_turn_view_builder.py`
+    - `src/openrelay/feishu/renderers/live_turn_renderer.py`
+    - `src/openrelay/runtime/orchestrator.py`
+  - **验证证据**：
+    - `uv run pytest`
 
 ## Active
 
@@ -68,28 +89,6 @@
 - **后续 follow-up**：
   - 优先拆出 session/storage repository 边界，再处理 orchestrator 与命令层拆分。
   - 在实现阶段单独建立子任务，避免把 storage、runtime、Feishu 渲染三条线混成一个大 patch。
-
-### [ ] OR-TASK-009 架构重构总体设计与分阶段实施收敛
-- **目标**：从模块职责划分和长期演化角度，为下一轮架构重构固定总体边界、事实来源、依赖方向和分阶段实施顺序。
-- **当前状态**：总体设计稿、详细设计稿与端到端执行级蓝图均已完成；消息、session、command、turn 和 rendering 的主链路目标模块已按 Phase 1-5 排列，并形成可并行推进的实施入口。当前已落一轮 C 线实现：`BackendTurnSession` 已退化为 facade，turn 生命周期已拆到 `TurnApplicationService` / `TurnRunController` / `TurnRuntimeEventBridge`，同时补上 typed live turn view model builder 与 Feishu renderer 分层。
-- **关闭条件**：
-  - 完成正式总体设计稿，明确目标边界、事实来源、实施阶段和风险控制。
-  - 任务板中记录对应设计证据和后续实施方向。
-  - 后续详细设计或实施子任务具备可继续拆分的稳定入口。
-- **已完成证据**：
-  - `docs/design/or-task-009-architecture-refactor-overall-design.md`
-  - `docs/design/or-task-009-architecture-refactor-detailed-design.md`
-  - `docs/design/or-task-009-end-to-end-refactor-blueprint.md`
-  - `src/openrelay/runtime/turn.py`
-  - `src/openrelay/runtime/turn_application.py`
-  - `src/openrelay/runtime/turn_run_controller.py`
-  - `src/openrelay/runtime/turn_runtime_event_bridge.py`
-  - `src/openrelay/presentation/live_turn_view_builder.py`
-  - `src/openrelay/presentation/models.py`
-  - `src/openrelay/feishu/renderers/live_turn_renderer.py`
-- **后续 follow-up**：
-  - 已形成端到端执行级设计，可按并行子任务推进 Phase 1-5 实施。
-  - 主控接线仍需把 turn/rendering 新边界从 `runtime/orchestrator.py` 继续收敛到独立 application service。
 
 ## 使用约定
 
