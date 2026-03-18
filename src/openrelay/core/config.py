@@ -159,7 +159,12 @@ def normalize_backend_name(value: str) -> str:
 
 def resolve_env_path(base: Path, *names: str, default: str = "") -> Path:
     raw = read_first(*names, default=default)
-    return (base / raw).resolve() if raw else base.resolve()
+    if not raw:
+        return base.resolve()
+    candidate = Path(raw).expanduser()
+    if candidate.is_absolute():
+        return candidate.resolve()
+    return (base / candidate).resolve()
 
 
 def _normalize_shortcut_channels(raw: str) -> tuple[str, ...]:
@@ -214,7 +219,7 @@ def load_config(cwd: str | Path | None = None) -> AppConfig:
     base = Path(cwd or os.getcwd()).resolve()
     load_env_file(base)
 
-    workspace_root = resolve_env_path(base, "WORKSPACE_ROOT", "WORKSPACE_DIR", default=".")
+    workspace_root = resolve_env_path(base, "WORKSPACE_ROOT", "WORKSPACE_DIR", default="~/Projects")
     main_workspace_dir = resolve_env_path(base, "MAIN_WORKSPACE_DIR", "STABLE_WORKSPACE_DIR", default=str(workspace_root))
     develop_workspace_dir = resolve_env_path(base, "DEVELOP_WORKSPACE_DIR", default=str(workspace_root))
     data_dir = resolve_env_path(base, "DATA_DIR", default="./data")

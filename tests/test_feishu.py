@@ -222,6 +222,26 @@ def test_parse_card_action_event_accepts_help_card_context_keys() -> None:
     assert parsed.message.text == "/status"
 
 
+def test_parse_card_action_event_merges_form_values_into_workspace_command() -> None:
+    parsed = parse_card_action_event(
+        {
+            "token": "tok_workspace_1",
+            "operator": {"open_id": "ou_user"},
+            "action": {
+                "value": {
+                    "command": "/workspace --path /repo --page 1",
+                    "formFieldArgs": {"workspace_query": "--query"},
+                },
+                "form_value": {"workspace_query": "api"},
+            },
+            "context": {"open_chat_id": "oc_1", "open_message_id": "om_workspace_card_1"},
+        }
+    )
+    assert parsed.type == "message"
+    assert parsed.message is not None
+    assert parsed.message.text == "/workspace --path /repo --page 1 --query api"
+
+
 
 def test_parse_webhook_without_verify_token() -> None:
     config = make_config()

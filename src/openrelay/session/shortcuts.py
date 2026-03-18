@@ -29,7 +29,7 @@ class SessionShortcutService:
             entries.append(
                 {
                     "label": shortcut.name,
-                    "display_path": self.workspace.format_cwd(str(target), None, channel),
+                    "display_path": self.workspace.format_workspace_picker_path(str(target), session),
                     "command": f"/workspace select {shlex.quote(str(target))}",
                     "channels": ",".join(shortcut.channels),
                     "raw_path": shortcut.path,

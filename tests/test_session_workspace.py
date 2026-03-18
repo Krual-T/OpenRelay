@@ -70,11 +70,13 @@ def test_directory_shortcut_resolution_reuses_workspace_guardrails(tmp_path: Pat
     store.close()
 
 
-def test_workspace_directory_page_lists_visible_top_level_entries(tmp_path: Path) -> None:
+def test_workspace_directory_page_lists_visible_entries_for_current_browser_path(tmp_path: Path) -> None:
     config = make_config(tmp_path)
     prepare_dirs(config)
     (config.main_workspace_dir / "docs").mkdir()
     (config.main_workspace_dir / "src").mkdir()
+    (config.main_workspace_dir / "src" / "api").mkdir(parents=True)
+    (config.main_workspace_dir / "src" / "core").mkdir(parents=True)
     (config.main_workspace_dir / ".git").mkdir()
     session = SessionRecord(
         session_id="s_1",
@@ -85,7 +87,29 @@ def test_workspace_directory_page_lists_visible_top_level_entries(tmp_path: Path
     )
     workspace = SessionWorkspaceService(config)
 
-    page = workspace.list_workspace_directories(session, page_size=10)
+    page = workspace.list_workspace_directories(session, browser_path=config.main_workspace_dir / "src", page_size=10)
 
-    assert [entry.relative_path for entry in page.entries] == [".", "docs", "src"]
-    assert [entry.state for entry in page.entries] == ["active_branch", "available", "current"]
+    assert page.browser_path == str((config.main_workspace_dir / "src").resolve())
+    assert page.parent_path == str(config.main_workspace_dir.resolve())
+    assert [entry.relative_path for entry in page.entries] == ["src/api", "src/core"]
+    assert [entry.state for entry in page.entries] == ["available", "available"]
+
+
+def test_workspace_directory_page_supports_query_filter(tmp_path: Path) -> None:
+    config = make_config(tmp_path)
+    prepare_dirs(config)
+    (config.main_workspace_dir / "api-server").mkdir()
+    (config.main_workspace_dir / "web-app").mkdir()
+    session = SessionRecord(
+        session_id="s_1",
+        base_key="p2p:oc_1",
+        backend="codex",
+        cwd=str(config.main_workspace_dir),
+        release_channel="main",
+    )
+    workspace = SessionWorkspaceService(config)
+
+    page = workspace.list_workspace_directories(session, query="api", page_size=10)
+
+    assert page.query == "api"
+    assert [entry.label for entry in page.entries] == ["api-server"]

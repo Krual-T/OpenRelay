@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+import shlex
 from typing import Any
 
 from lark_oapi.api.im.v1.model.p2_im_message_receive_v1 import P2ImMessageReceiveV1
@@ -61,6 +62,17 @@ def parse_card_action_event(event: dict[str, Any] | P2CardActionTrigger) -> Pars
         text = action_value.strip()
     elif isinstance(action_value, dict):
         text = _read_text(action_value.get("command") or action_value.get("text"))
+        form_value = event_data.action.form_value if event_data.action is not None and isinstance(event_data.action.form_value, dict) else {}
+        field_args = action_value.get("formFieldArgs") if isinstance(action_value.get("formFieldArgs"), dict) else {}
+        for field_name, flag in field_args.items():
+            value = str(form_value.get(field_name) or "").strip()
+            flag_text = str(flag or "").strip()
+            if value and flag_text:
+                text = f"{text} {flag_text} {shlex.quote(value)}".strip()
+        input_flag = _read_text(action_value.get("inputFlag"))
+        input_value = _read_text(getattr(event_data.action, "input_value", ""))
+        if input_flag and input_value:
+            text = f"{text} {input_flag} {shlex.quote(input_value)}".strip()
     context = event_data.context
     operator = event_data.operator
     chat_id = _read_attr_text(context, "open_chat_id") or _read_attr_text(operator, "open_id")

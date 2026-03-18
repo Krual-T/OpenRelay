@@ -17,6 +17,9 @@ class WorkspaceDirectoryEntry:
 @dataclass(slots=True)
 class WorkspaceDirectoryPage:
     entries: tuple[WorkspaceDirectoryEntry, ...]
+    browser_path: str
+    parent_path: str
+    query: str
     page: int
     total_pages: int
     total_entries: int
@@ -48,6 +51,15 @@ class SessionWorkspaceService:
             return str(absolute)
         return "." if str(relative) == "." else str(relative)
 
+    def format_workspace_picker_path(self, path: str | Path, session: SessionRecord | None = None) -> str:
+        workspace_root = self.workspace_root(session)
+        absolute = Path(path).expanduser().resolve()
+        try:
+            relative = absolute.relative_to(workspace_root)
+        except ValueError:
+            return str(absolute)
+        return "~" if str(relative) == "." else f"~/{relative}"
+
     def resolve_directory(self, raw_path: str, *, workspace_root: Path, base: Path | None = None) -> Path:
         requested = Path(raw_path.strip()).expanduser()
         if not raw_path.strip():
@@ -75,24 +87,26 @@ class SessionWorkspaceService:
         self,
         session: SessionRecord,
         *,
+        browser_path: str | Path | None = None,
+        query: str = "",
         page: int = 1,
-        page_size: int = 8,
+        page_size: int = 6,
     ) -> WorkspaceDirectoryPage:
         workspace_root = self.workspace_root(session)
+        browser = self.resolve_directory(str(browser_path or workspace_root), workspace_root=workspace_root, base=workspace_root)
         current = Path(session.cwd).expanduser().resolve() if session.cwd else workspace_root
-        candidates = [workspace_root]
-        if workspace_root.exists():
-            visible_directories = sorted(
-                (
-                    child.resolve()
-                    for child in workspace_root.iterdir()
-                    if child.is_dir() and not child.name.startswith(".")
-                ),
-                key=lambda item: item.name.lower(),
-            )
-            candidates.extend(visible_directories)
-
-        entries = tuple(self._build_workspace_directory_entry(workspace_root, current, target) for target in candidates)
+        normalized_query = query.strip().lower()
+        visible_directories = sorted(
+            (
+                child.resolve()
+                for child in browser.iterdir()
+                if child.is_dir() and not child.name.startswith(".")
+            ),
+            key=lambda item: item.name.lower(),
+        )
+        if normalized_query:
+            visible_directories = [item for item in visible_directories if normalized_query in item.name.lower()]
+        entries = tuple(self._build_workspace_directory_entry(workspace_root, current, target) for target in visible_directories)
         total_entries = len(entries)
         safe_page_size = max(page_size, 1)
         total_pages = max((total_entries + safe_page_size - 1) // safe_page_size, 1)
@@ -101,6 +115,9 @@ class SessionWorkspaceService:
         visible_entries = entries[start:start + safe_page_size]
         return WorkspaceDirectoryPage(
             entries=visible_entries,
+            browser_path=str(browser),
+            parent_path=str(browser.parent if browser != workspace_root else workspace_root),
+            query=query.strip(),
             page=current_page,
             total_pages=total_pages,
             total_entries=total_entries,

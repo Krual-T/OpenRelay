@@ -37,6 +37,17 @@ SESSION_SORT_LABELS = {
 }
 
 
+def _page_window(page: int, known_page_count: int, width: int = 5) -> list[int]:
+    if known_page_count <= 0:
+        return []
+    current = max(page, 1)
+    size = max(width, 1)
+    start = max(1, current - (size // 2))
+    end = min(known_page_count, start + size - 1)
+    start = max(1, end - size + 1)
+    return list(range(start, end + 1))
+
+
 def _markdown(content: str) -> dict[str, Any]:
     return markdown_block(content)
 
@@ -157,7 +168,7 @@ def _build_header_elements(info: dict[str, Any], view: str) -> list[dict[str, An
     elif view == PANEL_WORKSPACE:
         summary = (
             f"结果：第 `{info.get('page', 1)}` / `{info.get('total_pages', 1)}` 页 · "
-            f"`{info.get('total_entries', 0)}` 个顶层目录入口。先选工作区，再选顶层目录。"
+            f"`{info.get('total_entries', 0)}` 个目录入口。支持继续下钻、返回和搜索。"
         )
     elif view == PANEL_COMMANDS:
         summary = f"结果：`{len(list(info.get('command_entries') or []))}` 个高频动作。这里只保留高频入口，不追求完整命令清单。"
@@ -199,7 +210,7 @@ def _build_home_card(info: dict[str, Any]) -> dict[str, Any]:
     elements.append(_action_row([build_button("全部会话", "/panel sessions", "default", action_context), build_button("命令式列表", "/resume", "default", action_context), build_button("帮助", "/help", "default", action_context)]))
     elements.append(_markdown("**工作区入口**\n> 先看常用目录入口；需要完整选择器时，再打开工作区结果页。"))
     _append_directory_items(elements, shortcuts, action_context)
-    elements.append(_action_row([build_button("工作区选择", "/workspace", "primary", action_context), build_button("切到 main", "/main", "default", action_context), build_button("切到 develop", "/develop", "default", action_context)]))
+    elements.append(_action_row([build_button("工作区选择", "/workspace", "primary", action_context), build_button("快捷目录", "/shortcut list", "default", action_context), build_button("当前状态", "/status", "default", action_context)]))
     return build_card_shell("openrelay panel", elements, tone="info")
 
 
@@ -230,7 +241,7 @@ def _workspace_state_text(state: str) -> str:
     if state == "current":
         return "当前目录"
     if state == "active_branch":
-        return "当前所在顶层目录"
+        return "当前目录的上级"
     return "可选目录"
 
 
@@ -242,55 +253,75 @@ def _workspace_state_border(state: str) -> str:
     return "grey"
 
 
+def _build_workspace_search_form(action_context: dict[str, str], browser_path: str, query: str) -> dict[str, Any]:
+    callback_value = {
+        **action_context,
+        "command": f"/workspace --path {shlex.quote(browser_path)} --page 1",
+        "formFieldArgs": {"workspace_query": "--query"},
+    }
+    return {
+        "tag": "form",
+        "name": "workspace_search",
+        "elements": [
+            {
+                "tag": "input",
+                "name": "workspace_query",
+                "required": False,
+                "placeholder": {"tag": "plain_text", "content": "搜索当前目录下的文件夹"},
+                "default_value": query,
+            }
+        ],
+        "actions": [
+            {
+                "tag": "button",
+                "type": "primary",
+                "text": {"tag": "plain_text", "content": "搜索"},
+                "behaviors": [{"type": "callback", "value": callback_value}],
+            }
+        ],
+    }
+
+
 def _build_workspace_card(info: dict[str, Any]) -> dict[str, Any]:
     action_context = info.get("action_context") if isinstance(info.get("action_context"), dict) else {}
     entries = list(info.get("workspace_entries") or [])
+    browser_path = str(info.get("browser_path") or "")
+    parent_path = str(info.get("parent_path") or browser_path)
+    query = str(info.get("query") or "")
+    browser_display = str(info.get("browser_display") or "~")
     page = int(info.get("page") or 1)
     total_pages = int(info.get("total_pages") or 1)
     total_entries = int(info.get("total_entries") or len(entries))
-    channel = str(info.get("channel") or "main（稳定）")
-    current_channel = "develop" if "develop" in channel.lower() else "main"
     elements: list[dict[str, Any]] = [
         {
             "tag": "markdown",
             "content": "\n".join(
                 [
                     "**工作区选择**",
-                    f"> 当前通道：`{channel}`",
                     f"> 当前目录：`{info.get('cwd', '.')}`",
-                    "> 先确定工作区，再从顶层目录中选择；切换后，下一条真实消息会在新目录重新绑定 thread。",
+                    f"> 当前浏览：`{browser_display}`",
+                    "> 点目录进入下一层；点“选中当前目录”会把下一条真实消息放到这里执行。",
                 ]
             ),
         },
+        _build_workspace_search_form(action_context, browser_path, query),
         {
-            "tag": "markdown",
-            "content": "**切换工作区**\n> `main` 更适合稳定版本排障；`develop` 用于修复或实验性改动。",
+            "tag": "action",
+            "actions": [
+                build_button("选中当前目录", f"/workspace select {shlex.quote(browser_path)}", "primary", action_context),
+                build_button("返回上一级", f"/workspace --path {shlex.quote(parent_path)} --page 1", "default", action_context),
+                build_button("回到根目录", "/workspace --page 1", "default", action_context),
+            ],
         },
-        build_interactive_container(
-            "稳定工作区",
-            "切回 main 工作区根目录，并沿用稳定通道语义。",
-            "/main",
-            context=action_context,
-            border_color="blue" if current_channel == "main" else "grey",
-            disabled=current_channel == "main",
-            disabled_tip="当前已经在稳定工作区。",
-        ),
-        build_interactive_container(
-            "修复工作区",
-            "切到 develop 工作区根目录，适合修复与迭代。",
-            "/develop",
-            context=action_context,
-            border_color="blue" if current_channel == "develop" else "grey",
-            disabled=current_channel == "develop",
-            disabled_tip="当前已经在修复工作区。",
-        ),
         {
             "tag": "markdown",
-            "content": f"**顶层目录**\n> 第 `{page}` / `{total_pages}` 页，共 `{total_entries}` 个入口。",
+            "content": f"**目录列表**\n> 第 `{page}` / `{total_pages}` 页，共 `{total_entries}` 个入口。{f' 当前搜索：`{query}`。' if query else ''}",
         },
     ]
+    if not entries:
+        elements.append(_markdown("> 当前目录下没有匹配的子目录。"))
     for entry in entries:
-        relative_path = str(entry.get("relative_path") or ".")
+        relative_path = str(entry.get("relative_path") or "~")
         state = str(entry.get("state") or "available")
         label = str(entry.get("label") or relative_path or "目录")
         description = f"`{relative_path}` · {_workspace_state_text(state)}"
@@ -298,17 +329,32 @@ def _build_workspace_card(info: dict[str, Any]) -> dict[str, Any]:
             build_interactive_container(
                 label,
                 description,
-                f"/workspace select {shlex.quote(str(entry.get('absolute_path') or relative_path))}",
+                f"/workspace --path {shlex.quote(str(entry.get('absolute_path') or relative_path))} --page 1{f' --query {shlex.quote(query)}' if query else ''}",
                 context=action_context,
                 border_color=_workspace_state_border(state),
-                disabled=state == "current",
-                disabled_tip="当前已经在这个目录。",
+                disabled=False,
             )
         )
+    page_controls = [
+        build_button(
+            str(page_number),
+            f"/workspace --path {shlex.quote(browser_path)} --page {page_number}{f' --query {shlex.quote(query)}' if query else ''}",
+            "primary" if page_number == page else "default",
+            action_context,
+        )
+        for page_number in _page_window(page, total_pages)
+    ]
+    nav_controls: list[dict[str, Any]] = []
     if page > 1:
-        elements.append(build_interactive_container("上一页", "查看更靠前的顶层目录入口。", f"/workspace --page {page - 1}", context=action_context))
+        nav_controls.append(build_button("上一页", f"/workspace --path {shlex.quote(browser_path)} --page {page - 1}{f' --query {shlex.quote(query)}' if query else ''}", "default", action_context))
     if page < total_pages:
-        elements.append(build_interactive_container("下一页", "查看后续顶层目录入口。", f"/workspace --page {page + 1}", context=action_context))
+        nav_controls.append(build_button("下一页", f"/workspace --path {shlex.quote(browser_path)} --page {page + 1}{f' --query {shlex.quote(query)}' if query else ''}", "primary", action_context))
+    if query:
+        nav_controls.append(build_button("清空搜索", f"/workspace --path {shlex.quote(browser_path)} --page 1", "default", action_context))
+    if page_controls:
+        elements.append({"tag": "action", "actions": page_controls})
+    if nav_controls:
+        elements.append({"tag": "action", "actions": nav_controls})
     return {
         "schema": "2.0",
         "config": {"wide_screen_mode": True, "enable_forward": True, "update_multi": True},
@@ -378,10 +424,14 @@ class RuntimePanelPresenter:
             )
             fallback_text = self.build_panel_sessions_text(session_page)
         elif args.view == "workspace":
-            workspace_page = self.workspace.list_workspace_directories(session, page=args.page)
+            workspace_page = self.workspace.list_workspace_directories(session, browser_path=args.target_path, query=args.query, page=args.page)
             card = build_panel_card(
                 {
                     **panel_info,
+                    "browser_path": workspace_page.browser_path,
+                    "parent_path": workspace_page.parent_path,
+                    "browser_display": self.workspace.format_workspace_picker_path(workspace_page.browser_path, session),
+                    "query": workspace_page.query,
                     "page": workspace_page.page,
                     "total_pages": workspace_page.total_pages,
                     "total_entries": workspace_page.total_entries,
@@ -396,7 +446,14 @@ class RuntimePanelPresenter:
                     ],
                 }
             )
-            fallback_text = self.build_panel_workspace_text(workspace_page.entries, workspace_page.page, workspace_page.total_pages, workspace_page.total_entries)
+            fallback_text = self.build_panel_workspace_text(
+                workspace_page.entries,
+                browser_display=self.workspace.format_workspace_picker_path(workspace_page.browser_path, session),
+                page=workspace_page.page,
+                total_pages=workspace_page.total_pages,
+                total_entries=workspace_page.total_entries,
+                query=workspace_page.query,
+            )
         elif args.view == "commands":
             command_entries = self.build_panel_command_entries()
             card = build_panel_card({**panel_info, "command_entries": command_entries})
@@ -473,7 +530,7 @@ class RuntimePanelPresenter:
         return [
             {"title": "恢复上一条", "meta": "会话 · 最短继续路径", "preview": "直接回到最近会话，不必先打开列表。", "command": "/resume latest", "action_label": "恢复上一条", "action_type": "primary"},
             {"title": "浏览会话结果", "meta": "会话 · 翻页 / 排序", "preview": "在面板里看最近会话，再决定恢复哪一条。", "command": "/panel sessions", "action_label": "看会话"},
-            {"title": "打开工作区选择器", "meta": "工作区 · 顶层目录选择", "preview": "先切工作区，再点顶层目录；不再要求用户手输目录切换命令。", "command": "/workspace", "action_label": "选工作区"},
+            {"title": "打开工作区选择器", "meta": "工作区 · 浏览 / 搜索 / 分页", "preview": "从 `~` 根别名开始浏览；默认打开配置好的工作目录，并支持搜索。", "command": "/workspace", "action_label": "选工作区"},
             {"title": "管理快捷目录", "meta": "工作区 · 新增 / 列表 / 快速切换", "preview": "用 /shortcut add|list|use 在飞书里维护自己的常用目录入口。", "command": "/shortcut list", "action_label": "看快捷目录"},
             {"title": "查看完整状态", "meta": "状态 · 目录 / 模型 / 上下文", "preview": "先确认现场，再决定继续当前任务还是切上下文。", "command": "/status", "action_label": "看状态"},
             {"title": "顶层开新对话", "meta": "隔离 · 新任务 / 切话题", "preview": "目标已经变了时，直接回顶层发新消息，不要继续堆在当前会话里。", "command": "/help", "action_label": "看说明"},
@@ -509,7 +566,7 @@ class RuntimePanelPresenter:
             "",
             "结果面：/panel sessions | /panel workspace | /panel commands | /panel status",
             "提示：/panel 现在是总入口；先选会话 / 工作区 / 命令 / 状态，再进入对应结果面。",
-            "工作区选择改为卡片主路径；如需强制切回稳定版本，发送 /main 原因。",
+            "工作区选择改为卡片主路径；默认打开配置好的工作目录，并支持继续下钻、返回和搜索。",
             "",
             "最近会话：",
             self.session_presentation.format_session_list(entries[:3]),
@@ -522,18 +579,20 @@ class RuntimePanelPresenter:
             lines.extend(["", "工作区入口：暂无快捷目录；可直接打开 /workspace。"])
         lines.extend([
             "",
-            "commands: /panel sessions /panel workspace /panel commands /panel status /workspace /resume /resume latest /main /develop /status /model [name|default] /sandbox [mode] /clear",
+            "commands: /panel sessions /panel workspace /panel commands /panel status /workspace /resume /resume latest /shortcut list /status /model [name|default] /sandbox [mode] /clear",
         ])
         return "\n".join(lines)
 
     def build_panel_sessions_text(self, session_page: Any) -> str:
         return "\n".join(["OpenRelay 面板 · 会话", self.session_presentation.format_session_list_page(session_page), "", "返回总览：/panel。"])
 
-    def build_panel_workspace_text(self, entries: list[Any], page: int, total_pages: int, total_entries: int) -> str:
-        lines = [f"OpenRelay 面板 · 工作区（第 {page}/{total_pages} 页，共 {total_entries} 个入口）", "先切工作区，再选顶层目录。"]
+    def build_panel_workspace_text(self, entries: list[Any], *, browser_display: str, page: int, total_pages: int, total_entries: int, query: str) -> str:
+        lines = [f"OpenRelay 面板 · 工作区 {browser_display}（第 {page}/{total_pages} 页，共 {total_entries} 个入口）", "点目录进入下一层；选中当前目录会更新当前 scope。"]
+        if query:
+            lines.append(f"当前搜索：{query}")
         for entry in entries:
             lines.append(f"- {entry.label} -> {entry.relative_path} [{_workspace_state_text(entry.state)}]")
-        lines.extend(["", "常用动作：/workspace /main /develop"])
+        lines.extend(["", "常用动作：/workspace"])
         return "\n".join(lines)
 
     def build_panel_commands_text(self, command_entries: list[dict[str, str]]) -> str:
