@@ -1,4 +1,5 @@
-edit tool demo
-line 1: original text
+update tool demo
+line 1: original text, now revised
 line 2: keep this line
-line 3: will be replaced later
+line 3: replacement text landed
+line 4: newly appended line
