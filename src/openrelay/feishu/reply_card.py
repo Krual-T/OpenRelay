@@ -15,7 +15,7 @@ PROCESS_LOG_PANEL_TITLE = "Execution Log"
 LOADING_ICON_IMAGE_KEY = "img_v3_02vb_496bec09-4b43-4773-ad6b-0cdd103cd2bg"
 REASONING_PREFIX = "Reasoning:\n"
 LOGGER = logging.getLogger("openrelay.feishu.reply_card")
-INLINE_CODE_COLOR = "#294D0C"
+INLINE_CODE_COLOR = "blue"
 
 
 def strip_invalid_image_keys(text: str) -> str:

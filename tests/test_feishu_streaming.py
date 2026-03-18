@@ -1,6 +1,7 @@
 import pytest
 
 import openrelay.feishu.streaming as streaming_card_module
+from openrelay.agent_runtime import LiveTurnViewModel, ToolState
 from openrelay.feishu.reply_card import build_streaming_card_signature
 from openrelay.feishu.reply_card import build_complete_card
 from openrelay.feishu.reply_card import optimize_markdown_style
@@ -12,6 +13,7 @@ from openrelay.feishu import (
     build_streaming_card_json,
     build_streaming_content,
 )
+from openrelay.presentation.live_turn import LiveTurnPresenter
 
 
 def test_build_streaming_card_json_uses_single_streaming_element() -> None:
@@ -502,6 +504,48 @@ def test_build_streaming_content_renders_updated_files_with_section_separator() 
     assert "<text_tag color='green'>+</text_tag>&nbsp;<font color='green'>new&nbsp;line</font>" in content
 
 
+def test_build_streaming_content_renders_turn_diff_fallback_for_file_change() -> None:
+    presenter = LiveTurnPresenter()
+    snapshot = presenter.build_snapshot(
+        LiveTurnViewModel(
+            backend="codex",
+            session_id="relay_1",
+            native_session_id="thread_1",
+            turn_id="turn_1",
+            status="running",
+            latest_diff="--- a/tool-demo-edit.txt\n+++ b/tool-demo-edit.txt\n@@ -1,2 +1,2 @@\n-状态: 旧值\n+状态: 已更新",
+            tools=(
+                ToolState(
+                    tool_id="fc_1",
+                    kind="file_change",
+                    title="File changes",
+                    status="completed",
+                    preview="tool-demo-edit.txt",
+                    detail="",
+                    provider_payload={
+                        "changes": [
+                            {
+                                "path": "/home/Shaokun.Tang/Projects/tool-demo-edit.txt",
+                                "kind": {"type": "update"},
+                            }
+                        ]
+                    },
+                ),
+            ),
+        )
+    )
+
+    content = build_streaming_content(snapshot)
+
+    assert "🟠 Updated files" in content
+    assert "<text_tag color='orange'>Edit</text_tag> `/home/Shaokun.Tang/Projects/tool-demo-edit.txt`" in content
+    assert "=====output=====" in content
+    assert "<font color='grey'>---&nbsp;a/tool-demo-edit.txt</font>" in content
+    assert "<font color='grey'>+++&nbsp;b/tool-demo-edit.txt</font>" in content
+    assert "<text_tag color='red'>-</text_tag>&nbsp;<font color='red'>状态:&nbsp;旧值</font>" in content
+    assert "<text_tag color='green'>+</text_tag>&nbsp;<font color='green'>状态:&nbsp;已更新</font>" in content
+
+
 def test_build_streaming_content_renders_unexpected_backend_event_payload() -> None:
     content = build_streaming_content(
         {
@@ -769,18 +813,18 @@ def test_build_complete_card_prefers_transcript_markdown() -> None:
     assert "summary" not in card["config"]
 
 
-def test_optimize_markdown_style_replaces_inline_code_with_custom_font_color() -> None:
+def test_optimize_markdown_style_replaces_inline_code_with_feishu_color_enum() -> None:
     rendered = optimize_markdown_style("执行 `pytest -q`，查看 `src/openrelay/feishu/highlight.py`。")
 
     assert "`pytest -q`" not in rendered
-    assert "<font color='#294D0C'>pytest&nbsp;-q</font>" in rendered
-    assert "<font color='#294D0C'>src/openrelay/feishu/highlight.py</font>" in rendered
+    assert "<font color='blue'>pytest&nbsp;-q</font>" in rendered
+    assert "<font color='blue'>src/openrelay/feishu/highlight.py</font>" in rendered
 
 
 def test_optimize_markdown_style_keeps_code_fence_untouched_while_restyling_inline_code() -> None:
     rendered = optimize_markdown_style("先看 `uv run pytest`\n\n```bash\npytest -q\n```")
 
-    assert "<font color='#294D0C'>uv&nbsp;run&nbsp;pytest</font>" in rendered
+    assert "<font color='blue'>uv&nbsp;run&nbsp;pytest</font>" in rendered
     assert "```bash\npytest -q\n```" in rendered
 
 
