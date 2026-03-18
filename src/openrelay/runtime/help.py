@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from typing import Any
 
-from openrelay.core import AppConfig, SessionRecord, format_release_channel, infer_release_channel
-from openrelay.feishu.cards import build_button, build_card_shell, build_section_block, build_status_hero, divider_block
+from openrelay.core import AppConfig, SessionRecord
+from openrelay.feishu.cards import build_button, build_card_shell, build_section_block
 from openrelay.presentation.session import SessionPresentation
 from openrelay.session import SessionShortcutService, SessionWorkspaceService
 from openrelay.storage import StateStore
@@ -25,290 +25,84 @@ class HelpRenderer:
         self.shortcuts = shortcuts
 
     def build_text(self, session: SessionRecord, available_backends: list[str]) -> str:
-        message_count = len(self.store.list_messages(session.session_id))
-        context_lines = self.session_ux.build_context_lines(session, limit=2)
-        context_preview = self.session_ux.build_context_preview(session, limit=2)
-        lines = [
-            "OpenRelay 帮助",
-            "",
-            "当前状态：",
-            f"- 会话：{session.label or '未命名会话'} ({session.session_id})",
-            f"- 会话阶段：{self.describe_session_phase(session, message_count)}",
-            f"- 通道：{format_release_channel(infer_release_channel(self.config, session))}",
-            f"- 目录：{self.workspace.format_cwd(session.cwd, session)}",
-            f"- 后端：{session.backend}",
-            f"- 模型：{self.session_ux.effective_model(session)}",
-            f"- sandbox：{session.safety_mode}",
-            f"- 后端线程：{session.native_session_id or 'pending（直接发消息就会创建）'}",
-            f"- 上下文占用：{self.session_ux.format_context_usage(session)}",
-            f"- 本地消息数：{message_count}",
-            f"- 最近关注：{context_preview or '还没有可总结的本地上下文'}",
-            "",
-            "一句话判断：",
-            f"- {self.build_now_summary(session, message_count)}",
-        ]
-        context_note = self.build_context_note(session)
-        if context_note:
-            lines.append(context_note)
-        lines.extend(
-            [
-                "",
-                "你现在最该做什么：",
-                *self.build_priority_actions(session, message_count),
-                "",
-                "下一条消息可以直接这样发：",
-                *self.build_prompt_examples(session, message_count),
-                "",
-                "什么时候该用命令：",
-                *self.build_command_guide(session, available_backends),
-                "",
-                "命令手册：",
-                *self.build_command_reference_lines(available_backends),
-                "",
-                "最近上下文：",
-                *context_lines,
-                "",
-                "提示：如果目标没变，别先发命令，直接补充任务、报错、文件路径，或明确让它继续下一步。",
-            ]
-        )
-        return "\n".join(lines)
+        _ = session
+        lines = ["OpenRelay 帮助", ""]
+        for title, items in self.build_command_reference_sections(available_backends):
+            lines.append(f"{title}：")
+            lines.extend(items)
+            lines.append("")
+        return "\n".join(lines).strip()
 
     def build_card(self, session: SessionRecord, available_backends: list[str], action_context: dict[str, str] | None = None) -> dict[str, Any]:
-        message_count = len(self.store.list_messages(session.session_id))
-        context_preview = self.session_ux.build_context_preview(session, limit=2)
+        _ = session
         actions_context = action_context or {}
-        elements: list[dict[str, Any]] = [
-            *build_status_hero(
-                "当前状态",
-                tone="info",
-                summary=self.build_now_summary(session, message_count),
-                facts=[
-                    ("会话", f"{session.label or '未命名会话'}\n`{session.session_id}`"),
-                    ("阶段", self.describe_session_phase(session, message_count)),
-                    ("通道", f"`{format_release_channel(infer_release_channel(self.config, session))}`"),
-                    ("目录", f"`{self.workspace.format_cwd(session.cwd, session)}`"),
-                    ("后端 / 模型", f"`{session.backend}` · `{self.session_ux.effective_model(session)}`"),
-                    ("Sandbox / 后端线程", f"`{session.safety_mode}` · `{session.native_session_id or 'pending'}`"),
-                    ("上下文 / 本地消息", f"`{self.session_ux.format_context_usage(session)}` · `{message_count}`"),
-                ],
-                notes=[f"最近关注：{context_preview or '还没有可总结的本地上下文'}"],
-            )
-        ]
-        context_note = self.build_context_note(session)
-        if context_note:
-            elements.append(build_section_block("上下文提醒", [context_note], emoji="⚠️"))
-        elements.extend(
-            [
-                divider_block(),
-                build_section_block("你现在最该做什么", self.build_priority_actions(session, message_count), emoji="🎯"),
-                divider_block(),
-                build_section_block("下一条消息可以直接这样发", self.build_prompt_examples(session, message_count), emoji="✍️"),
-                divider_block(),
-                build_section_block(
-                    "什么时候该用命令",
-                    [
-                        *self.build_command_guide(session, available_backends),
-                        "",
-                        "> 点击下面按钮即可直接执行对应命令；如果任务没变，直接发消息通常更快。",
-                    ],
-                    emoji="🧭",
-                ),
-                divider_block(),
-            ]
-        )
+        elements: list[dict[str, Any]] = []
         for title, items in self.build_command_reference_sections(available_backends):
             elements.append(build_section_block(title, items, emoji="📘"))
         for group in self.build_command_button_groups(available_backends, actions_context):
             elements.append({"tag": "action", "actions": group})
         return build_card_shell("openrelay help", elements, tone="info")
 
-    def describe_session_phase(self, session: SessionRecord, message_count: int) -> str:
-        if message_count == 0 and session.native_session_id:
-            return "仅后端线程已连接（可继续发消息，但本地暂未缓存上下文）"
-        if message_count == 0:
-            return "未开始（还没发第一条真实需求）"
-        if session.native_session_id:
-            return "进行中（继续发消息会沿用当前后端线程）"
-        return "待启动（已有本地上下文，下一条真实消息会创建后端线程）"
-
-    def build_now_summary(self, session: SessionRecord, message_count: int) -> str:
-        if message_count == 0 and session.native_session_id:
-            return "这是一个已连接后端线程但本地上下文为空的会话；直接发消息会继续当前后端线程。"
-        if message_count == 0:
-            return "这是一个空会话；最有效的动作通常是直接发完整任务，而不是先试很多命令。"
-        if session.native_session_id:
-            return "这是一个进行中的会话；如果任务没变，直接补充信息最快。"
-        return "这是一个已有本地上下文但尚未重新连上后端执行的会话；下一条真实消息会自动接上。"
-
-    def build_context_note(self, session: SessionRecord) -> str | None:
-        usage_ratio = self.context_usage_ratio(session)
-        if usage_ratio is None:
-            return None
-        if usage_ratio >= 0.85:
-            return "- 上下文提醒：当前上下文已经接近窗口上限；如果要开新任务，直接在顶层发新消息，别继续混在这个会话里。"
-        if usage_ratio >= 0.65:
-            return "- 上下文提醒：当前上下文已经不短；如果话题要明显切换，建议直接在顶层开新消息。"
-        return None
-
-    def context_usage_ratio(self, session: SessionRecord) -> float | None:
-        usage = session.last_usage if isinstance(session.last_usage, dict) else {}
-        total_tokens = usage.get("total_tokens")
-        model_context_window = usage.get("model_context_window")
-        try:
-            total_value = int(total_tokens)
-            window_value = int(model_context_window)
-        except (TypeError, ValueError):
-            return None
-        if window_value <= 0:
-            return None
-        return total_value / window_value
-
-    def build_priority_actions(self, session: SessionRecord, message_count: int) -> list[str]:
-        if message_count == 0 and session.native_session_id:
-            return [
-                "- 想延续当前 backend session：直接发消息，不需要先补命令。",
-                "- 想改成新任务：直接回顶层发新消息，避免旧上下文干扰。",
-                "- 想先确认目录、模型、通道和最近上下文，发 /status。",
-            ]
-        if message_count == 0:
-            return [
-                "- 先把目标说完整：要改什么、在哪个目录、是否要直接改代码。",
-                "- 如果要先选执行目录，打开 /workspace；没有就直接发任务，别把时间花在命令上。",
-                "- 工作区卡默认会从配置好的目录打开，再逐级选到目标文件夹。",
-            ]
-        if session.native_session_id:
-            return [
-                "- 如果还是同一件事，直接追加信息：目标、报错、文件路径、验收标准。",
-                "- 当前回复还没结束时，继续发消息会自动排到下一轮；连续补充会合并处理。",
-                "- 如果你想让它立刻推进，直接说“继续，先做下一步并汇报改动”。",
-                "- 如果任务已经变了，回顶层直接发新消息，不要把新需求继续塞进当前会话。",
-            ]
-        return [
-            "- 直接再发一条真实消息，系统会基于当前本地上下文重新接上执行。",
-            "- 如果现在其实是新任务，回顶层直接发新消息。",
-            "- 如果你要回到更早的某次 Codex 对话，先 /resume 打开会话卡片，再连接对应 thread。",
-        ]
-
-    def build_prompt_examples(self, session: SessionRecord, message_count: int) -> list[str]:
-        if message_count == 0 and session.native_session_id:
-            return [
-                '- “继续刚才那个任务，先回顾当前进度，再直接往下做。”',
-                '- “不要开新话题，基于当前会话继续修这个问题：<描述>。”',
-                '- “先告诉我你准备怎么继续，然后直接开始。”',
-                '- “如果你判断这已经是新任务，提醒我回顶层再开一条消息。”',
-            ]
-        if message_count == 0:
-            return [
-                '- “先快速读一下这个仓库，告诉我入口、运行方式和关键目录。”',
-                '- “定位这个报错的根因：<贴报错>; 先解释判断，再直接修复。”',
-                '- “在 <path> 下实现 <需求>；先列计划，再按最小改动完成。”',
-                '- “先不要改代码，帮我梳理实现方案、风险和验收点。”',
-            ]
-        if session.native_session_id:
-            return [
-                '- “继续刚才的任务，下一步先检查 <file/path>，然后直接改。”',
-                '- “这个报错还在：<贴报错>; 结合当前上下文继续排查。”',
-                '- “先记住这条补充，等你输出完上一条后继续处理：<补充信息>。”',
-                '- “基于现在的进度继续，不要重来；做完告诉我改了哪些文件。”',
-                '- “先别写代码，帮我总结当前进度、阻塞点和下一步。”',
-            ]
-        return [
-            '- “基于当前上下文继续，先总结你理解的现状，再直接往下做。”',
-            '- “把最近这个任务接上，先检查 <file/path>，然后继续实现。”',
-            '- “如果当前上下文不足以继续，请明确告诉我缺什么信息。”',
-            '- “先帮我整理当前上下文里的目标、已完成项和待做项。”',
-        ]
-
-    def build_command_guide(self, session: SessionRecord, available_backends: list[str]) -> list[str]:
-        shortcut_entries = self.shortcuts.build_directory_shortcut_entries(session)
-        lines = [
-            "- 同一任务继续干：通常不用命令，直接发消息。",
-            "- 当前回复还在跑时，继续发消息会进入下一轮；连续补充会自动合并。",
-            "- 私聊顶层直接发新消息：默认会开新的后端会话；想回旧会话时再用 /resume。",
-            "- 开新任务或切话题：直接回顶层发新消息；查看或恢复旧后端会话：/resume、/resume latest。",
-            "- `/resume` 只允许在私聊顶层使用；子 thread 会固定绑定当前后端会话。",
-            "- `/resume` 会读取并绑定当前 backend 的可恢复会话；`/compact` 会等待当前会话 compact 完成后再返回结果。",
-            "- 换执行位置：/workspace 打开工作区选择器，支持逐级浏览、搜索和分页。",
-            "- 快捷目录：/shortcut add <name> <path> [all|main|develop]、/shortcut list、/shortcut use <name>。",
-            "- 看现场：/status 看会话、目录、最近上下文；/usage 看 token 和 context_usage。",
-            "- 控制运行：/stop 停止生成；/clear 清空当前上下文；/reset 重置当前 scope；需要完整手册时发 /help。",
-            "- 环境与维护：/model 切模型；/sandbox 切执行模式；/ping 连通性检查；/restart 管理员用。",
-        ]
-        if shortcut_entries:
-            lines.insert(4, "- 常用目录：如果你已经配了快捷目录，优先用 /shortcut use <name> 直接切过去。")
-        if len(available_backends) > 1:
-            lines.append(f"- 切后端：/backend [list|{'|'.join(available_backends)}]。")
-        return lines
-
     def build_command_reference_sections(self, available_backends: list[str]) -> list[tuple[str, list[str]]]:
         sections: list[tuple[str, list[str]]] = [
             (
                 "会话与信息",
                 [
-                    "- `/help` 或 `/tools`：打开这份帮助。",
-                    "- `/status`：看当前会话、目录、模型、通道和最近上下文。",
-                    "- `/usage`：看 token 和 context usage。",
-                    "- `/resume`：在私聊顶层打开可恢复会话卡片。",
-                    "- `/resume latest`：直接连接最近的后端会话。",
+                    "- `/help` 或 `/tools`：打开帮助。",
+                    "- `/status`：查看当前会话和目录状态。",
+                    "- `/usage`：查看 token 和 context usage。",
+                    "- `/resume`：打开可恢复会话列表。",
+                    "- `/resume latest`：连接最近的后端会话。",
                     "- `/resume <序号|session_id|local_session_id>`：连接指定历史会话。",
-                    "- `/compact [latest|序号|session_id]`：对当前或指定后端会话做 compact。",
+                    "- `/compact [latest|序号|session_id]`：对当前或指定会话做 compact。",
                 ],
             ),
             (
                 "工作区与目录",
                 [
                     "- `/workspace`：打开工作区浏览器。",
-                    "- `/workspace --page N [--path <dir>] [--query <text>]`：翻页、进入目录或搜索子目录。",
-                    "- `/workspace open <path>`：直接打开某个目录作为浏览起点。",
-                    "- `/workspace select <path>`：把当前 scope 切到目标目录。",
-                    "- `/shortcut list`：列出当前通道可用的快捷目录。",
+                    "- `/workspace --page N [--path <dir>] [--query <text>]`：浏览、翻页或搜索目录。",
+                    "- `/workspace open <path>`：从指定目录打开浏览器。",
+                    "- `/workspace select <path>`：切到目标目录。",
+                    "- `/shortcut list`：列出快捷目录。",
                     "- `/shortcut add <name> <path> [all|main|develop]`：新增快捷目录。",
                     "- `/shortcut use <name>`：切到快捷目录。",
                     "- `/shortcut remove <name>`：删除快捷目录。",
-                    "- `/main` 或 `/stable`：强制切到 main 稳定工作区。",
+                    "- `/main` 或 `/stable`：切到 main 稳定工作区。",
                     "- `/develop`：切到 develop 修复工作区。",
                 ],
             ),
             (
                 "执行环境",
                 [
-                    "- `/model`：查看当前生效模型。",
-                    "- `/model <name|default>`：切模型；从下一条真实消息开始生效。",
+                    "- `/model`：查看当前模型。",
+                    "- `/model <name|default>`：切换模型。",
                     "- `/sandbox`：查看当前 sandbox。",
-                    "- `/sandbox <read-only|workspace-write|danger-full-access>`：切 sandbox；danger-full-access 仅管理员可用。",
+                    "- `/sandbox <read-only|workspace-write|danger-full-access>`：切换 sandbox。",
                     "- `/backend list`：查看可用 backend。",
                 ],
             ),
             (
                 "控制与维护",
                 [
-                    "- `/clear`：清空当前上下文，但保留目录和配置。",
+                    "- `/clear`：清空当前上下文。",
                     "- `/reset`：重置当前 scope。",
                     "- `/stop`：停止当前生成。",
                     "- `/ping`：连通性检查。",
                     "- `/restart`：重启 openrelay；仅管理员可用。",
-                    "- `/panel`：已移除；会话用 `/resume`，工作区用 `/workspace`，状态用 `/status`。",
+                    "- `/panel`：已移除；改用 `/resume`、`/workspace`、`/status`。",
                 ],
             ),
         ]
         if len(available_backends) > 1:
-            sections[2][1].append(f"- `/backend <{'|'.join(available_backends)}>`：切换 backend；从下一条真实消息开始生效。")
+            sections[2][1].append(f"- `/backend <{'|'.join(available_backends)}>`：切换 backend。")
         return sections
-
-    def build_command_reference_lines(self, available_backends: list[str]) -> list[str]:
-        lines: list[str] = []
-        for title, items in self.build_command_reference_sections(available_backends):
-            lines.append(f"- {title}：")
-            lines.extend(items)
-        return lines
 
     def build_command_button_groups(self, available_backends: list[str], action_context: dict[str, str]) -> list[list[dict[str, Any]]]:
         groups: list[list[tuple[str, str, str]]] = [
-            [("帮助", "/help", "primary"), ("状态", "/status", "default"), ("用量", "/usage", "default")],
-            [("会话列表", "/resume", "primary"), ("工作区", "/workspace", "default"), ("快捷目录", "/shortcut list", "default")],
+            [("状态", "/status", "default"), ("会话", "/resume", "primary"), ("工作区", "/workspace", "default")],
             [("模型", "/model", "default"), ("Sandbox", "/sandbox", "default"), ("停止", "/stop", "default")],
-            [("清空上下文", "/clear", "default")],
         ]
         if len(available_backends) > 1:
-            groups[2].insert(2, ("后端", "/backend list", "default"))
+            groups[1].insert(2, ("后端", "/backend list", "default"))
         return [[build_button(label, command, button_type, action_context) for label, command, button_type in group] for group in groups]

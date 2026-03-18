@@ -31,7 +31,7 @@ def prepare_dirs(config: AppConfig) -> None:
 
 
 
-def test_help_renderer_describes_empty_session(tmp_path: Path) -> None:
+def test_help_renderer_lists_commands_for_single_backend(tmp_path: Path) -> None:
     config = make_config(tmp_path)
     prepare_dirs(config)
     store = StateStore(config)
@@ -43,27 +43,24 @@ def test_help_renderer_describes_empty_session(tmp_path: Path) -> None:
 
     text = renderer.build_text(session, ["codex"])
 
-    assert "OpenRelay 帮助" in text
-    assert "- 会话阶段：未开始（还没发第一条真实需求）" in text
-    assert "- 后端线程：pending（直接发消息就会创建）" in text
-    assert "- 最近关注：还没有可总结的本地上下文" in text
+    assert text.startswith("OpenRelay 帮助")
+    assert "会话与信息：" in text
+    assert "- `/resume`：打开可恢复会话列表。" in text
     assert "- `/workspace`：打开工作区浏览器。" in text
-    assert "- `/panel`：已移除；会话用 `/resume`，工作区用 `/workspace`，状态用 `/status`。" in text
+    assert "- `/model <name|default>`：切换模型。" in text
+    assert "- `/panel`：已移除；改用 `/resume`、`/workspace`、`/status`。" in text
+    assert "当前状态：" not in text
+    assert "你现在最该做什么：" not in text
+    assert "下一条消息可以直接这样发：" not in text
     store.close()
 
 
 
-def test_help_renderer_describes_active_session(tmp_path: Path) -> None:
+def test_help_renderer_lists_backend_switch_when_multiple_backends(tmp_path: Path) -> None:
     config = make_config(tmp_path)
     prepare_dirs(config)
     store = StateStore(config)
     session = store.load_session("p2p:oc_1")
-    store.append_message(session.session_id, "user", "hello help")
-    store.append_message(session.session_id, "assistant", "echo: hello help")
-    session.native_session_id = "native_1"
-    session.last_usage = {"input_tokens": 100, "cached_input_tokens": 50, "output_tokens": 20, "total_tokens": 170, "model_context_window": 1000}
-    store.save_session(session)
-    session = store.get_session(session.session_id)
     session_ux = SessionPresentation(config, store)
     workspace = SessionWorkspaceService(config)
     shortcuts = SessionShortcutService(config, store, workspace)
@@ -71,9 +68,6 @@ def test_help_renderer_describes_active_session(tmp_path: Path) -> None:
 
     text = renderer.build_text(session, ["codex", "claude"])
 
-    assert "- 会话阶段：进行中（继续发消息会沿用当前后端线程）" in text
-    assert "- 上下文占用：17.0% (170/1000)" in text
-    assert "- 最近关注：用户：hello help | 助手：echo: hello help" in text
-    assert "- 切后端：/backend [list|codex|claude]。" in text
-    assert "- `/backend <codex|claude>`：切换 backend；从下一条真实消息开始生效。" in text
+    assert "- `/backend list`：查看可用 backend。" in text
+    assert "- `/backend <codex|claude>`：切换 backend。" in text
     store.close()
