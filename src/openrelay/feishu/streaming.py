@@ -138,7 +138,6 @@ class FeishuStreamingSession:
             waiting_card = build_complete_card(
                 notice_text,
                 transcript_markdown=transcript_markdown,
-                summary_text=notice_text,
             )
             await self.update_card_json(waiting_card)
             self.state["card_signature"] = ("frozen", "")

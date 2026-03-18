@@ -17,7 +17,7 @@ def test_build_streaming_card_json_uses_single_streaming_element() -> None:
 
     assert card["schema"] == "2.0"
     assert card["config"]["streaming_mode"] is True
-    assert card["config"]["summary"]["content"] == DEFAULT_THINKING_TEXT
+    assert "summary" not in card["config"]
     assert card["body"]["elements"][0]["element_id"] == STREAMING_ELEMENT_ID
     assert card["body"]["elements"][0]["content"] == ""
     assert card["body"]["elements"][1]["element_id"] == "loading_icon"
@@ -44,7 +44,7 @@ def test_build_streaming_card_json_keeps_single_streaming_element_when_answer_st
     )
 
     assert card["config"]["streaming_mode"] is True
-    assert card["config"]["summary"]["content"] == DEFAULT_THINKING_TEXT
+    assert "summary" not in card["config"]
     assert card["body"]["elements"][0]["element_id"] == STREAMING_ELEMENT_ID
     assert "🔵 Explored" in card["body"]["elements"][0]["content"]
     assert "#### Answer\n找到结果。" in card["body"]["elements"][0]["content"]
@@ -222,10 +222,10 @@ def test_build_streaming_content_renders_plan_with_static_purple_bullets_and_str
     )
 
     assert "🟣 Plan" in content
-    assert "🟣 Plan  \n├ 🟣 ~~`completed` Inspect runtime~~" in content
-    assert "├ 🟣 ~~`completed` Inspect runtime~~" in content
-    assert "├ 🟣 `in_progress` Adjust Feishu rendering" in content
-    assert "└ 🟣 `pending` Verify snapshot output" in content
+    assert "🟣 Plan  \n├ **[Completed]** Inspect runtime" in content
+    assert "├ **[Completed]** Inspect runtime" in content
+    assert "├ **[In Progress]** Adjust Feishu rendering" in content
+    assert "└ **[Pending]** Verify snapshot output" in content
 
 
 def test_build_streaming_content_renders_unexpected_backend_event_payload() -> None:
@@ -475,24 +475,17 @@ def test_build_complete_card_prefers_transcript_markdown() -> None:
     card = build_complete_card(
         "最终答案",
         transcript_markdown="• **Ran** `pytest`\n\n---\n\n最终答案",
-        summary_text="最终答案",
     )
 
     assert card["body"]["elements"] == [{"tag": "markdown", "content": "• **Ran** `pytest`\n\n---\n\n最终答案"}]
-    assert card["config"]["summary"]["content"] == "最终答案"
+    assert "summary" not in card["config"]
 
 
-def test_build_complete_card_uses_collapsible_panel_when_panel_text_provided() -> None:
-    card = build_complete_card(
-        "最终答案",
-        panel_text="• **Ran** `pytest -q`",
-        summary_text="最终答案",
-    )
+def test_build_complete_card_renders_answer_only_without_transcript() -> None:
+    card = build_complete_card("最终答案")
 
-    assert card["body"]["elements"][0]["tag"] == "collapsible_panel"
-    assert card["body"]["elements"][0]["header"]["title"]["content"] == "Execution Log"
-    assert card["body"]["elements"][0]["elements"][0]["content"] == "• **Ran** `pytest -q`"
-    assert card["body"]["elements"][1] == {"tag": "markdown", "content": "最终答案"}
+    assert card["body"]["elements"] == [{"tag": "markdown", "content": "最终答案"}]
+    assert "summary" not in card["config"]
 
 
 @pytest.mark.asyncio

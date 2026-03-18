@@ -126,10 +126,15 @@ class LiveTurnPresenter:
     def build_final_card(self, state: dict[str, Any] | LiveTurnViewModel, *, fallback_text: str = "") -> dict[str, object]:
         snapshot = state if isinstance(state, dict) else self.build_snapshot(state)
         text = str(snapshot.get("partial_text") or fallback_text or "").strip() or "回复为空。"
-        process_text = self.build_transcript_markdown(snapshot, include_summary=False)
+        transcript_markdown = self.build_transcript_markdown(snapshot)
         normalized_fallback = str(fallback_text or "").strip()
-        summary_text = normalized_fallback or text
-        return build_complete_card(text, panel_text=process_text, summary_text=summary_text)
+        if normalized_fallback and normalized_fallback not in transcript_markdown:
+            transcript_markdown = (
+                f"{transcript_markdown}\n\n---\n\n{normalized_fallback}".strip()
+                if transcript_markdown
+                else normalized_fallback
+            )
+        return build_complete_card(text, transcript_markdown=transcript_markdown)
 
     def build_approval_resolved_snapshot(
         self,

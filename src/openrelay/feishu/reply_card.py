@@ -8,7 +8,6 @@ from typing import Any
 STREAMING_ELEMENT_ID = "streaming_content"
 LOADING_ELEMENT_ID = "loading_icon"
 DEFAULT_THINKING_TEXT = "Executing"
-PROCESS_LOG_PANEL_TITLE = "Execution Log"
 LOADING_ICON_IMAGE_KEY = "img_v3_02vb_496bec09-4b43-4773-ad6b-0cdd103cd2bg"
 REASONING_PREFIX = "Reasoning:\n"
 
@@ -119,15 +118,6 @@ def format_reasoning_duration(milliseconds: object) -> str:
         return f"Thought for {seconds:.1f}s"
     minutes, remainder = divmod(seconds, 60)
     return f"Thought for {int(minutes)}m {round(remainder)}s"
-
-
-def strip_markdown_for_summary(text: object, max_length: int = 120) -> str:
-    summary = str(text or "").replace("*", "").replace("_", "").replace("`", "").replace("#", "").replace(">", "")
-    summary = summary.replace("[", "").replace("]", "").replace("(", "").replace(")", "").replace("~", "")
-    summary = " ".join(summary.split()).strip()
-    if len(summary) <= max_length:
-        return summary
-    return summary[: max_length - 3] + "..."
 
 
 def first_non_empty_line(text: object) -> str:
@@ -703,43 +693,8 @@ def _build_streaming_loading_element() -> dict[str, Any]:
     }
 
 
-def _build_process_panel_element(panel_text: object, panel_title: object) -> dict[str, Any] | None:
-    content = str(panel_text or "").strip()
-    if not content:
-        return None
-    return {
-        "tag": "collapsible_panel",
-        "expanded": False,
-        "header": {
-            "title": {"tag": "markdown", "content": str(panel_title or PROCESS_LOG_PANEL_TITLE).strip()},
-            "vertical_align": "center",
-            "icon": {
-                "tag": "standard_icon",
-                "token": "down-small-ccm_outlined",
-                "size": "16px 16px",
-            },
-            "icon_position": "follow_text",
-            "icon_expanded_angle": -180,
-        },
-        "border": {"color": "grey", "corner_radius": "5px"},
-        "vertical_spacing": "8px",
-        "padding": "8px 8px 8px 8px",
-        "elements": [
-            {
-                "tag": "markdown",
-                "content": content,
-                "text_size": "notation",
-            }
-        ],
-    }
-
-
 def _streaming_inline_content(live_state: dict[str, Any] | None = None) -> str:
     return render_transcript_markdown(live_state or {})
-
-
-def _streaming_process_text(live_state: dict[str, Any] | None = None) -> str:
-    return build_process_panel_text(live_state or {})
 
 def build_streaming_card_signature(live_state: dict[str, Any] | None = None) -> tuple[str, str]:
     _ = live_state
@@ -749,10 +704,7 @@ def build_streaming_card_signature(live_state: dict[str, Any] | None = None) -> 
 def build_thinking_card_json() -> dict[str, Any]:
     return {
         "schema": "2.0",
-        "config": {
-            "streaming_mode": True,
-            "summary": {"content": DEFAULT_THINKING_TEXT},
-        },
+        "config": {"streaming_mode": True},
         "body": {
             "elements": [
                 _build_streaming_markdown_element(),
@@ -793,32 +745,19 @@ def build_complete_card(
     text: object,
     *,
     transcript_markdown: object = "",
-    summary_text: object = "",
-    panel_text: object = "",
-    panel_title: object = PROCESS_LOG_PANEL_TITLE,
 ) -> dict[str, Any]:
     raw_text = str(text or "").strip() or "回复为空。"
-    extracted_reasoning, extracted_answer = split_reasoning_text(raw_text)
+    _extracted_reasoning, extracted_answer = split_reasoning_text(raw_text)
     transcript_content = str(transcript_markdown or "").strip()
-    final_panel_text = str(panel_text or "").strip() or extracted_reasoning
     final_answer = extracted_answer or raw_text
     rendered_answer = optimize_markdown_style(final_answer)
 
     if transcript_content:
         elements: list[dict[str, Any]] = [{"tag": "markdown", "content": transcript_content}]
     else:
-        elements = []
-        process_panel = _build_process_panel_element(final_panel_text, panel_title)
-        if process_panel is not None:
-            elements.append(process_panel)
-        elements.append({"tag": "markdown", "content": rendered_answer})
-
-    summary = str(summary_text or "").strip() or strip_markdown_for_summary(final_answer)
-    config: dict[str, Any] = {"wide_screen_mode": True, "update_multi": True}
-    if summary:
-        config["summary"] = {"content": summary}
+        elements = [{"tag": "markdown", "content": rendered_answer}]
     return {
         "schema": "2.0",
-        "config": config,
+        "config": {"wide_screen_mode": True, "update_multi": True},
         "body": {"elements": elements},
     }
