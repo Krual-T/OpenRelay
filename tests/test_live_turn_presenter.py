@@ -204,7 +204,7 @@ def test_live_turn_presenter_preserves_plan_history_in_transcript() -> None:
 
     assert len(second_snapshot["plan_history_items"]) == 2
     assert transcript.count("**Plan**") == 2
-    assert "**Plan**  \n├ **[Completed]** Inspect runtime" in transcript
+    assert "**Plan**  \n├ ~~**[Completed]** Inspect runtime~~" in transcript
     assert "Adjust Feishu rendering" in transcript
     assert "Verify snapshot output" in transcript
 
@@ -294,5 +294,5 @@ def test_live_turn_presenter_builds_final_card_with_collapsed_execution_log() ->
 
     assert card["body"]["elements"][0]["tag"] == "collapsible_panel"
     assert card["body"]["elements"][0]["header"]["title"]["content"] == "Execution Log"
-    assert "Ran" in card["body"]["elements"][0]["elements"][0]["content"]
+    assert "pytest" in card["body"]["elements"][0]["elements"][0]["content"]
     assert card["body"]["elements"][1] == {"tag": "markdown", "content": "最终答案"}

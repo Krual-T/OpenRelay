@@ -8,6 +8,7 @@ from typing import Any
 STREAMING_ELEMENT_ID = "streaming_content"
 LOADING_ELEMENT_ID = "loading_icon"
 DEFAULT_THINKING_TEXT = "Executing"
+PROCESS_LOG_PANEL_TITLE = "Execution Log"
 LOADING_ICON_IMAGE_KEY = "img_v3_02vb_496bec09-4b43-4773-ad6b-0cdd103cd2bg"
 REASONING_PREFIX = "Reasoning:\n"
 
@@ -310,7 +311,10 @@ def _render_plan_step(item: dict[str, Any], step: dict[str, Any]) -> str:
         "in_progress": "In Progress",
         "completed": "Completed",
     }[label]
-    return f"**[{display_label}]** {text}"
+    rendered = f"**[{display_label}]** {text}"
+    if label == "completed":
+        return f"~~{rendered}~~"
+    return rendered
 
 
 def _history_item_tone(item: dict[str, Any]) -> str:
@@ -693,6 +697,37 @@ def _build_streaming_loading_element() -> dict[str, Any]:
     }
 
 
+def _build_process_panel_element(panel_text: object, panel_title: object = PROCESS_LOG_PANEL_TITLE) -> dict[str, Any] | None:
+    content = str(panel_text or "").strip()
+    if not content:
+        return None
+    return {
+        "tag": "collapsible_panel",
+        "expanded": False,
+        "header": {
+            "title": {"tag": "markdown", "content": str(panel_title or PROCESS_LOG_PANEL_TITLE).strip()},
+            "vertical_align": "center",
+            "icon": {
+                "tag": "standard_icon",
+                "token": "down-small-ccm_outlined",
+                "size": "16px 16px",
+            },
+            "icon_position": "follow_text",
+            "icon_expanded_angle": -180,
+        },
+        "border": {"color": "grey", "corner_radius": "5px"},
+        "vertical_spacing": "8px",
+        "padding": "8px 8px 8px 8px",
+        "elements": [
+            {
+                "tag": "markdown",
+                "content": content,
+                "text_size": "notation",
+            }
+        ],
+    }
+
+
 def _streaming_inline_content(live_state: dict[str, Any] | None = None) -> str:
     return render_transcript_markdown(live_state or {})
 
@@ -745,6 +780,8 @@ def build_complete_card(
     text: object,
     *,
     transcript_markdown: object = "",
+    panel_text: object = "",
+    panel_title: object = PROCESS_LOG_PANEL_TITLE,
 ) -> dict[str, Any]:
     raw_text = str(text or "").strip() or "回复为空。"
     _extracted_reasoning, extracted_answer = split_reasoning_text(raw_text)
@@ -755,7 +792,11 @@ def build_complete_card(
     if transcript_content:
         elements: list[dict[str, Any]] = [{"tag": "markdown", "content": transcript_content}]
     else:
-        elements = [{"tag": "markdown", "content": rendered_answer}]
+        elements = []
+        process_panel = _build_process_panel_element(panel_text, panel_title)
+        if process_panel is not None:
+            elements.append(process_panel)
+        elements.append({"tag": "markdown", "content": rendered_answer})
     return {
         "schema": "2.0",
         "config": {"wide_screen_mode": True, "update_multi": True},
