@@ -20,6 +20,7 @@ class WorkspaceDirectoryPage:
     browser_path: str
     parent_path: str
     query: str
+    show_hidden: bool
     page: int
     total_pages: int
     total_entries: int
@@ -30,6 +31,15 @@ class WorkspaceDirectoryPage:
 @dataclass(slots=True)
 class SessionWorkspaceService:
     config: AppConfig
+
+    def browsing_root(self) -> Path:
+        return self.config.workspace_root.resolve()
+
+    def default_browser_dir(self) -> Path:
+        configured = self.config.workspace_default_dir.resolve() if self.config.workspace_default_dir is not None else self.browsing_root()
+        if configured == self.browsing_root() or self.browsing_root() in configured.parents:
+            return configured
+        return self.browsing_root()
 
     def workspace_root(
         self,
@@ -52,7 +62,7 @@ class SessionWorkspaceService:
         return "." if str(relative) == "." else str(relative)
 
     def format_workspace_picker_path(self, path: str | Path, session: SessionRecord | None = None) -> str:
-        workspace_root = self.workspace_root(session)
+        workspace_root = self.browsing_root()
         absolute = Path(path).expanduser().resolve()
         try:
             relative = absolute.relative_to(workspace_root)
@@ -80,8 +90,12 @@ class SessionWorkspaceService:
         return self.resolve_directory(relative_path, workspace_root=workspace_root, base=base)
 
     def resolve_workspace_selection(self, raw_path: str, session: SessionRecord) -> Path:
-        workspace_root = self.workspace_root(session)
+        workspace_root = self.browsing_root()
         return self.resolve_directory(raw_path, workspace_root=workspace_root, base=workspace_root)
+
+    def resolve_workspace_browser_path(self, raw_path: str, session: SessionRecord) -> Path:
+        workspace_root = self.browsing_root()
+        return self.resolve_directory(raw_path, workspace_root=workspace_root, base=self.default_browser_dir())
 
     def list_workspace_directories(
         self,
@@ -89,18 +103,19 @@ class SessionWorkspaceService:
         *,
         browser_path: str | Path | None = None,
         query: str = "",
+        show_hidden: bool = False,
         page: int = 1,
         page_size: int = 6,
     ) -> WorkspaceDirectoryPage:
-        workspace_root = self.workspace_root(session)
-        browser = self.resolve_directory(str(browser_path or workspace_root), workspace_root=workspace_root, base=workspace_root)
+        workspace_root = self.browsing_root()
+        browser = self.resolve_directory(str(browser_path or self.default_browser_dir()), workspace_root=workspace_root, base=workspace_root)
         current = Path(session.cwd).expanduser().resolve() if session.cwd else workspace_root
         normalized_query = query.strip().lower()
         visible_directories = sorted(
             (
                 child.resolve()
                 for child in browser.iterdir()
-                if child.is_dir() and not child.name.startswith(".")
+                if child.is_dir() and (show_hidden or not child.name.startswith("."))
             ),
             key=lambda item: item.name.lower(),
         )
@@ -118,6 +133,7 @@ class SessionWorkspaceService:
             browser_path=str(browser),
             parent_path=str(browser.parent if browser != workspace_root else workspace_root),
             query=query.strip(),
+            show_hidden=show_hidden,
             page=current_page,
             total_pages=total_pages,
             total_entries=total_entries,

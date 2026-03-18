@@ -8,18 +8,21 @@ from openrelay.storage import StateStore
 
 
 def make_config(tmp_path: Path) -> AppConfig:
+    home_dir = tmp_path / "home"
+    projects_dir = home_dir / "Projects"
     return AppConfig(
         cwd=tmp_path,
         port=3100,
         webhook_path="/feishu/webhook",
         data_dir=tmp_path / "data",
-        workspace_root=tmp_path / "workspace",
-        main_workspace_dir=tmp_path / "main",
-        develop_workspace_dir=tmp_path / "develop",
+        workspace_root=home_dir,
+        main_workspace_dir=projects_dir,
+        develop_workspace_dir=home_dir / "develop",
         max_request_bytes=1024,
         max_session_messages=20,
         feishu=FeishuConfig(app_id="app", app_secret="secret", verify_token="verify-token", bot_open_id="ou_bot"),
         backend=BackendConfig(codex_sessions_dir=tmp_path / "native"),
+        workspace_default_dir=projects_dir,
     )
 
 
@@ -91,7 +94,7 @@ def test_workspace_directory_page_lists_visible_entries_for_current_browser_path
 
     assert page.browser_path == str((config.main_workspace_dir / "src").resolve())
     assert page.parent_path == str(config.main_workspace_dir.resolve())
-    assert [entry.relative_path for entry in page.entries] == ["src/api", "src/core"]
+    assert [entry.relative_path for entry in page.entries] == ["Projects/src/api", "Projects/src/core"]
     assert [entry.state for entry in page.entries] == ["available", "available"]
 
 
@@ -113,3 +116,48 @@ def test_workspace_directory_page_supports_query_filter(tmp_path: Path) -> None:
 
     assert page.query == "api"
     assert [entry.label for entry in page.entries] == ["api-server"]
+
+
+def test_workspace_directory_page_hides_hidden_directories_by_default_but_can_show_them(tmp_path: Path) -> None:
+    config = make_config(tmp_path)
+    prepare_dirs(config)
+    (config.main_workspace_dir / ".codex").mkdir()
+    (config.main_workspace_dir / "docs").mkdir()
+    session = SessionRecord(
+        session_id="s_1",
+        base_key="p2p:oc_1",
+        backend="codex",
+        cwd=str(config.main_workspace_dir),
+        release_channel="main",
+    )
+    workspace = SessionWorkspaceService(config)
+
+    default_page = workspace.list_workspace_directories(session, page_size=10)
+    hidden_page = workspace.list_workspace_directories(session, show_hidden=True, page_size=10)
+
+    assert default_page.show_hidden is False
+    assert [entry.label for entry in default_page.entries] == ["docs"]
+    assert hidden_page.show_hidden is True
+    assert [entry.label for entry in hidden_page.entries] == [".codex", "docs"]
+
+
+def test_workspace_browser_defaults_to_projects_but_root_is_home(tmp_path: Path) -> None:
+    config = make_config(tmp_path)
+    prepare_dirs(config)
+    (config.workspace_root / "Projects").mkdir(exist_ok=True)
+    (config.workspace_root / "Downloads").mkdir()
+    session = SessionRecord(
+        session_id="s_1",
+        base_key="p2p:oc_1",
+        backend="codex",
+        cwd=str(config.main_workspace_dir),
+        release_channel="main",
+    )
+    workspace = SessionWorkspaceService(config)
+
+    default_page = workspace.list_workspace_directories(session, page_size=10)
+    root_page = workspace.list_workspace_directories(session, browser_path=config.workspace_root, page_size=10)
+
+    assert default_page.browser_path == str(config.main_workspace_dir.resolve())
+    assert workspace.format_workspace_picker_path(root_page.browser_path, session) == "~"
+    assert [entry.label for entry in root_page.entries] == ["develop", "Downloads", "Projects"]

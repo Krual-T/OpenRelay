@@ -153,6 +153,7 @@ def test_workspace_panel_card_uses_valid_form_container_for_search() -> None:
             "parent_path": "/",
             "browser_display": "~",
             "query": "api",
+            "show_hidden": True,
             "page": 1,
             "total_pages": 1,
             "total_entries": 1,
@@ -179,6 +180,9 @@ def test_workspace_panel_card_uses_valid_form_container_for_search() -> None:
     assert submit_button["tag"] == "button"
     assert submit_button["name"] == "workspace_search_submit"
     assert submit_button["form_action_type"] == "submit"
+    assert "--hidden" in submit_button["behaviors"][0]["value"]["command"]
+    assert "显示中" in card["body"]["elements"][0]["content"]
+    assert "action" not in [element.get("tag") for element in card["body"]["elements"]]
 
 
 class _FakeMessenger:

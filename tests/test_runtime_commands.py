@@ -172,18 +172,21 @@ class FakeHooks:
 
 
 def make_config(tmp_path: Path) -> AppConfig:
+    home_dir = tmp_path / "home"
+    projects_dir = home_dir / "Projects"
     return AppConfig(
         cwd=tmp_path,
         port=3100,
         webhook_path="/feishu/webhook",
         data_dir=tmp_path / "data",
-        workspace_root=tmp_path / "workspace",
-        main_workspace_dir=tmp_path / "main",
-        develop_workspace_dir=tmp_path / "develop",
+        workspace_root=home_dir,
+        main_workspace_dir=projects_dir,
+        develop_workspace_dir=home_dir / "develop",
         max_request_bytes=1024,
         max_session_messages=20,
         feishu=FeishuConfig(app_id="app", app_secret="secret", verify_token="verify-token", bot_open_id="ou_bot"),
         backend=BackendConfig(default_backend="codex", codex_sessions_dir=tmp_path / "native"),
+        workspace_default_dir=projects_dir,
     )
 
 
@@ -481,6 +484,17 @@ async def test_runtime_command_router_supports_workspace_open_and_query(tmp_path
 
 
 @pytest.mark.asyncio
+async def test_runtime_command_router_supports_workspace_hidden_flag(tmp_path: Path) -> None:
+    router, store, hooks = build_router(tmp_path)
+    session = store.load_session("p2p:oc_1")
+
+    await router.handle(make_message("/workspace --hidden", suffix="workspace_hidden"), session.base_key, session)
+
+    assert hooks.panel_calls[-1] == ("om_workspace_hidden", session.base_key, "workspace", 1, "updated-desc")
+    store.close()
+
+
+@pytest.mark.asyncio
 async def test_runtime_command_router_manages_directory_shortcuts(tmp_path: Path) -> None:
     router, store, hooks = build_router(tmp_path)
     docs_dir = router.config.main_workspace_dir / "docs"
@@ -495,7 +509,7 @@ async def test_runtime_command_router_manages_directory_shortcuts(tmp_path: Path
     assert store.get_directory_shortcut("docs") is None
     assert hooks.replies[0]["text"].startswith("已保存快捷目录 `docs`。")
     assert "快捷目录：" in str(hooks.replies[1]["text"])
-    assert "docs -> ~/docs [main]" in str(hooks.replies[1]["text"])
+    assert str(hooks.replies[1]["text"]).startswith("快捷目录：\n- docs -> ")
     assert str(hooks.replies[2]["text"]).startswith("工作区已切换到 docs。")
     assert hooks.replies[3]["text"] == "已删除快捷目录 `docs`。"
     store.close()

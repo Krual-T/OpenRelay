@@ -61,7 +61,7 @@ class HelpRenderer:
                 "工作区与目录",
                 [
                     "- `/workspace`：打开工作区浏览器。",
-                    "- `/workspace --page N [--path <dir>] [--query <text>]`：浏览、翻页或搜索目录。",
+                    "- `/workspace --page N [--path <dir>] [--query <text>] [--hidden]`：浏览、翻页或搜索目录，也可显示隐藏目录。",
                     "- `/workspace open <path>`：从指定目录打开浏览器。",
                     "- `/workspace select <path>`：切到目标目录。",
                     "- `/shortcut list`：列出快捷目录。",

@@ -253,10 +253,42 @@ def _workspace_state_border(state: str) -> str:
     return "grey"
 
 
-def _build_workspace_search_form(action_context: dict[str, str], browser_path: str, query: str) -> dict[str, Any]:
+def _build_button_row_v2(actions: list[dict[str, Any]]) -> dict[str, Any]:
+    return {
+        "tag": "column_set",
+        "horizontal_spacing": "8px",
+        "horizontal_align": "left",
+        "columns": [
+            {
+                "tag": "column",
+                "width": "auto",
+                "elements": [action],
+            }
+            for action in actions
+        ],
+    }
+
+
+def _build_v2_button(label: str, command: str, button_type: str, context: dict[str, str]) -> dict[str, Any]:
+    button = build_button(label, command, button_type, context)
+    if button_type == "primary":
+        button["type"] = "primary_filled"
+    return button
+
+
+def _workspace_command(browser_path: str, *, page: int = 1, query: str = "", show_hidden: bool = False) -> str:
+    command = f"/workspace --path {shlex.quote(browser_path)} --page {page}"
+    if query:
+        command += f" --query {shlex.quote(query)}"
+    if show_hidden:
+        command += " --hidden"
+    return command
+
+
+def _build_workspace_search_form(action_context: dict[str, str], browser_path: str, query: str, show_hidden: bool) -> dict[str, Any]:
     callback_value = {
         **action_context,
-        "command": f"/workspace --path {shlex.quote(browser_path)} --page 1",
+        "command": _workspace_command(browser_path, page=1, show_hidden=show_hidden),
         "formFieldArgs": {"workspace_query": "--query"},
     }
     return {
@@ -303,6 +335,7 @@ def _build_workspace_card(info: dict[str, Any]) -> dict[str, Any]:
     browser_path = str(info.get("browser_path") or "")
     parent_path = str(info.get("parent_path") or browser_path)
     query = str(info.get("query") or "")
+    show_hidden = bool(info.get("show_hidden"))
     browser_display = str(info.get("browser_display") or "~")
     page = int(info.get("page") or 1)
     total_pages = int(info.get("total_pages") or 1)
@@ -315,19 +348,20 @@ def _build_workspace_card(info: dict[str, Any]) -> dict[str, Any]:
                     "**工作区选择**",
                     f"> 当前目录：`{info.get('cwd', '.')}`",
                     f"> 当前浏览：`{browser_display}`",
+                    f"> 隐藏目录：`{'显示中' if show_hidden else '已隐藏'}`",
                     "> 点目录进入下一层；点“选中当前目录”会把下一条真实消息放到这里执行。",
                 ]
             ),
         },
-        _build_workspace_search_form(action_context, browser_path, query),
-        {
-            "tag": "action",
-            "actions": [
-                build_button("选中当前目录", f"/workspace select {shlex.quote(browser_path)}", "primary", action_context),
-                build_button("返回上一级", f"/workspace --path {shlex.quote(parent_path)} --page 1", "default", action_context),
-                build_button("回到根目录", "/workspace --page 1", "default", action_context),
-            ],
-        },
+        _build_workspace_search_form(action_context, browser_path, query, show_hidden),
+        _build_button_row_v2(
+            [
+                _build_v2_button("选中当前目录", f"/workspace select {shlex.quote(browser_path)}", "primary", action_context),
+                _build_v2_button("返回上一级", _workspace_command(parent_path, page=1, show_hidden=show_hidden), "default", action_context),
+                _build_v2_button("回到根目录", "/workspace --page 1" + (" --hidden" if show_hidden else ""), "default", action_context),
+                _build_v2_button("隐藏目录" if show_hidden else "显示隐藏目录", _workspace_command(browser_path, page=1, query=query, show_hidden=not show_hidden), "default", action_context),
+            ]
+        ),
         {
             "tag": "markdown",
             "content": f"**目录列表**\n> 第 `{page}` / `{total_pages}` 页，共 `{total_entries}` 个入口。{f' 当前搜索：`{query}`。' if query else ''}",
@@ -344,16 +378,16 @@ def _build_workspace_card(info: dict[str, Any]) -> dict[str, Any]:
             build_interactive_container(
                 label,
                 description,
-                f"/workspace --path {shlex.quote(str(entry.get('absolute_path') or relative_path))} --page 1{f' --query {shlex.quote(query)}' if query else ''}",
+                _workspace_command(str(entry.get("absolute_path") or relative_path), page=1, query=query, show_hidden=show_hidden),
                 context=action_context,
                 border_color=_workspace_state_border(state),
                 disabled=False,
             )
         )
     page_controls = [
-        build_button(
+        _build_v2_button(
             str(page_number),
-            f"/workspace --path {shlex.quote(browser_path)} --page {page_number}{f' --query {shlex.quote(query)}' if query else ''}",
+            _workspace_command(browser_path, page=page_number, query=query, show_hidden=show_hidden),
             "primary" if page_number == page else "default",
             action_context,
         )
@@ -361,15 +395,15 @@ def _build_workspace_card(info: dict[str, Any]) -> dict[str, Any]:
     ]
     nav_controls: list[dict[str, Any]] = []
     if page > 1:
-        nav_controls.append(build_button("上一页", f"/workspace --path {shlex.quote(browser_path)} --page {page - 1}{f' --query {shlex.quote(query)}' if query else ''}", "default", action_context))
+        nav_controls.append(_build_v2_button("上一页", _workspace_command(browser_path, page=page - 1, query=query, show_hidden=show_hidden), "default", action_context))
     if page < total_pages:
-        nav_controls.append(build_button("下一页", f"/workspace --path {shlex.quote(browser_path)} --page {page + 1}{f' --query {shlex.quote(query)}' if query else ''}", "primary", action_context))
+        nav_controls.append(_build_v2_button("下一页", _workspace_command(browser_path, page=page + 1, query=query, show_hidden=show_hidden), "primary", action_context))
     if query:
-        nav_controls.append(build_button("清空搜索", f"/workspace --path {shlex.quote(browser_path)} --page 1", "default", action_context))
+        nav_controls.append(_build_v2_button("清空搜索", _workspace_command(browser_path, page=1, show_hidden=show_hidden), "default", action_context))
     if page_controls:
-        elements.append({"tag": "action", "actions": page_controls})
+        elements.append(_build_button_row_v2(page_controls))
     if nav_controls:
-        elements.append({"tag": "action", "actions": nav_controls})
+        elements.append(_build_button_row_v2(nav_controls))
     return {
         "schema": "2.0",
         "config": {"wide_screen_mode": True, "enable_forward": True, "update_multi": True},
@@ -439,7 +473,7 @@ class RuntimePanelPresenter:
             )
             fallback_text = self.build_panel_sessions_text(session_page)
         elif args.view == "workspace":
-            workspace_page = self.workspace.list_workspace_directories(session, browser_path=args.target_path, query=args.query, page=args.page)
+            workspace_page = self.workspace.list_workspace_directories(session, browser_path=args.target_path, query=args.query, show_hidden=args.show_hidden, page=args.page)
             card = build_panel_card(
                 {
                     **panel_info,
@@ -447,6 +481,7 @@ class RuntimePanelPresenter:
                     "parent_path": workspace_page.parent_path,
                     "browser_display": self.workspace.format_workspace_picker_path(workspace_page.browser_path, session),
                     "query": workspace_page.query,
+                    "show_hidden": workspace_page.show_hidden,
                     "page": workspace_page.page,
                     "total_pages": workspace_page.total_pages,
                     "total_entries": workspace_page.total_entries,
@@ -468,6 +503,7 @@ class RuntimePanelPresenter:
                 total_pages=workspace_page.total_pages,
                 total_entries=workspace_page.total_entries,
                 query=workspace_page.query,
+                show_hidden=workspace_page.show_hidden,
             )
         elif args.view == "commands":
             command_entries = self.build_panel_command_entries()
@@ -601,10 +637,12 @@ class RuntimePanelPresenter:
     def build_panel_sessions_text(self, session_page: Any) -> str:
         return "\n".join(["OpenRelay 面板 · 会话", self.session_presentation.format_session_list_page(session_page), "", "返回总览：/panel。"])
 
-    def build_panel_workspace_text(self, entries: list[Any], *, browser_display: str, page: int, total_pages: int, total_entries: int, query: str) -> str:
+    def build_panel_workspace_text(self, entries: list[Any], *, browser_display: str, page: int, total_pages: int, total_entries: int, query: str, show_hidden: bool) -> str:
         lines = [f"OpenRelay 面板 · 工作区 {browser_display}（第 {page}/{total_pages} 页，共 {total_entries} 个入口）", "点目录进入下一层；选中当前目录会更新当前 scope。"]
         if query:
             lines.append(f"当前搜索：{query}")
+        if show_hidden:
+            lines.append("当前已显示隐藏目录。")
         for entry in entries:
             lines.append(f"- {entry.label} -> {entry.relative_path} [{_workspace_state_text(entry.state)}]")
         lines.extend(["", "常用动作：/workspace"])

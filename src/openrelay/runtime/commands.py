@@ -81,6 +81,7 @@ class PanelCommandArgs:
     sort_mode: SessionSortMode
     target_path: str = ""
     query: str = ""
+    show_hidden: bool = False
 
 
 @dataclass(slots=True)
@@ -90,6 +91,7 @@ class PagingCommandArgs:
     sort_mode: SessionSortMode
     target_path: str = ""
     query: str = ""
+    show_hidden: bool = False
 
 
 @dataclass(slots=True)
@@ -463,9 +465,16 @@ class RuntimeCommandRouter:
             raise ValueError("只有 workspace 视图支持分页参数")
         if view == "workspace" and args.sort_mode != DEFAULT_SESSION_LIST_SORT:
             raise ValueError("工作区视图不支持 --sort")
-        if view != "workspace" and (args.target_path or args.query):
-            raise ValueError("只有 workspace 视图支持 --path 和 --query")
-        return PanelCommandArgs(view=view, page=args.page, sort_mode=args.sort_mode, target_path=args.target_path, query=args.query)
+        if view != "workspace" and (args.target_path or args.query or args.show_hidden):
+            raise ValueError("只有 workspace 视图支持 --path、--query 和 --hidden")
+        return PanelCommandArgs(
+            view=view,
+            page=args.page,
+            sort_mode=args.sort_mode,
+            target_path=args.target_path,
+            query=args.query,
+            show_hidden=args.show_hidden,
+        )
 
     def _parse_paging_command_args(self, arg_text: str) -> PagingCommandArgs:
         tokens = shlex.split(arg_text) if arg_text else []
@@ -474,6 +483,7 @@ class RuntimeCommandRouter:
         sort_mode = DEFAULT_SESSION_LIST_SORT
         target_path = ""
         query = ""
+        show_hidden = False
         index = 0
         while index < len(tokens):
             token = tokens[index]
@@ -505,6 +515,8 @@ class RuntimeCommandRouter:
                 query = tokens[index]
             elif token.startswith("--query="):
                 query = token.split("=", 1)[1]
+            elif token in {"--hidden", "--all"}:
+                show_hidden = True
             elif token.startswith("--"):
                 raise ValueError(f"不支持的选项：{token}")
             elif not target:
@@ -512,7 +524,7 @@ class RuntimeCommandRouter:
             else:
                 raise ValueError(f"多余参数：{token}")
             index += 1
-        return PagingCommandArgs(target=target, page=page, sort_mode=sort_mode, target_path=target_path, query=query)
+        return PagingCommandArgs(target=target, page=page, sort_mode=sort_mode, target_path=target_path, query=query, show_hidden=show_hidden)
 
     def _normalize_panel_view(self, value: str) -> PanelView:
         aliases: dict[str, PanelView] = {
@@ -612,7 +624,7 @@ class RuntimeCommandRouter:
                 await self.hooks.reply(message, "workspace 参数无效：open 需要目录路径", command_reply=True, command_name="/workspace")
                 return True
             try:
-                path = self.workspace.resolve_workspace_selection(tokens[1], session)
+                path = self.workspace.resolve_workspace_browser_path(tokens[1], session)
             except ValueError as exc:
                 await self.hooks.reply(message, f"workspace 参数无效：{exc}", command_reply=True, command_name="/workspace")
                 return True
@@ -632,7 +644,7 @@ class RuntimeCommandRouter:
                 await self.hooks.reply(message, "workspace 参数无效：select 需要目录路径", command_reply=True, command_name="/workspace")
                 return True
             return await self._switch_workspace_directory(message, session_key, session, tokens[1], command_name="/workspace")
-        await self.hooks.reply(message, "workspace 参数无效：只支持 /workspace、/workspace --page N [--path <dir>] [--query <text>]、/workspace open <path>、/workspace select <path>", command_reply=True, command_name="/workspace")
+        await self.hooks.reply(message, "workspace 参数无效：只支持 /workspace、/workspace --page N [--path <dir>] [--query <text>] [--hidden]、/workspace open <path>、/workspace select <path>", command_reply=True, command_name="/workspace")
         return True
 
     async def _switch_workspace_directory(
