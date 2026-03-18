@@ -22,7 +22,7 @@ def make_config(tmp_path: Path) -> AppConfig:
     )
 
 
-def test_session_binding_store_persists_and_syncs_session_record(tmp_path: Path) -> None:
+def test_session_binding_store_persists_and_reads_binding_as_runtime_source(tmp_path: Path) -> None:
     config = make_config(tmp_path)
     config.workspace_root.mkdir(parents=True, exist_ok=True)
     config.main_workspace_dir.mkdir(parents=True, exist_ok=True)
@@ -47,6 +47,10 @@ def test_session_binding_store_persists_and_syncs_session_record(tmp_path: Path)
     saved = bindings.get(session.session_id)
     scoped = bindings.find_by_feishu_scope("chat_1", "thread_scope_1")
     synced_session = store.get_session(session.session_id)
+    persisted_row = store.connection.execute(
+        "SELECT native_session_id, model_override, safety_mode FROM sessions WHERE session_id = ?",
+        (session.session_id,),
+    ).fetchone()
 
     assert saved is not None
     assert scoped is not None
@@ -55,6 +59,10 @@ def test_session_binding_store_persists_and_syncs_session_record(tmp_path: Path)
     assert synced_session.native_session_id == "thread_2"
     assert synced_session.model_override == "gpt-test"
     assert synced_session.safety_mode == "danger-full-access"
+    assert persisted_row is not None
+    assert persisted_row["native_session_id"] == ""
+    assert persisted_row["model_override"] == config.backend.default_model
+    assert persisted_row["safety_mode"] == config.backend.default_safety_mode
     store.close()
 
 

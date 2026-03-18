@@ -8,6 +8,9 @@ from openrelay.core import AppConfig, DirectoryShortcut, SessionRecord, get_rele
 from openrelay.presentation.session import SessionPresentation
 from openrelay.storage import StateStore
 
+from .models import RelaySessionBinding
+from .store import SessionBindingStore
+
 
 @dataclass(slots=True)
 class SessionMutationService:
@@ -19,6 +22,7 @@ class SessionMutationService:
         self.config = config
         self.store = store
         self.session_ux = session_ux
+        self.bindings = SessionBindingStore(store)
 
     def create_named_session(self, scope_key: str, current: SessionRecord, label: str) -> SessionRecord:
         return self.store.create_next_session(scope_key, current, label)
@@ -124,6 +128,39 @@ class SessionMutationService:
     ) -> SessionRecord:
         next_session = replace(current, **updates)
         saved = self.store.save_scope_session(scope_key, next_session)
+        self._save_binding_if_needed(current, saved)
         if clear_messages:
             self.store.clear_session_messages(saved.session_id)
         return self.store.get_session(saved.session_id)
+
+    def _save_binding_if_needed(self, current: SessionRecord, saved: SessionRecord) -> None:
+        existing = self.bindings.get(current.session_id)
+        if existing is None and not saved.native_session_id:
+            return
+        if existing is None:
+            binding = self._binding_from_session(saved)
+        else:
+            binding = replace(
+                existing,
+                relay_session_id=saved.session_id,
+                backend=saved.backend,  # type: ignore[arg-type]
+                native_session_id=saved.native_session_id,
+                cwd=saved.cwd,
+                model=saved.model_override,
+                safety_mode=saved.safety_mode,
+            )
+        self.bindings.save(binding)
+
+    def _binding_from_session(self, session: SessionRecord) -> RelaySessionBinding:
+        return RelaySessionBinding(
+            relay_session_id=session.session_id,
+            backend=session.backend,  # type: ignore[arg-type]
+            native_session_id=session.native_session_id,
+            cwd=session.cwd,
+            model=session.model_override,
+            safety_mode=session.safety_mode,
+            feishu_chat_id="",
+            feishu_thread_id="",
+            created_at=session.created_at,
+            updated_at=session.updated_at,
+        )
