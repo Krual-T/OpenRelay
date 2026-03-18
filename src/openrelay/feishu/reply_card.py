@@ -4,6 +4,8 @@ import re
 from datetime import datetime
 from typing import Any
 
+from .highlight import render_command_chunks, render_output_block
+
 STREAMING_ELEMENT_ID = "streaming_content"
 LOADING_ELEMENT_ID = "loading_icon"
 DEFAULT_THINKING_TEXT = "Executing"
@@ -198,6 +200,11 @@ def shorten_inline(text: object, max_length: int = 120) -> str:
 def _wrap_code_words(
     text: object, *, target_length: int = 34, max_lines: int = 4
 ) -> list[str]:
+    highlighted = render_command_chunks(
+        text, target_length=target_length, max_lines=max_lines
+    )
+    if highlighted:
+        return highlighted
     tokens = str(text or "").replace("`", "'").split()
     if not tokens:
         return []
@@ -319,11 +326,22 @@ def _append_section_block(lines: list[str], detail_entries: list[list[str]]) -> 
     _append_plain_entries(lines, detail_entries)
 
 
-def _build_output_entries(text: object) -> list[list[str]]:
-    output_lines = _split_output_lines(text)
-    if not output_lines:
+def _build_output_entries(
+    text: object,
+    *,
+    command: object = "",
+    max_lines: int = 6,
+    max_length: int = 120,
+) -> list[list[str]]:
+    rendered_output = render_output_block(
+        text,
+        command=command,
+        max_lines=max_lines,
+        max_length=max_length,
+    )
+    if not rendered_output:
         return []
-    return [["<hr>"], *[[line] for line in output_lines]]
+    return [["<hr>"], [rendered_output]]
 
 
 def _join_markdown_lines(lines: list[str]) -> str:
@@ -561,7 +579,12 @@ def _render_history_item(item: dict[str, Any], spinner_frame: int) -> list[str]:
             and int(exit_code) != 0
         ):
             detail_entries.append([f"exit {exit_code}"])
-        detail_entries.extend(_build_output_entries(item.get("output_preview")))
+        detail_entries.extend(
+            _build_output_entries(
+                item.get("output_preview"),
+                command=command_value,
+            )
+        )
         if mode == "command":
             _append_command_block(lines, command_lines, detail_entries)
         else:
@@ -699,7 +722,12 @@ def _render_streaming_history_item(item: dict[str, Any]) -> list[str]:
             and int(exit_code) != 0
         ):
             detail_entries.append([f"exit {exit_code}"])
-        detail_entries.extend(_build_output_entries(item.get("output_preview")))
+        detail_entries.extend(
+            _build_output_entries(
+                item.get("output_preview"),
+                command=command_value,
+            )
+        )
         if mode == "command":
             _append_command_block(lines, command_lines, detail_entries)
         else:

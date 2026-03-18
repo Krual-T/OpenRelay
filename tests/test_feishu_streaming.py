@@ -89,7 +89,7 @@ def test_build_streaming_content_returns_answer_only_after_answer_starts() -> No
     assert "🔵 Explored" in content
     assert "Search Voyager" in content
     assert "<hr>" in content
-    assert "Gemini Voyager" in content
+    assert "Gemini&nbsp;Voyager" in content
     assert "---" in content
     assert content.endswith("找到结果，准备整理。")
     assert content.index("🔵 Explored") < content.index("---")
@@ -126,8 +126,9 @@ def test_build_streaming_content_interleaves_summary_blocks_with_history_items()
     assert "🔵 Explored" in content
     assert "---\n\n第一段总结" in content
     assert "🟢 Ran" in content
-    assert "🟢 Ran  \n│  \n│ `sed -n '1,10p'`" in content
-    assert "└ `src/openrelay/runtime/live.py`" in content
+    assert "<font color='green'>sed</font>" in content
+    assert "<font color='orange'>-n</font>" in content
+    assert "<font color='wathet'>src/openrelay/runtime/live.py</font>" in content
     assert "<hr>" in content
     assert "---\n\n第二段总结" in content
 
@@ -157,7 +158,9 @@ def test_build_streaming_content_keeps_summary_and_partial_text_in_one_transcrip
 
     assert "---\n\n已经确认 reply_card 是入口。" in content
     assert "🟢 Ran" in content
-    assert "🟢 Ran  \n│  \n└ `git status --short`" in content
+    assert "<font color='green'>git</font>" in content
+    assert "<font color='orange'>--short</font>" in content
+    assert "<font color='wathet'>docs/architecture.md</font>" in content
     assert content.endswith("---\n\n下一步检查 streaming session 的更新路径。")
 
 
@@ -179,11 +182,36 @@ def test_build_streaming_content_marks_failed_command_with_red_dot() -> None:
         }
     )
 
-    assert "🔴 Ran  \n│  \n└ `pytest`" in content
+    assert "🔴 Ran" in content
+    assert "<font color='green'>pytest</font>" in content
     assert "exit 1" in content
     assert "<hr>" in content
-    assert "1 failed" in content
-    assert "AssertionError" in content
+    assert "<font color='red'>1&nbsp;failed</font>" in content
+    assert "<font color='red'>AssertionError</font>" in content
+
+
+def test_build_streaming_content_highlights_diff_output_with_codex_colors() -> None:
+    content = build_streaming_content(
+        {
+            "history_items": [
+                {
+                    "type": "command",
+                    "state": "completed",
+                    "title": "Ran shell command",
+                    "mode": "command",
+                    "command": "git diff -- src/openrelay/feishu/reply_card.py",
+                    "exit_code": 0,
+                    "output_preview": "--- a/src/openrelay/feishu/reply_card.py\n+++ b/src/openrelay/feishu/reply_card.py\n@@ -1,2 +1,2 @@\n-old line\n+new line",
+                }
+            ]
+        }
+    )
+
+    assert "<font color='grey'>---&nbsp;a/src/openrelay/feishu/reply_card.py</font>" in content
+    assert "<font color='grey'>+++&nbsp;b/src/openrelay/feishu/reply_card.py</font>" in content
+    assert "<font color='grey'>@@&nbsp;-1,2&nbsp;+1,2&nbsp;@@</font>" in content
+    assert "<font color='red'>-old&nbsp;line</font>" in content
+    assert "<font color='green'>+new&nbsp;line</font>" in content
 
 
 def test_build_streaming_content_preserves_output_indentation_without_code_fence() -> None:
@@ -205,8 +233,9 @@ def test_build_streaming_content_preserves_output_indentation_without_code_fence
 
     assert "```text" not in content
     assert "<hr>" in content
-    assert "def main():" in content
-    assert "&nbsp;&nbsp;&nbsp;&nbsp;print('hi')" in content
+    assert "<font color='purple'>def</font>" in content
+    assert "<font color='wathet'>main</font>" in content
+    assert "&nbsp;&nbsp;&nbsp;&nbsp;<font color='green'>print</font>" in content
 
 
 def test_build_streaming_content_wraps_long_command_into_pipe_lines() -> None:
@@ -226,9 +255,10 @@ def test_build_streaming_content_wraps_long_command_into_pipe_lines() -> None:
     )
 
     assert "🟢 Ran" in content
-    assert "│  \n│ `uv run python`" in content
-    assert "│ `scripts/export_schema.py --format`" in content
-    assert "└ `json --output docs/schema.json`" in content
+    assert "<font color='green'>uv</font>" in content
+    assert "<font color='wathet'>scripts/export_schema.py</font>" in content
+    assert "<font color='orange'>--format</font>" in content
+    assert "<font color='wathet'>docs/schema.json</font>" in content
 
 
 def test_build_streaming_content_wraps_command_by_target_character_width() -> None:
@@ -247,8 +277,10 @@ def test_build_streaming_content_wraps_command_by_target_character_width() -> No
         }
     )
 
-    assert "│ `/bin/bash -lc \"sed -n '150,260p'`" in content
-    assert "└ `src/openrelay/feishu/reply_card.py\"`" in content
+    assert "<font color='wathet'>/bin/bash</font>" in content
+    assert "<font color='orange'>-lc</font>" in content
+    assert '<font color=\'yellow\'>"sed</font>' in content
+    assert '<font color=\'wathet\'>src/openrelay/feishu/reply_card.py"</font>' in content
 
 
 def test_build_streaming_content_renders_web_search_as_blue_exploration() -> None:
