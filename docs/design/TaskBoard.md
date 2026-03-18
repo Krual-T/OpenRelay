@@ -10,13 +10,14 @@
 
 ### [ ] OR-TASK-007 消息行为日志与可观测性收敛
 - **目标**：为 Feishu 入站消息到最终回复建立一条可持久化、可查询、可回放的结构化消息行为日志链路，替代当前零散文本日志 + 内存态 runtime event 的弱观测方式。
-- **当前状态**：总体设计已完成，推荐方案是以 SQLite 为第一阶段存储，围绕统一消息事件模型、采集埋点、查询入口和保留策略分阶段落地。
+- **当前状态**：总体设计和详细设计均已完成；当前进入第一阶段实现准备，下一步应落 `observability/` 包、SQLite schema 和主路径最小埋点。
 - **关闭条件**：
   - 完成正式设计稿，明确事件模型、关联键、埋点位置、SQLite schema、保留策略与分阶段实施路径。
   - 在代码中落地最小闭环：至少能记录 ingress、session resolve、turn terminal、reply sent 等主路径事件。
   - 提供一个仓库内可用的 trace 读取入口，用于按 message / session / trace 查看时间线。
 - **已完成证据**：
   - `docs/design/or-task-007-message-observability-design.md`
+  - `docs/design/or-task-007-message-observability-detailed-design.md`
 - **后续 follow-up**：
   - 第一阶段优先实现 `MessageTraceRecorder` 与 `message_event_log`，不要先做 UI。
   - 高频 provider delta 先做聚合观测，不默认逐条入库。
