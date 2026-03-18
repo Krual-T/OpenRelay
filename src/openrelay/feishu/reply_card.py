@@ -190,13 +190,26 @@ def _append_tree_entries(lines: list[str], entries: list[list[str]]) -> None:
             lines.append(f"{continuation} {line}")
 
 
-def _append_pipe_entries(lines: list[str], entries: list[list[str]]) -> None:
+def _append_plain_entries(lines: list[str], entries: list[list[str]]) -> None:
     normalized_entries = [entry for entry in entries if entry]
     if not normalized_entries:
         return
     for entry in normalized_entries:
-        for line in entry:
-            lines.append(f"│ {line}")
+        lines.extend(entry)
+
+
+def _append_command_block(lines: list[str], command_lines: list[str], detail_entries: list[list[str]]) -> None:
+    if command_lines:
+        lines.append("│")
+        lines.extend(f"│ {line}" for line in command_lines)
+    _append_plain_entries(lines, detail_entries)
+
+
+def _append_plan_block(lines: list[str], detail_entries: list[list[str]]) -> None:
+    if not detail_entries:
+        return
+    lines.append("│")
+    _append_plain_entries(lines, detail_entries)
 
 
 def _join_markdown_lines(lines: list[str]) -> str:
@@ -326,7 +339,7 @@ def _render_plan_step(step: dict[str, Any]) -> str:
         return f"● ~~{text}~~"
     if label == "in_progress":
         return f"◉ In Progress {text}"
-    return f"○ Pending {text}"
+    return f"○ {text}"
 
 
 def _history_item_tone(item: dict[str, Any]) -> str:
@@ -398,15 +411,13 @@ def _render_history_item(item: dict[str, Any], spinner_frame: int) -> list[str]:
     if item_type == "command":
         command_value = str(item.get("command") or "").strip()
         mode = str(item.get("mode") or "").strip()
+        command_lines: list[str] = []
         if mode == "exploration":
             detail = _describe_exploration_command(command_value)
             if detail:
                 detail_entries.append([detail])
         else:
             command_lines = _wrap_code_words(command_value)
-            if command_lines:
-                lines[0] = f"{bullet} {title}"
-                detail_entries.extend([[line] for line in command_lines])
         exit_code = item.get("exit_code")
         if exit_code is not None and str(item.get("state") or "") != "running" and int(exit_code) != 0:
             detail_entries.append([f"exit {exit_code}"])
@@ -414,28 +425,29 @@ def _render_history_item(item: dict[str, Any], spinner_frame: int) -> list[str]:
         if output_preview_lines:
             detail_entries.append(["--- Output ---"])
             detail_entries.extend([[line] for line in output_preview_lines])
-        _append_pipe_entries(lines, detail_entries)
+        if mode == "command":
+            _append_command_block(lines, command_lines, detail_entries)
+        else:
+            _append_plain_entries(lines, detail_entries)
         return lines
 
     if item_type == "web_search":
         detail_entries.extend([[line] for line in _describe_web_search_queries(item)])
-        _append_pipe_entries(lines, detail_entries)
+        _append_plain_entries(lines, detail_entries)
         return lines
 
     if item_type == "reasoning":
-        lines[0] = f"{bullet} {title}"
         reasoning_text = clean_reasoning_prefix(item.get("text"))
         detail_entries.extend([[line] for line in _split_detail_lines(reasoning_text)])
-        _append_pipe_entries(lines, detail_entries)
+        _append_plain_entries(lines, detail_entries)
         return lines
 
     if item_type == "file_change":
         detail_entries.extend([[line] for line in _describe_file_changes(item)])
-        _append_tree_entries(lines, detail_entries)
+        _append_plain_entries(lines, detail_entries)
         return lines
 
     if item_type == "plan":
-        lines[0] = f"{bullet} {title}"
         steps = item.get("steps")
         if isinstance(steps, list):
             for step in steps:
@@ -446,7 +458,7 @@ def _render_history_item(item: dict[str, Any], spinner_frame: int) -> list[str]:
                     detail_entries.append([rendered_step])
         if not detail_entries:
             detail_entries.extend([[line] for line in _split_detail_lines(item.get("detail"))])
-        _append_pipe_entries(lines, detail_entries)
+        _append_plan_block(lines, detail_entries)
         return lines
 
     if item_type == "collab":
@@ -458,12 +470,12 @@ def _render_history_item(item: dict[str, Any], spinner_frame: int) -> list[str]:
         prompt = str(item.get("prompt") or "").strip()
         if prompt:
             detail_entries.extend([[line] for line in _split_detail_lines(prompt)])
-        _append_tree_entries(lines, detail_entries)
+        _append_plain_entries(lines, detail_entries)
         return lines
 
     detail = str(item.get("detail") or "").strip()
     detail_entries.extend([[line] for line in _split_detail_lines(detail)])
-    _append_tree_entries(lines, detail_entries)
+    _append_plain_entries(lines, detail_entries)
     return lines
 
 
@@ -530,14 +542,13 @@ def _render_streaming_history_item(item: dict[str, Any]) -> list[str]:
     if item_type == "command":
         command_value = str(item.get("command") or "").strip()
         mode = str(item.get("mode") or "").strip()
+        command_lines: list[str] = []
         if mode == "exploration":
             detail = _describe_exploration_command(command_value)
             if detail:
                 detail_entries.append([detail])
         else:
             command_lines = _wrap_code_words(command_value)
-            if command_lines:
-                detail_entries.extend([[line] for line in command_lines])
         exit_code = item.get("exit_code")
         if exit_code is not None and str(item.get("state") or "") != "running" and int(exit_code) != 0:
             detail_entries.append([f"exit {exit_code}"])
@@ -545,27 +556,28 @@ def _render_streaming_history_item(item: dict[str, Any]) -> list[str]:
         if output_preview_lines:
             detail_entries.append(["--- Output ---"])
             detail_entries.extend([[line] for line in output_preview_lines])
-        _append_pipe_entries(lines, detail_entries)
+        if mode == "command":
+            _append_command_block(lines, command_lines, detail_entries)
+        else:
+            _append_plain_entries(lines, detail_entries)
         return lines
 
     if item_type == "web_search":
         detail_entries.extend([[line] for line in _describe_web_search_queries(item)])
-        _append_pipe_entries(lines, detail_entries)
+        _append_plain_entries(lines, detail_entries)
         return lines
 
     if item_type == "reasoning":
-        lines[0] = f"{_streaming_history_bullet(item)} {title}"
         detail_entries.extend([[line] for line in _split_detail_lines(clean_reasoning_prefix(item.get("text")))])
-        _append_pipe_entries(lines, detail_entries)
+        _append_plain_entries(lines, detail_entries)
         return lines
 
     if item_type == "file_change":
         detail_entries.extend([[line] for line in _describe_file_changes(item)])
-        _append_tree_entries(lines, detail_entries)
+        _append_plain_entries(lines, detail_entries)
         return lines
 
     if item_type == "plan":
-        lines[0] = f"{_streaming_history_bullet(item)} {title}"
         steps = item.get("steps")
         if isinstance(steps, list):
             for step in steps:
@@ -576,7 +588,7 @@ def _render_streaming_history_item(item: dict[str, Any]) -> list[str]:
                     detail_entries.append([rendered_step])
         if not detail_entries:
             detail_entries.extend([[line] for line in _split_detail_lines(item.get("detail"))])
-        _append_pipe_entries(lines, detail_entries)
+        _append_plan_block(lines, detail_entries)
         return lines
 
     if item_type == "collab":
@@ -588,11 +600,11 @@ def _render_streaming_history_item(item: dict[str, Any]) -> list[str]:
         prompt = str(item.get("prompt") or "").strip()
         if prompt:
             detail_entries.extend([[line] for line in _split_detail_lines(prompt)])
-        _append_tree_entries(lines, detail_entries)
+        _append_plain_entries(lines, detail_entries)
         return lines
 
     detail_entries.extend([[line] for line in _split_detail_lines(item.get("detail"))])
-    _append_tree_entries(lines, detail_entries)
+    _append_plain_entries(lines, detail_entries)
     return lines
 
 
