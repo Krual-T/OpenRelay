@@ -7,6 +7,7 @@ from .dispatch_models import DispatchDecision, ResolvedMessageContext
 from .execution import RuntimeExecutionCoordinator
 from .follow_up import MERGED_FOLLOW_UP_INTRO, QueuedFollowUp
 from .help import HelpRenderer
+from .message_application import RuntimeMessageApplicationService
 from .message_dispatch import MessageDispatchService
 from .panel_service import RuntimePanelService
 from .replying import ReplyRoute, RuntimeReplyPolicy
@@ -36,6 +37,7 @@ __all__ = [
     "HelpRenderer",
     "MERGED_FOLLOW_UP_INTRO",
     "MessageDispatchService",
+    "RuntimeMessageApplicationService",
     "PanelCommandArgs",
     "PANEL_COMMANDS",
     "PANEL_HOME",

@@ -32,17 +32,16 @@ from openrelay.session import (
 from openrelay.storage import StateStore
 
 from .commands import RuntimeCommandHooks, RuntimeCommandRouter
-from .dispatch_models import DispatchDecision
-from .execution import ExecutionInput, RuntimeExecutionCoordinator
-from .follow_up import QueuedFollowUp
+from .execution import RuntimeExecutionCoordinator
 from .help import HelpRenderer
 from .help_service import RuntimeHelpService
+from .message_application import RuntimeMessageApplicationService
 from .message_dispatch import MessageDispatchService
 from .panel_service import RuntimePanelService
 from .replying import ReplyRoute, RuntimeReplyPolicy
 from .restart import RuntimeRestartController
 from .turn import BackendTurnSession, TurnRuntimeContext
-NON_BLOCKING_ACTIVE_RUN_COMMANDS = {"/ping", "/status", "/usage", "/help", "/tools", "/restart", "/compact"}
+
 DEFAULT_IMAGE_PROMPT = "用户发送了图片。请先查看图片内容，再根据图片直接回答用户。"
 LOGGER = logging.getLogger("openrelay.runtime")
 
@@ -138,6 +137,17 @@ class RuntimeOrchestrator:
             ),
             self.agent_runtime,
         )
+        self.message_application = RuntimeMessageApplicationService(
+            config=config,
+            store=store,
+            execution_coordinator=self.execution_coordinator,
+            message_dispatch=self.message_dispatch,
+            is_allowed_user=self.is_allowed_user,
+            reply=self._reply,
+            handle_command=self._handle_command,
+            run_backend_turn=self._run_backend_turn,
+            log_dispatch_resolution=self._log_dispatch_resolution,
+        )
         self.restart_controller = RuntimeRestartController(LOGGER)
 
     async def shutdown(self) -> None:
@@ -158,12 +168,6 @@ class RuntimeOrchestrator:
     def is_admin(self, sender_open_id: str) -> bool:
         return bool(self.config.feishu.admin_open_ids) and sender_open_id in self.config.feishu.admin_open_ids
 
-    def _build_execution_key(self, session_key: str, session: SessionRecord, *, force_session_scope: bool = False) -> str:
-        return f"session:{session.session_id}"
-
-    def _resolve_stop_execution_key(self, message: IncomingMessage, session_key: str, session: SessionRecord) -> str:
-        return self._build_execution_key(session_key, session)
-
     def _message_summary_text(self, message: IncomingMessage) -> str:
         text = str(message.text or "").strip()
         if text:
@@ -180,64 +184,7 @@ class RuntimeOrchestrator:
         return text
 
     async def dispatch_message(self, message: IncomingMessage) -> None:
-        try:
-            if not self._message_summary_text(message):
-                return
-            if self.config.feishu.bot_open_id and message.sender_open_id == self.config.feishu.bot_open_id:
-                return
-            if self.store.remember_message(message.event_id or message.message_id):
-                return
-            if not message.actionable:
-                return
-            if not self.is_allowed_user(message.sender_open_id):
-                await self._reply(message, "你没有权限使用 openrelay。", command_reply=True)
-                return
-
-            decision = self.message_dispatch.resolve_and_decide(message)
-            resolved = decision.resolved
-            self._log_dispatch_resolution(message, resolved.session_key, resolved.session, "dispatch")
-            if decision.kind == "stop":
-                await self._handle_stop(message, self._resolve_stop_execution_key(message, resolved.session_key, resolved.session))
-                return
-
-            if self.execution_coordinator.is_locked(decision.execution_key) and self._should_bypass_active_run(message.text):
-                handled = await self._handle_command(message, resolved.session_key, resolved.session)
-                if handled:
-                    return
-            if self.execution_coordinator.is_locked(decision.execution_key) and await self.execution_coordinator.try_handle_live_input(decision.execution_key, message):
-                return
-            if self.execution_coordinator.is_locked(decision.execution_key):
-                queued_follow_up = self.execution_coordinator.enqueue_pending_input(decision.execution_key, message)
-                if queued_follow_up is not None:
-                    await self._reply(message, queued_follow_up.acknowledgement_text())
-                return
-
-            async with self.execution_coordinator.lock_for(decision.execution_key):
-                await self._handle_message_serialized(decision, decision.execution_key)
-        except Exception:
-            LOGGER.exception("dispatch_message failed for event_id=%s chat_id=%s", message.event_id, message.chat_id)
-
-    async def _handle_message_serialized(self, initial_input: ExecutionInput, execution_key: str) -> None:
-        pending_input: ExecutionInput | None = initial_input
-        while pending_input is not None:
-            await self._handle_single_serialized_input(pending_input, execution_key)
-            pending_input = self.execution_coordinator.dequeue_pending_input(execution_key)
-
-    async def _handle_single_serialized_input(self, pending_input: ExecutionInput, execution_key: str) -> None:
-        if isinstance(pending_input, DispatchDecision):
-            decision = pending_input
-            message = decision.resolved.message
-        else:
-            message = pending_input.to_message() if isinstance(pending_input, QueuedFollowUp) else pending_input
-            decision = self.message_dispatch.resolve_and_decide(message)
-            self._log_dispatch_resolution(message, decision.resolved.session_key, decision.resolved.session, "serialized input")
-        session_key = decision.resolved.session_key
-        session = decision.resolved.session
-        if message.text.startswith("/"):
-            handled = await self._handle_command(message, session_key, session)
-            if handled:
-                return
-        await self._run_backend_turn(message, execution_key, session)
+        await self.message_application.handle(message)
 
     def _log_dispatch_resolution(
         self,
@@ -273,23 +220,10 @@ class RuntimeOrchestrator:
         return await self.command_router.handle(message, session_key, session)
 
     async def _handle_stop(self, message: IncomingMessage, execution_key: str) -> None:
-        active = self.execution_coordinator.active_run(execution_key)
-        if active is None:
-            await self._reply(message, "当前没有进行中的回复。", command_reply=True)
-            return
-        await active.cancel("interrupted by /stop")
-        queued_follow_up_count = self.execution_coordinator.queued_follow_up_count(execution_key)
-        stop_message = "已发送停止请求，正在中断当前回复。"
-        if queued_follow_up_count > 0:
-            stop_message = f"{stop_message[:-1]} 停止后会继续处理已收到的 {queued_follow_up_count} 条补充消息。"
-        await self._reply(message, stop_message, command_reply=True)
+        await self.message_application.handle_stop(message, execution_key)
 
     async def _cancel_active_run_for_session(self, session: SessionRecord, command_name: str) -> bool:
-        active = self.active_runs.get(self._build_execution_key(session.base_key, session))
-        if active is None:
-            return False
-        await active.cancel(f"interrupted by {command_name}")
-        return True
+        return await self.message_application.cancel_active_run_for_session(session, command_name)
 
     def _build_turn_runtime_context(self) -> TurnRuntimeContext:
         return TurnRuntimeContext(
@@ -371,21 +305,6 @@ class RuntimeOrchestrator:
         )
         session_key = self.session_scope.build_session_key(message)
         self.session_scope.remember_outbound_aliases(message, session_key, [sent_message.alias_ids() for sent_message in sent_messages])
-
-    def _is_stop_command(self, text: str) -> bool:
-        return text.strip().lower().startswith("/stop")
-
-    def _should_bypass_active_run(self, text: str) -> bool:
-        stripped = text.strip()
-        if not stripped.startswith("/"):
-            return False
-        command = stripped.split(maxsplit=1)[0].lower()
-        if command in NON_BLOCKING_ACTIVE_RUN_COMMANDS:
-            return True
-        if command != "/resume":
-            return False
-        tokens = stripped.split(maxsplit=2)
-        return len(tokens) == 1
 
     def _schedule_restart(self) -> None:
         self.restart_controller.schedule_restart()
