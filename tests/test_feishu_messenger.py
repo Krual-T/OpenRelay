@@ -1,3 +1,5 @@
+import pytest
+
 from openrelay.feishu.messenger import FeishuMessenger
 
 
@@ -50,3 +52,25 @@ async def test_send_interactive_card_falls_back_to_reply_after_patch_failure() -
 
     assert sent.message_id == "om_reply"
     assert [call[0] for call in messenger.calls] == ["patch", "reply"]
+
+
+@pytest.mark.asyncio
+async def test_send_interactive_card_logs_nbsp_entity_flow(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    caplog.set_level("INFO")
+    messenger = _MessengerUnderTest()
+    card = {
+        "schema": "2.0",
+        "body": {"elements": [{"tag": "markdown", "content": "=====output=====\n&nbsp;&nbsp;&nbsp;&nbsp;return&nbsp;raw"}]},
+    }
+
+    sent = await messenger.send_interactive_card(
+        "oc_1",
+        card,
+        reply_to_message_id="om_resume_card",
+    )
+
+    assert sent.message_id == "om_reply"
+    assert any("feishu send interactive card" in record.getMessage() for record in caplog.records)
+    assert "&nbsp;&nbsp;&nbsp;&nbsp;return&nbsp;raw" in messenger.calls[0][3]

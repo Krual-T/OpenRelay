@@ -6,6 +6,7 @@ import re
 from datetime import datetime
 from typing import Any
 
+from .common import summarize_text_entities
 from .highlight import render_command_chunks, render_output_block
 
 STREAMING_ELEMENT_ID = "streaming_content"
@@ -1025,6 +1026,20 @@ def build_streaming_card_json(
     live_state: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     content = build_streaming_content(live_state)
+    summary = summarize_text_entities(content)
+    if (
+        summary["nbsp_entity_count"]
+        or summary["nbsp_char_count"]
+        or summary["question_mark_count"]
+    ):
+        LOGGER.info(
+            "streaming card json content len=%s nbsp_entity=%s nbsp_char=%s question=%s preview=%r",
+            summary["length"],
+            summary["nbsp_entity_count"],
+            summary["nbsp_char_count"],
+            summary["question_mark_count"],
+            summary["preview"],
+        )
     card = build_thinking_card_json()
     card["body"]["elements"][0]["content"] = content
     return card
@@ -1052,10 +1067,24 @@ def build_streaming_content(live_state: dict[str, Any] | None = None) -> str:
     if answer_text:
         blocks.append(f"---\n\n{answer_text}")
     content = "\n\n".join(block for block in blocks if block).strip()
+    summary = summarize_text_entities(content)
     if any(
         isinstance(item, dict) and item.get("type") == "plan" for item in history_items
     ):
         LOGGER.info("streaming content rendered plan_content=%s", content)
+    if (
+        summary["nbsp_entity_count"]
+        or summary["nbsp_char_count"]
+        or summary["question_mark_count"]
+    ):
+        LOGGER.info(
+            "streaming content rendered len=%s nbsp_entity=%s nbsp_char=%s question=%s preview=%r",
+            summary["length"],
+            summary["nbsp_entity_count"],
+            summary["nbsp_char_count"],
+            summary["question_mark_count"],
+            summary["preview"],
+        )
     return content
 
 

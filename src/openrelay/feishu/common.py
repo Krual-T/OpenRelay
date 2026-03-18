@@ -78,6 +78,20 @@ def _normalize_spaces(text: str) -> str:
     return " ".join(text.split())
 
 
+def summarize_text_entities(text: object, *, preview_length: int = 80) -> dict[str, object]:
+    raw = str(text or "")
+    preview = raw[:preview_length].replace("\n", "\\n")
+    if len(raw) > preview_length:
+        preview = f"{preview}..."
+    return {
+        "length": len(raw),
+        "nbsp_entity_count": raw.count("&nbsp;"),
+        "nbsp_char_count": raw.count("\u00a0"),
+        "question_mark_count": raw.count("?"),
+        "preview": preview,
+    }
+
+
 def _read_attr_text(value: object, name: str) -> str:
     if isinstance(value, dict):
         return _read_text(value.get(name))

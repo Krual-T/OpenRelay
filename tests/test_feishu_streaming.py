@@ -2,6 +2,7 @@ import pytest
 
 import openrelay.feishu.streaming as streaming_card_module
 from openrelay.agent_runtime import LiveTurnViewModel, ToolState
+from openrelay.feishu.common import summarize_text_entities
 from openrelay.feishu.reply_card import build_streaming_card_signature
 from openrelay.feishu.reply_card import build_complete_card
 from openrelay.feishu.reply_card import optimize_markdown_style
@@ -14,6 +15,59 @@ from openrelay.feishu import (
     build_streaming_content,
 )
 from openrelay.presentation.live_turn import LiveTurnPresenter
+
+
+class _SuccessfulResponse:
+    code = 0
+    msg = "ok"
+
+    def success(self) -> bool:
+        return True
+
+
+class _RecordingCardElementApi:
+    def __init__(self) -> None:
+        self.calls: list[object] = []
+
+    async def acontent(self, request: object) -> _SuccessfulResponse:
+        self.calls.append(request)
+        return _SuccessfulResponse()
+
+
+class _RecordingCardApi:
+    def __init__(self) -> None:
+        self.update_calls: list[object] = []
+
+    async def aupdate(self, request: object) -> _SuccessfulResponse:
+        self.update_calls.append(request)
+        return _SuccessfulResponse()
+
+
+class _RecordingMessenger:
+    def __init__(self) -> None:
+        self.client = type(
+            "Client",
+            (),
+            {
+                "cardkit": type(
+                    "CardKit",
+                    (),
+                    {
+                        "v1": type(
+                            "V1",
+                            (),
+                            {
+                                "card_element": _RecordingCardElementApi(),
+                                "card": _RecordingCardApi(),
+                            },
+                        )()
+                    },
+                )()
+            },
+        )()
+
+    def ensure_success(self, response: object, label: str) -> None:
+        _ = (response, label)
 
 
 def test_build_streaming_card_json_uses_single_streaming_element() -> None:
@@ -53,6 +107,37 @@ def test_build_streaming_card_json_keeps_single_streaming_element_when_answer_st
     assert "🔵 Explored" in card["body"]["elements"][0]["content"]
     assert "#### Answer\n找到结果。" in card["body"]["elements"][0]["content"]
     assert card["body"]["elements"][1]["element_id"] == "loading_icon"
+
+
+def test_build_streaming_card_json_preserves_nbsp_entities_for_indented_output(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    caplog.set_level("INFO")
+
+    card = build_streaming_card_json(
+        {
+            "history_items": [
+                {
+                    "type": "command",
+                    "state": "completed",
+                    "title": "Ran shell command",
+                    "mode": "command",
+                    "command": "sed -n '430,435p' src/openrelay/runtime/commands.py",
+                    "exit_code": 0,
+                    "output_preview": "        try:\n            return raw",
+                }
+            ]
+        }
+    )
+
+    content = str(card["body"]["elements"][0]["content"])
+    summary = summarize_text_entities(content)
+
+    assert "&nbsp;&nbsp;&nbsp;&nbsp;" in content
+    assert summary["nbsp_entity_count"] >= 20
+    assert summary["nbsp_char_count"] == 0
+    assert any("streaming content rendered" in record.getMessage() for record in caplog.records)
+    assert any("streaming card json content" in record.getMessage() for record in caplog.records)
 
 
 def test_build_streaming_content_prefers_partial_text_then_reasoning() -> None:
@@ -590,8 +675,8 @@ def test_build_streaming_content_renders_updated_files_with_section_separator() 
     assert "<text_tag color='orange'>Edit</text_tag> `tests/test_feishu_streaming.py`" in content
     assert "=====output=====" in content
     assert "<font color='grey'>---&nbsp;a/src/openrelay/feishu/reply_card.py</font>" in content
-    assert "<text_tag color='red'>-</text_tag>&nbsp;<font color='red'>old&nbsp;line</font>" in content
-    assert "<text_tag color='green'>+</text_tag>&nbsp;<font color='green'>new&nbsp;line</font>" in content
+    assert "<text_tag color='red'>-</text_tag><font color='red'>old</font><font color='red'>&nbsp;</font><font color='red'>line</font>" in content
+    assert "<text_tag color='green'>+</text_tag><font color='green'>new</font><font color='green'>&nbsp;</font><font color='green'>line</font>" in content
 
 
 def test_build_streaming_content_renders_turn_diff_fallback_for_file_change() -> None:
@@ -901,6 +986,65 @@ def test_build_complete_card_prefers_transcript_markdown() -> None:
 
     assert card["body"]["elements"] == [{"tag": "markdown", "content": "• **Ran** `pytest`\n\n---\n\n最终答案"}]
     assert "summary" not in card["config"]
+
+
+@pytest.mark.asyncio
+async def test_streaming_session_update_card_content_keeps_nbsp_entities(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    caplog.set_level("INFO")
+    messenger = _RecordingMessenger()
+    session = FeishuStreamingSession(messenger)
+    session.state = {
+        "card_id": "c1",
+        "sequence": 1,
+        "current_content": "",
+        "card_signature": ("plain", ""),
+    }
+
+    await session.update_card_content("=====output=====\n&nbsp;&nbsp;&nbsp;&nbsp;return&nbsp;raw")
+
+    request = messenger.client.cardkit.v1.card_element.calls[0]
+    assert request.request_body.content == "=====output=====\n&nbsp;&nbsp;&nbsp;&nbsp;return&nbsp;raw"
+    assert any("streaming update card content" in record.getMessage() for record in caplog.records)
+
+
+@pytest.mark.asyncio
+async def test_streaming_session_update_card_json_keeps_nbsp_entities(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    caplog.set_level("INFO")
+    messenger = _RecordingMessenger()
+    session = FeishuStreamingSession(messenger)
+    session.state = {
+        "card_id": "c1",
+        "sequence": 1,
+        "current_content": "",
+        "card_signature": ("plain", ""),
+    }
+    card_json = build_streaming_card_json(
+        {
+            "history_items": [
+                {
+                    "type": "command",
+                    "state": "completed",
+                    "title": "Ran shell command",
+                    "mode": "command",
+                    "command": "sed -n '430,435p' src/openrelay/runtime/commands.py",
+                    "exit_code": 0,
+                    "output_preview": "        try:\n            return raw",
+                }
+            ]
+        }
+    )
+
+    await session.update_card_json(card_json)
+
+    request = messenger.client.cardkit.v1.card.update_calls[0]
+    data = request.request_body.card.data
+    assert "&nbsp;&nbsp;&nbsp;&nbsp;" in data
+    assert "\\u00a0" not in data
+    assert any("streaming update card json" in record.getMessage() for record in caplog.records)
 
 
 def test_optimize_markdown_style_replaces_inline_code_with_feishu_color_enum() -> None:

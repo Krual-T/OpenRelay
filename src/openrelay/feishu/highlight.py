@@ -72,7 +72,7 @@ PATH_RE = re.compile(r"(?P<path>(?:\.{1,2}/|/|~/?|[A-Za-z]:\\)?[\w.-]+(?:/[\w.-]
 URL_RE = re.compile(r"https?://[^\s]+")
 ANSI_RE = re.compile(r"\x1b\[[0-9;]*m")
 DIFF_HEADER_RE = re.compile(r"^(diff --git|index |@@ |\+\+\+ |--- )")
-GIT_STATUS_RE = re.compile(r"^(?P<flag>[ MADRCU?!]{1,2})\s+(?P<path>.+)$")
+GIT_STATUS_RE = re.compile(r"^(?P<flag>(?!  )[ MADRCU?!]{2})\s+(?P<path>\S.+)$")
 NUMBER_RE = re.compile(r"\d+(?:\.\d+)?")
 NUMBER_UNIT_RE = re.compile(r"^\d+(?:\.\d+)+[A-Za-z]*$")
 

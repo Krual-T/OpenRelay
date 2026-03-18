@@ -7,6 +7,7 @@ from typing import Any, Callable
 from openrelay.agent_runtime import ApprovalDecision, ApprovalRequest, LiveTurnViewModel, ToolState
 from openrelay.core import SessionRecord, utc_now
 from openrelay.feishu import build_complete_card, render_transcript_markdown
+from openrelay.feishu.common import summarize_text_entities
 
 LOGGER = logging.getLogger("openrelay.presentation.live_turn")
 
@@ -388,6 +389,25 @@ class LiveTurnPresenter:
         state: LiveTurnViewModel,
     ) -> dict[str, Any] | None:
         if tool.kind == "command":
+            detail_summary = summarize_text_entities(tool.detail)
+            if (
+                detail_summary["length"]
+                and (
+                    detail_summary["nbsp_entity_count"]
+                    or detail_summary["nbsp_char_count"]
+                    or detail_summary["question_mark_count"]
+                    or str(tool.detail or "").startswith(" ")
+                )
+            ):
+                LOGGER.info(
+                    "command tool mapped output_preview tool_id=%s len=%s nbsp_entity=%s nbsp_char=%s question=%s preview=%r",
+                    tool.tool_id,
+                    detail_summary["length"],
+                    detail_summary["nbsp_entity_count"],
+                    detail_summary["nbsp_char_count"],
+                    detail_summary["question_mark_count"],
+                    detail_summary["preview"],
+                )
             return {
                 "type": "command",
                 "state": "running" if tool.status == "running" else "completed",

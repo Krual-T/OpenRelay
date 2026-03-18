@@ -4,6 +4,7 @@ import asyncio
 import json
 import time
 from typing import Any, Callable
+import logging
 
 from lark_oapi.api.cardkit.v1 import (
     Card,
@@ -19,6 +20,7 @@ from lark_oapi.api.cardkit.v1 import (
 
 from .messenger import FeishuMessenger, sent_message_ref_from_payload
 from .parsing import _read_text
+from .common import summarize_text_entities
 from .reply_card import (
     DEFAULT_THINKING_TEXT,
     STREAMING_ELEMENT_ID,
@@ -34,6 +36,7 @@ DEFAULT_STREAM_UPDATE_THROTTLE_MS = 100
 DEFAULT_CARD_STREAMING_WINDOW_SECONDS = 540.0
 STREAMING_TIMEOUT_NOTICE = "流式显示已自动暂停，任务仍在继续。完成后会在此卡片更新最终结果。"
 STREAMING_ROLLOVER_NOTICE = "此卡已停止流式更新，请继续查看当前顶层对话中的新卡。"
+LOGGER = logging.getLogger("openrelay.feishu.streaming")
 
 
 class FeishuStreamingSession:
@@ -149,6 +152,21 @@ class FeishuStreamingSession:
     async def update_card_content(self, text: str) -> None:
         if self.state is None:
             return
+        summary = summarize_text_entities(text)
+        if (
+            summary["nbsp_entity_count"]
+            or summary["nbsp_char_count"]
+            or summary["question_mark_count"]
+        ):
+            LOGGER.info(
+                "streaming update card content card_id=%s len=%s nbsp_entity=%s nbsp_char=%s question=%s preview=%r",
+                self.state["card_id"],
+                summary["length"],
+                summary["nbsp_entity_count"],
+                summary["nbsp_char_count"],
+                summary["question_mark_count"],
+                summary["preview"],
+            )
         sequence = self.next_sequence()
         response = await self.messenger.client.cardkit.v1.card_element.acontent(
             ContentCardElementRequest.builder().card_id(self.state["card_id"]).element_id(STREAMING_ELEMENT_ID).request_body(
@@ -205,6 +223,29 @@ class FeishuStreamingSession:
     async def update_card_json(self, card_json: dict[str, Any]) -> None:
         if self.state is None:
             return
+        content = ""
+        body = card_json.get("body")
+        if isinstance(body, dict):
+            elements = body.get("elements")
+            if isinstance(elements, list) and elements:
+                first = elements[0]
+                if isinstance(first, dict):
+                    content = str(first.get("content") or "")
+        summary = summarize_text_entities(content)
+        if (
+            summary["nbsp_entity_count"]
+            or summary["nbsp_char_count"]
+            or summary["question_mark_count"]
+        ):
+            LOGGER.info(
+                "streaming update card json card_id=%s len=%s nbsp_entity=%s nbsp_char=%s question=%s preview=%r",
+                self.state["card_id"],
+                summary["length"],
+                summary["nbsp_entity_count"],
+                summary["nbsp_char_count"],
+                summary["question_mark_count"],
+                summary["preview"],
+            )
         sequence = self.next_sequence()
         response = await self.messenger.client.cardkit.v1.card.aupdate(
             UpdateCardRequest.builder().card_id(self.state["card_id"]).request_body(

@@ -12,7 +12,7 @@ from lark_oapi.core.model import BaseRequest
 
 from openrelay.core import AppConfig
 
-from .common import LOGGER, _ensure_success, _guess_file_suffix, _json_dumps, _read_text, _response_bytes, _response_headers, _response_payload
+from .common import LOGGER, _ensure_success, _guess_file_suffix, _json_dumps, _read_text, _response_bytes, _response_headers, _response_payload, summarize_text_entities
 from .parsing import build_markdown_post_content, split_text
 from .types import SentMessageRef
 
@@ -64,6 +64,22 @@ class FeishuMessenger:
         return bot_open_id
 
     async def reply_message(self, message_id: str, msg_type: str, content: str, *, reply_in_thread: bool = True) -> dict[str, Any]:
+        if msg_type == "interactive":
+            summary = summarize_text_entities(content)
+            if (
+                summary["nbsp_entity_count"]
+                or summary["nbsp_char_count"]
+                or summary["question_mark_count"]
+            ):
+                LOGGER.info(
+                    "feishu reply interactive message_id=%s len=%s nbsp_entity=%s nbsp_char=%s question=%s preview=%r",
+                    message_id,
+                    summary["length"],
+                    summary["nbsp_entity_count"],
+                    summary["nbsp_char_count"],
+                    summary["question_mark_count"],
+                    summary["preview"],
+                )
         request = ReplyMessageRequest.builder().message_id(message_id).request_body(
             ReplyMessageRequestBody.builder().msg_type(msg_type).content(content).reply_in_thread(reply_in_thread).uuid(uuid.uuid4().hex).build()
         ).build()
@@ -72,6 +88,22 @@ class FeishuMessenger:
         return _response_payload(response)
 
     async def create_message(self, chat_id: str, msg_type: str, content: str, *, root_id: str = "") -> dict[str, Any]:
+        if msg_type == "interactive":
+            summary = summarize_text_entities(content)
+            if (
+                summary["nbsp_entity_count"]
+                or summary["nbsp_char_count"]
+                or summary["question_mark_count"]
+            ):
+                LOGGER.info(
+                    "feishu create interactive chat_id=%s len=%s nbsp_entity=%s nbsp_char=%s question=%s preview=%r",
+                    chat_id,
+                    summary["length"],
+                    summary["nbsp_entity_count"],
+                    summary["nbsp_char_count"],
+                    summary["question_mark_count"],
+                    summary["preview"],
+                )
         body: dict[str, Any] = {
             "receive_id": chat_id,
             "msg_type": msg_type,
@@ -86,6 +118,22 @@ class FeishuMessenger:
         return _response_payload(response)
 
     async def update_message(self, message_id: str, msg_type: str, content: str) -> dict[str, Any]:
+        if msg_type == "interactive":
+            summary = summarize_text_entities(content)
+            if (
+                summary["nbsp_entity_count"]
+                or summary["nbsp_char_count"]
+                or summary["question_mark_count"]
+            ):
+                LOGGER.info(
+                    "feishu update interactive message_id=%s len=%s nbsp_entity=%s nbsp_char=%s question=%s preview=%r",
+                    message_id,
+                    summary["length"],
+                    summary["nbsp_entity_count"],
+                    summary["nbsp_char_count"],
+                    summary["question_mark_count"],
+                    summary["preview"],
+                )
         request = UpdateMessageRequest.builder().message_id(message_id).request_body(
             UpdateMessageRequestBody.builder().msg_type(msg_type).content(content).build()
         ).build()
@@ -94,6 +142,21 @@ class FeishuMessenger:
         return _response_payload(response)
 
     async def patch_message(self, message_id: str, content: str) -> dict[str, Any]:
+        summary = summarize_text_entities(content)
+        if (
+            summary["nbsp_entity_count"]
+            or summary["nbsp_char_count"]
+            or summary["question_mark_count"]
+        ):
+            LOGGER.info(
+                "feishu patch interactive message_id=%s len=%s nbsp_entity=%s nbsp_char=%s question=%s preview=%r",
+                message_id,
+                summary["length"],
+                summary["nbsp_entity_count"],
+                summary["nbsp_char_count"],
+                summary["question_mark_count"],
+                summary["preview"],
+            )
         request = PatchMessageRequest.builder().message_id(message_id).request_body(
             PatchMessageRequestBody.builder().content(content).build()
         ).build()
@@ -157,6 +220,23 @@ class FeishuMessenger:
         update_message_id: str = "",
     ) -> SentMessageRef:
         content = _json_dumps(card)
+        summary = summarize_text_entities(content)
+        if (
+            summary["nbsp_entity_count"]
+            or summary["nbsp_char_count"]
+            or summary["question_mark_count"]
+        ):
+            LOGGER.info(
+                "feishu send interactive card chat_id=%s update_message_id=%s reply_to=%s len=%s nbsp_entity=%s nbsp_char=%s question=%s preview=%r",
+                chat_id,
+                update_message_id,
+                reply_to_message_id,
+                summary["length"],
+                summary["nbsp_entity_count"],
+                summary["nbsp_char_count"],
+                summary["question_mark_count"],
+                summary["preview"],
+            )
         if update_message_id:
             try:
                 await self.patch_message(update_message_id, content)
