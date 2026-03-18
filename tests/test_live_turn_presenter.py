@@ -204,7 +204,7 @@ def test_live_turn_presenter_preserves_plan_history_in_transcript() -> None:
 
     assert len(second_snapshot["plan_history_items"]) == 2
     assert transcript.count("**Plan**") == 2
-    assert "**Plan**  \n├ 🟣 ~~`completed` Inspect runtime~~" in transcript
+    assert "**Plan**  \n├ **[Completed]** Inspect runtime" in transcript
     assert "Adjust Feishu rendering" in transcript
     assert "Verify snapshot output" in transcript
 

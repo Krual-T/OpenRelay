@@ -315,10 +315,12 @@ def _render_plan_step(item: dict[str, Any], step: dict[str, Any]) -> str:
     text = normalize_inline(step.get("step"))
     if not text:
         return ""
-    line = f"`{label}` {text}"
-    if label == "completed":
-        line = f"~~{line}~~"
-    return f"🟣 {line}"
+    display_label = {
+        "pending": "Pending",
+        "in_progress": "In Progress",
+        "completed": "Completed",
+    }[label]
+    return f"**[{display_label}]** {text}"
 
 
 def _history_item_tone(item: dict[str, Any]) -> str:
