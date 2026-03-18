@@ -266,7 +266,9 @@ def _preserve_markdown_indentation(text: str) -> str:
     return f"{'&nbsp;' * leading_spaces}{value[leading_spaces:]}"
 
 
-def _split_output_lines(text: object, *, max_lines: int = 6, max_length: int = 120) -> list[str]:
+def _split_output_lines(
+    text: object, *, max_lines: int = 6, max_length: int = 120
+) -> list[str]:
     raw_lines = str(text or "").splitlines()
     visible_lines = [line.rstrip() for line in raw_lines if line.strip()]
     if not visible_lines:
@@ -343,7 +345,7 @@ def _build_output_entries(
     )
     if not rendered_output:
         return []
-    return [["<hr>"], [rendered_output]]
+    return [["=====output====="], [rendered_output]]
 
 
 def _join_markdown_lines(lines: list[str]) -> str:
@@ -1025,7 +1027,9 @@ def build_streaming_content(live_state: dict[str, Any] | None = None) -> str:
     if summary_text:
         blocks.append(f"---\n\n{summary_text}")
     content = "\n\n".join(block for block in blocks if block).strip()
-    if any(isinstance(item, dict) and item.get("type") == "plan" for item in history_items):
+    if any(
+        isinstance(item, dict) and item.get("type") == "plan" for item in history_items
+    ):
         LOGGER.info("streaming content rendered plan_content=%s", content)
     return content
 

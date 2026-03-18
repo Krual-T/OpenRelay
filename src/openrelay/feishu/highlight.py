@@ -8,30 +8,55 @@ from pygments import lex
 from pygments.lexers import TextLexer, get_lexer_by_name
 from pygments.token import Token
 
-CODEX_THEME: dict[object, str] = {
-    Token.Comment: "grey",
-    Token.Error: "red",
-    Token.Generic.Deleted: "red",
-    Token.Generic.Emph: "wathet",
-    Token.Generic.Heading: "grey",
-    Token.Generic.Inserted: "green",
-    Token.Generic.Output: "grey",
-    Token.Generic.Prompt: "green",
-    Token.Generic.Strong: "green",
-    Token.Generic.Subheading: "wathet",
-    Token.Keyword: "purple",
-    Token.Literal.Number: "orange",
-    Token.Literal.String: "yellow",
-    Token.Name.Attribute: "wathet",
-    Token.Name.Builtin: "green",
-    Token.Name.Class: "wathet",
-    Token.Name.Constant: "orange",
-    Token.Name.Function: "wathet",
-    Token.Name.Namespace: "wathet",
-    Token.Name.Tag: "red",
-    Token.Name.Variable: "carmine",
-    Token.Operator: "carmine",
-    Token.Punctuation: "grey",
+FEISHU_COLOR_RGBS: dict[str, tuple[int, int, int]] = {
+    "grey": (143, 149, 158),
+    "red": (216, 74, 74),
+    "green": (48, 135, 86),
+    "orange": (194, 123, 47),
+    "yellow": (181, 137, 0),
+    "blue": (47, 111, 223),
+    "wathet": (63, 136, 197),
+    "purple": (107, 95, 210),
+    "carmine": (194, 85, 143),
+}
+
+LIGHT_CODE_THEME: dict[object, tuple[int, int, int]] = {
+    Token.Comment: (120, 128, 140),
+    Token.Error: (191, 60, 60),
+    Token.Generic.Deleted: (191, 60, 60),
+    Token.Generic.Emph: (50, 101, 184),
+    Token.Generic.Heading: (120, 128, 140),
+    Token.Generic.Inserted: (48, 135, 86),
+    Token.Generic.Output: (120, 128, 140),
+    Token.Generic.Prompt: (48, 135, 86),
+    Token.Generic.Strong: (35, 90, 160),
+    Token.Generic.Subheading: (50, 101, 184),
+    Token.Keyword: (53, 96, 181),
+    Token.Keyword.Namespace: (53, 96, 181),
+    Token.Literal.Number: (166, 106, 41),
+    Token.Literal.String: (48, 135, 86),
+    Token.Name.Attribute: (47, 111, 223),
+    Token.Name.Builtin: (34, 125, 122),
+    Token.Name.Class: (47, 111, 223),
+    Token.Name.Constant: (166, 106, 41),
+    Token.Name.Decorator: (107, 95, 210),
+    Token.Name.Function: (47, 111, 223),
+    Token.Name.Namespace: (35, 90, 160),
+    Token.Name.Tag: (191, 60, 60),
+    Token.Name.Variable: (34, 125, 122),
+    Token.Operator: (132, 139, 149),
+    Token.Punctuation: (132, 139, 149),
+}
+
+SHELL_THEME_RGBS: dict[str, tuple[int, int, int]] = {
+    "command": (48, 135, 86),
+    "flag": (194, 85, 143),
+    "operator": (63, 136, 197),
+    "env": (194, 85, 143),
+    "url": (47, 111, 223),
+    "path": (47, 111, 223),
+    "string": (48, 135, 86),
+    "number": (166, 106, 41),
 }
 
 COMMAND_OPERATORS = {"|", "&&", "||", ";", "(", ")", "{", "}"}
@@ -211,20 +236,23 @@ def _render_output_line(line: str, *, max_length: int) -> str:
 
 
 def _render_token(token_type: object, value: str) -> str:
-    color = _lookup_color(token_type)
+    color = _lookup_color_name(token_type)
     if color is None:
         return _escape(value)
     return _font(color, value)
 
 
-def _lookup_color(token_type: object) -> str | None:
+def _lookup_color_name(token_type: object) -> str | None:
     current = token_type
     while current not in {None, Token}:
-        color = CODEX_THEME.get(current)
-        if color is not None:
-            return color
+        rgb = LIGHT_CODE_THEME.get(current)
+        if rgb is not None:
+            return _map_rgb_to_feishu(rgb)
         current = getattr(current, "parent", None)
-    return CODEX_THEME.get(current)
+    rgb = LIGHT_CODE_THEME.get(current)
+    if rgb is None:
+        return None
+    return _map_rgb_to_feishu(rgb)
 
 
 def _split_command_tokens(text: str) -> list[str]:
@@ -237,24 +265,24 @@ def _style_shell_token(token: str, previous_token: str, position: int) -> str:
     if not token.strip():
         return _escape(token)
     if token in COMMAND_OPERATORS:
-        return _font("carmine", token)
+        return _themed_font("operator", token)
     if token.startswith("-"):
-        return _font("orange", token)
+        return _themed_font("flag", token)
     if token.startswith("$"):
-        return _font("carmine", token)
+        return _themed_font("env", token)
     if URL_RE.fullmatch(token):
-        return _font("blue", token)
-    if PATH_RE.fullmatch(token.strip("\"'")):
-        return _font("wathet", token)
+        return _themed_font("url", token)
     if token.startswith(('"', "'")) or token.endswith(('"', "'")):
-        return _font("yellow", token)
+        return _themed_font("string", token)
+    if PATH_RE.fullmatch(token.strip("\"'")):
+        return _themed_font("path", token)
     if "=" in token and token.split("=", 1)[0].isidentifier():
         name, value = token.split("=", 1)
-        return f"{_font('carmine', name)}={_font('yellow', value)}"
+        return f"{_themed_font('env', name)}={_themed_font('string', value)}"
     if position == 0 or previous_token in COMMAND_OPERATORS:
-        return _font("green", token)
+        return _themed_font("command", token)
     if token.isdigit():
-        return _font("orange", token)
+        return _themed_font("number", token)
     return _escape(token)
 
 
@@ -425,6 +453,24 @@ def _font(color: str | None, text: str) -> str:
     if color is None:
         return escaped
     return f"<font color='{color}'>{escaped}</font>"
+
+
+def _themed_font(role: str, text: str) -> str:
+    rgb = SHELL_THEME_RGBS.get(role)
+    return _font(_map_rgb_to_feishu(rgb) if rgb is not None else None, text)
+
+
+def _map_rgb_to_feishu(rgb: tuple[int, int, int]) -> str:
+    return min(
+        FEISHU_COLOR_RGBS.items(),
+        key=lambda item: _color_distance(rgb, item[1]),
+    )[0]
+
+
+def _color_distance(
+    left: tuple[int, int, int], right: tuple[int, int, int]
+) -> int:
+    return sum((left[index] - right[index]) ** 2 for index in range(3))
 
 
 def _text_tag(color: str, text: str) -> str:
