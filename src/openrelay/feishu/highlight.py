@@ -124,6 +124,7 @@ RICH_WRAP_CONSOLE = Console(force_terminal=False, color_system="truecolor", widt
 class ShellSegment:
     text: str
     role: str | None = None
+    hard_break: bool = False
 
 
 def render_command_chunks(
@@ -258,7 +259,7 @@ def _build_shell_segments(text: str) -> list[ShellSegment]:
     command_position = 0
     for token in tokens:
         if token.isspace():
-            segments.append(ShellSegment(token))
+            segments.extend(_split_shell_whitespace(token))
             continue
         role = _shell_token_role(token, previous_token, command_position)
         segments.extend(_split_shell_token(token, role))
@@ -359,12 +360,34 @@ def _shell_token_role(token: str, previous_token: str, position: int) -> str | N
 
 
 def _split_shell_token(token: str, role: str | None) -> list[ShellSegment]:
-    if len(token) <= 16:
+    if len(token) <= 16 and "\n" not in token and "\r" not in token:
         return [ShellSegment(token, role)]
     parts = re.findall(r"\s+|[^\s]+", token)
     if len(parts) <= 1:
         return [ShellSegment(token, role)]
-    return [ShellSegment(part, role) for part in parts]
+    segments: list[ShellSegment] = []
+    for part in parts:
+        if part.isspace():
+            segments.extend(_split_shell_whitespace(part, role=role))
+            continue
+        segments.append(ShellSegment(part, role))
+    return segments
+
+
+def _split_shell_whitespace(token: str, *, role: str | None = None) -> list[ShellSegment]:
+    segments: list[ShellSegment] = []
+    buffer: list[str] = []
+    for character in token:
+        if character in "\r\n":
+            if buffer:
+                segments.append(ShellSegment("".join(buffer), role))
+                buffer = []
+            segments.append(ShellSegment("", hard_break=True))
+            continue
+        buffer.append(character)
+    if buffer:
+        segments.append(ShellSegment("".join(buffer), role))
+    return segments
 
 
 def _wrap_shell_segments(
@@ -385,6 +408,9 @@ def _wrap_shell_segments(
         current_length = 0
 
     for segment in segments:
+        if segment.hard_break:
+            flush()
+            continue
         part_length = len(segment.text)
         if not current and segment.text.isspace():
             continue

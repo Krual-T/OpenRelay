@@ -429,6 +429,27 @@ def test_build_streaming_content_keeps_tree_prefix_outside_command_highlight() -
     assert "<font color='grey'>└</font>" not in content
 
 
+def test_build_streaming_content_keeps_tree_prefix_when_command_contains_literal_newline() -> None:
+    content = build_streaming_content(
+        {
+            "history_items": [
+                {
+                    "type": "command",
+                    "state": "completed",
+                    "title": "Ran shell command",
+                    "mode": "command",
+                    "command": "/bin/bash -lc \"printf '%s\n' '--- tool-demo-new.txt ---' && nl -ba tool-demo-new.txt\"",
+                    "exit_code": 0,
+                }
+            ]
+        }
+    )
+
+    assert "\n│ <font color='wathet'>/bin/bash</font>" in content
+    assert "\n│ <font color='green'>'</font><font color='green'>&nbsp;</font><font color='green'>'---</font>" in content
+    assert "\n└ <font color='green'>nl</font>" in content
+
+
 def test_build_streaming_content_renders_web_search_as_blue_exploration() -> None:
     content = build_streaming_content(
         {
