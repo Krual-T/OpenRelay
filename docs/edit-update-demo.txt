@@ -1,0 +1,4 @@
+edit tool demo
+line 1: original text
+line 2: keep this line
+line 3: will be replaced later
