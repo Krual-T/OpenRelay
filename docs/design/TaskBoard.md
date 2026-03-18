@@ -71,13 +71,14 @@
 
 ### [ ] OR-TASK-009 架构重构总体设计与分阶段实施收敛
 - **目标**：从模块职责划分和长期演化角度，为下一轮架构重构固定总体边界、事实来源、依赖方向和分阶段实施顺序。
-- **当前状态**：总体设计稿已完成；当前已明确目标架构、关键设计决策、阶段顺序和非目标，下一步应按文档拆出 repository、session-binding、command、turn、rendering 五条详细设计或实施子任务。
+- **当前状态**：总体设计稿与详细设计稿均已完成；当前已明确目标架构、关键设计决策、分阶段实施顺序，以及每阶段涉及的模块、文件、类、方法与改动原因，下一步可按 Phase 1 到 Phase 5 进入逐段实现。
 - **关闭条件**：
   - 完成正式总体设计稿，明确目标边界、事实来源、实施阶段和风险控制。
   - 任务板中记录对应设计证据和后续实施方向。
   - 后续详细设计或实施子任务具备可继续拆分的稳定入口。
 - **已完成证据**：
   - `docs/design/or-task-009-architecture-refactor-overall-design.md`
+  - `docs/design/or-task-009-architecture-refactor-detailed-design.md`
 - **后续 follow-up**：
   - 优先补 repository 边界详细设计，避免后续实现再次从 `StateStore` 直接开口。
   - 单独拆 session / binding source-of-truth 详细设计，不要和 command/turn 拆分混成一个大稿。
