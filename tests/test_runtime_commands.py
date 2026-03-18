@@ -290,7 +290,7 @@ async def test_runtime_command_router_requires_admin_for_restart(tmp_path: Path)
 
 
 @pytest.mark.asyncio
-async def test_runtime_command_router_delegates_panel_and_admin_restart(tmp_path: Path) -> None:
+async def test_runtime_command_router_replies_panel_removed_and_admin_restart(tmp_path: Path) -> None:
     router, store, hooks = build_router(tmp_path)
     session = store.load_session("p2p:oc_1")
 
@@ -299,20 +299,10 @@ async def test_runtime_command_router_delegates_panel_and_admin_restart(tmp_path
     await router.handle(make_message("/restart", sender_open_id="ou_admin", suffix="restart_admin"), session.base_key, session)
 
     assert hooks.help_calls == [("om_help", session.base_key, ("claude", "codex"))]
-    assert hooks.panel_calls == [("om_panel", session.base_key, "home", 1, "updated-desc")]
+    assert hooks.panel_calls == []
+    assert hooks.replies[-2]["text"] == "`/panel` 已移除；恢复历史会话请用 `/resume`，切工作区请用 `/workspace`，查看现场请用 `/status`。"
     assert hooks.restart_scheduled == 1
     assert hooks.replies[-1]["text"] == "正在重启 openrelay，预计几秒后恢复。"
-    store.close()
-
-
-@pytest.mark.asyncio
-async def test_runtime_command_router_parses_panel_view_page_and_sort(tmp_path: Path) -> None:
-    router, store, hooks = build_router(tmp_path)
-    session = store.load_session("p2p:oc_1")
-
-    await router.handle(make_message(f"/panel sessions --page 2 --sort {SESSION_SORT_ACTIVE}", suffix="panel_sessions"), session.base_key, session)
-
-    assert hooks.panel_calls == [("om_panel_sessions", session.base_key, "sessions", 2, SESSION_SORT_ACTIVE)]
     store.close()
 
 
@@ -374,11 +364,10 @@ async def test_runtime_command_router_parses_equals_style_paging_args(tmp_path: 
     session = store.load_session("p2p:oc_1")
 
     await router.handle(make_message("/resume --page=3 --sort=updated-desc", suffix="resume_equals"), session.base_key, session)
-    await router.handle(make_message("/panel --page=2 --sort=active-first", suffix="panel_equals"), session.base_key, session)
 
     assert hooks.session_list_calls == [(session.base_key, 3, "updated-desc")]
     assert hooks.replies == []
-    assert hooks.panel_calls == [("om_panel_equals", session.base_key, "sessions", 2, "active-first")]
+    assert hooks.panel_calls == []
     store.close()
 
 
@@ -455,13 +444,26 @@ async def test_runtime_command_router_compact_current_native_thread(tmp_path: Pa
 
 
 @pytest.mark.asyncio
-async def test_runtime_command_router_opens_workspace_panel(tmp_path: Path) -> None:
+async def test_runtime_command_router_opens_workspace_browser(tmp_path: Path) -> None:
     router, store, hooks = build_router(tmp_path)
     session = store.load_session("p2p:oc_1")
 
     await router.handle(make_message("/workspace", suffix="workspace"), session.base_key, session)
 
     assert hooks.panel_calls[-1] == ("om_workspace", session.base_key, "workspace", 1, "updated-desc")
+    store.close()
+
+
+@pytest.mark.asyncio
+async def test_runtime_command_router_supports_workspace_open_and_query(tmp_path: Path) -> None:
+    router, store, hooks = build_router(tmp_path)
+    target = router.config.main_workspace_dir / "docs"
+    target.mkdir(parents=True, exist_ok=True)
+    session = store.load_session("p2p:oc_1")
+
+    await router.handle(make_message('/workspace open docs --query api', suffix='workspace_open'), session.base_key, session)
+
+    assert hooks.panel_calls[-1] == ("om_workspace_open", session.base_key, "workspace", 1, "updated-desc")
     store.close()
 
 
@@ -480,7 +482,7 @@ async def test_runtime_command_router_manages_directory_shortcuts(tmp_path: Path
     assert store.get_directory_shortcut("docs") is None
     assert hooks.replies[0]["text"].startswith("已保存快捷目录 `docs`。")
     assert "快捷目录：" in str(hooks.replies[1]["text"])
-    assert "docs -> docs [main]" in str(hooks.replies[1]["text"])
+    assert "docs -> ~/docs [main]" in str(hooks.replies[1]["text"])
     assert str(hooks.replies[2]["text"]).startswith("工作区已切换到 docs。")
     assert hooks.replies[3]["text"] == "已删除快捷目录 `docs`。"
     store.close()

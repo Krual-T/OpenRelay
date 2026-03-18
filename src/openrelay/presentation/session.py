@@ -106,7 +106,7 @@ def build_session_list_card(info: dict[str, Any]) -> dict[str, Any]:
     if footer_note is not None:
         elements.append(footer_note)
     elements.append({"tag": "action", "actions": controls})
-    elements.append({"tag": "action", "actions": [build_button("恢复上一条", build_resume_list_command("latest", page=page, sort_mode=sort_mode), "default", action_context), build_button("面板", "/panel", "default", action_context), build_button("帮助", "/help", "default", action_context)]})
+    elements.append({"tag": "action", "actions": [build_button("恢复上一条", build_resume_list_command("latest", page=page, sort_mode=sort_mode), "default", action_context), build_button("工作区", "/workspace", "default", action_context), build_button("帮助", "/help", "default", action_context)]})
 
     return build_card_shell("openrelay sessions", elements, tone="info")
 

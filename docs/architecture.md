@@ -270,7 +270,6 @@ sequenceDiagram
 当前命令能力主要包括：
 
 - `/help`
-- `/panel`
 - `/status`
 - `/resume`
 - `/restart`

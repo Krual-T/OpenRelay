@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from typing import Any
 
-from openrelay.feishu.cards import build_button, build_card_shell, build_section_block, build_status_hero, divider_block
 from openrelay.core import AppConfig, SessionRecord, format_release_channel, infer_release_channel
+from openrelay.feishu.cards import build_button, build_card_shell, build_section_block, build_status_hero, divider_block
 from openrelay.presentation.session import SessionPresentation
 from openrelay.session import SessionShortcutService, SessionWorkspaceService
 from openrelay.storage import StateStore
@@ -62,6 +62,9 @@ class HelpRenderer:
                 "什么时候该用命令：",
                 *self.build_command_guide(session, available_backends),
                 "",
+                "命令手册：",
+                *self.build_command_reference_lines(available_backends),
+                "",
                 "最近上下文：",
                 *context_lines,
                 "",
@@ -110,8 +113,11 @@ class HelpRenderer:
                     ],
                     emoji="🧭",
                 ),
+                divider_block(),
             ]
         )
+        for title, items in self.build_command_reference_sections(available_backends):
+            elements.append(build_section_block(title, items, emoji="📘"))
         for group in self.build_command_button_groups(available_backends, actions_context):
             elements.append({"tag": "action", "actions": group})
         return build_card_shell("openrelay help", elements, tone="info")
@@ -168,7 +174,7 @@ class HelpRenderer:
             return [
                 "- 先把目标说完整：要改什么、在哪个目录、是否要直接改代码。",
                 "- 如果要先选执行目录，打开 /workspace；没有就直接发任务，别把时间花在命令上。",
-                "- 如果这是稳定版本排障，用 /main；如果是实验性修复，用 /develop。",
+                "- 工作区卡默认会从配置好的目录打开，再逐级选到目标文件夹。",
             ]
         if session.native_session_id:
             return [
@@ -222,26 +228,87 @@ class HelpRenderer:
             "- 开新任务或切话题：直接回顶层发新消息；查看或恢复旧后端会话：/resume、/resume latest。",
             "- `/resume` 只允许在私聊顶层使用；子 thread 会固定绑定当前后端会话。",
             "- `/resume` 会读取并绑定当前 backend 的可恢复会话；`/compact` 会等待当前会话 compact 完成后再返回结果。",
-            "- 换执行位置：/workspace 打开工作区选择器；/main 回稳定工作区；/develop 进修复工作区。",
+            "- 换执行位置：/workspace 打开工作区选择器，支持逐级浏览、搜索和分页。",
             "- 快捷目录：/shortcut add <name> <path> [all|main|develop]、/shortcut list、/shortcut use <name>。",
             "- 看现场：/status 看会话、目录、最近上下文；/usage 看 token 和 context_usage。",
-            "- 面板导航：/panel 打开总入口；/panel sessions、/panel workspace、/panel commands、/panel status 进入对应结果面；从卡片按钮切换时会优先留在同一张卡。",
-            "- 控制运行：/stop 停止生成；/clear 清空当前上下文；需要更完整说明时再发 /help。",
+            "- 控制运行：/stop 停止生成；/clear 清空当前上下文；/reset 重置当前 scope；需要完整手册时发 /help。",
             "- 环境与维护：/model 切模型；/sandbox 切执行模式；/ping 连通性检查；/restart 管理员用。",
         ]
         if shortcut_entries:
-            lines.insert(4, "- 常用目录：如果 `/panel` 已显示快捷目录，优先直接点按钮；这些入口会直接切到对应工作区目录。")
+            lines.insert(4, "- 常用目录：如果你已经配了快捷目录，优先用 /shortcut use <name> 直接切过去。")
         if len(available_backends) > 1:
             lines.append(f"- 切后端：/backend [list|{'|'.join(available_backends)}]。")
         return lines
 
-    def build_command_button_groups(self, available_backends: list[str], action_context: dict[str, str]) -> list[list[dict[str, Any]]]:
-        groups: list[list[tuple[str, str, str]]] = [
-            [("状态", "/status", "primary"), ("用量", "/usage", "default"), ("面板", "/panel", "default")],
-            [("会话列表", "/resume", "primary"), ("清空上下文", "/clear", "default")],
-            [("工作区选择", "/workspace", "primary"), ("切到 main", "/main", "default"), ("切到 develop", "/develop", "default")],
-            [("模型", "/model", "default"), ("Sandbox", "/sandbox", "default"), ("停止", "/stop", "default")],
+    def build_command_reference_sections(self, available_backends: list[str]) -> list[tuple[str, list[str]]]:
+        sections: list[tuple[str, list[str]]] = [
+            (
+                "会话与信息",
+                [
+                    "- `/help` 或 `/tools`：打开这份帮助。",
+                    "- `/status`：看当前会话、目录、模型、通道和最近上下文。",
+                    "- `/usage`：看 token 和 context usage。",
+                    "- `/resume`：在私聊顶层打开可恢复会话卡片。",
+                    "- `/resume latest`：直接连接最近的后端会话。",
+                    "- `/resume <序号|session_id|local_session_id>`：连接指定历史会话。",
+                    "- `/compact [latest|序号|session_id]`：对当前或指定后端会话做 compact。",
+                ],
+            ),
+            (
+                "工作区与目录",
+                [
+                    "- `/workspace`：打开工作区浏览器。",
+                    "- `/workspace --page N [--path <dir>] [--query <text>]`：翻页、进入目录或搜索子目录。",
+                    "- `/workspace open <path>`：直接打开某个目录作为浏览起点。",
+                    "- `/workspace select <path>`：把当前 scope 切到目标目录。",
+                    "- `/shortcut list`：列出当前通道可用的快捷目录。",
+                    "- `/shortcut add <name> <path> [all|main|develop]`：新增快捷目录。",
+                    "- `/shortcut use <name>`：切到快捷目录。",
+                    "- `/shortcut remove <name>`：删除快捷目录。",
+                    "- `/main` 或 `/stable`：强制切到 main 稳定工作区。",
+                    "- `/develop`：切到 develop 修复工作区。",
+                ],
+            ),
+            (
+                "执行环境",
+                [
+                    "- `/model`：查看当前生效模型。",
+                    "- `/model <name|default>`：切模型；从下一条真实消息开始生效。",
+                    "- `/sandbox`：查看当前 sandbox。",
+                    "- `/sandbox <read-only|workspace-write|danger-full-access>`：切 sandbox；danger-full-access 仅管理员可用。",
+                    "- `/backend list`：查看可用 backend。",
+                ],
+            ),
+            (
+                "控制与维护",
+                [
+                    "- `/clear`：清空当前上下文，但保留目录和配置。",
+                    "- `/reset`：重置当前 scope。",
+                    "- `/stop`：停止当前生成。",
+                    "- `/ping`：连通性检查。",
+                    "- `/restart`：重启 openrelay；仅管理员可用。",
+                    "- `/panel`：已移除；会话用 `/resume`，工作区用 `/workspace`，状态用 `/status`。",
+                ],
+            ),
         ]
         if len(available_backends) > 1:
-            groups[-1].insert(2, ("后端", "/backend list", "default"))
+            sections[2][1].append(f"- `/backend <{'|'.join(available_backends)}>`：切换 backend；从下一条真实消息开始生效。")
+        return sections
+
+    def build_command_reference_lines(self, available_backends: list[str]) -> list[str]:
+        lines: list[str] = []
+        for title, items in self.build_command_reference_sections(available_backends):
+            lines.append(f"- {title}：")
+            lines.extend(items)
+        return lines
+
+    def build_command_button_groups(self, available_backends: list[str], action_context: dict[str, str]) -> list[list[dict[str, Any]]]:
+        groups: list[list[tuple[str, str, str]]] = [
+            [("帮助", "/help", "primary"), ("状态", "/status", "default"), ("用量", "/usage", "default")],
+            [("会话列表", "/resume", "primary"), ("工作区", "/workspace", "default"), ("快捷目录", "/shortcut list", "default")],
+            [("模型", "/model", "default"), ("Sandbox", "/sandbox", "default"), ("停止", "/stop", "default")],
+            [("清空上下文", "/clear", "default")],
+        ]
+        if len(available_backends) > 1:
+            groups[2].insert(2, ("后端", "/backend list", "default"))
         return [[build_button(label, command, button_type, action_context) for label, command, button_type in group] for group in groups]

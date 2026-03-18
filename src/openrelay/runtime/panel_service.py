@@ -43,7 +43,8 @@ class RuntimePanelService:
     async def send_panel(self, message: IncomingMessage, session_key: str, session: SessionRecord, args: PanelCommandArgs) -> None:
         action_context = self.reply_policy.build_card_action_context(message, session_key)
         card, fallback_text = self.presenter.build_panel_payload(message, session_key, session, args, action_context)
-        await self._card_sender().send(message, card, fallback_text=fallback_text, command_name="/panel")
+        command_name = "/workspace" if args.view == "workspace" else "/panel"
+        await self._card_sender().send(message, card, fallback_text=fallback_text, command_name=command_name)
 
     async def send_session_list(
         self,

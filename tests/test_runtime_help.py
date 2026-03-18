@@ -47,6 +47,8 @@ def test_help_renderer_describes_empty_session(tmp_path: Path) -> None:
     assert "- 会话阶段：未开始（还没发第一条真实需求）" in text
     assert "- 后端线程：pending（直接发消息就会创建）" in text
     assert "- 最近关注：还没有可总结的本地上下文" in text
+    assert "- `/workspace`：打开工作区浏览器。" in text
+    assert "- `/panel`：已移除；会话用 `/resume`，工作区用 `/workspace`，状态用 `/status`。" in text
     store.close()
 
 
@@ -73,4 +75,5 @@ def test_help_renderer_describes_active_session(tmp_path: Path) -> None:
     assert "- 上下文占用：17.0% (170/1000)" in text
     assert "- 最近关注：用户：hello help | 助手：echo: hello help" in text
     assert "- 切后端：/backend [list|codex|claude]。" in text
+    assert "- `/backend <codex|claude>`：切换 backend；从下一条真实消息开始生效。" in text
     store.close()

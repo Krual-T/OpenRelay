@@ -35,7 +35,6 @@ from .help import HelpRenderer
 
 
 ADMIN_ONLY_COMMANDS = {"/restart"}
-PANEL_USAGE = "使用 /panel [sessions|workspace|commands|status] [--page N] [--sort updated-desc|active-first]。"
 RESUME_USAGE = "使用 /resume 打开后端会话卡片，或 /resume [latest|<序号>|<session_id>|<local_session_id>] 直接连接。"
 SHORTCUT_USAGE = (
     "使用 /shortcut list | /shortcut add <name> <path> [all|main|develop] | "
@@ -80,6 +79,8 @@ class PanelCommandArgs:
     view: PanelView
     page: int
     sort_mode: SessionSortMode
+    target_path: str = ""
+    query: str = ""
 
 
 @dataclass(slots=True)
@@ -87,6 +88,8 @@ class PagingCommandArgs:
     target: str
     page: int
     sort_mode: SessionSortMode
+    target_path: str = ""
+    query: str = ""
 
 
 @dataclass(slots=True)
@@ -168,12 +171,12 @@ class RuntimeCommandRouter:
             return True
 
         if name == "/panel":
-            try:
-                args = self._parse_panel_command_args(arg_text)
-            except ValueError as exc:
-                await self.hooks.reply(message, f"panel 参数无效：{exc}\n{PANEL_USAGE}", command_reply=True, command_name="/panel")
-                return True
-            await self.hooks.send_panel(message, session_key, session, args)
+            await self.hooks.reply(
+                message,
+                "`/panel` 已移除；恢复历史会话请用 `/resume`，切工作区请用 `/workspace`，查看现场请用 `/status`。",
+                command_reply=True,
+                command_name="/panel",
+            )
             return True
 
         if name == "/restart":
@@ -452,16 +455,20 @@ class RuntimeCommandRouter:
         uses_session_paging = args.page != 1 or args.sort_mode != DEFAULT_SESSION_LIST_SORT
         view = self._normalize_panel_view(args.target or ("sessions" if uses_session_paging else "home"))
         if view not in {"sessions", "workspace"} and uses_session_paging:
-            raise ValueError("只有 /panel sessions 和 /panel workspace 支持分页参数")
+            raise ValueError("只有 workspace 视图支持分页参数")
         if view == "workspace" and args.sort_mode != DEFAULT_SESSION_LIST_SORT:
             raise ValueError("工作区视图不支持 --sort")
-        return PanelCommandArgs(view=view, page=args.page, sort_mode=args.sort_mode)
+        if view != "workspace" and (args.target_path or args.query):
+            raise ValueError("只有 workspace 视图支持 --path 和 --query")
+        return PanelCommandArgs(view=view, page=args.page, sort_mode=args.sort_mode, target_path=args.target_path, query=args.query)
 
     def _parse_paging_command_args(self, arg_text: str) -> PagingCommandArgs:
         tokens = shlex.split(arg_text) if arg_text else []
         target = ""
         page = 1
         sort_mode = DEFAULT_SESSION_LIST_SORT
+        target_path = ""
+        query = ""
         index = 0
         while index < len(tokens):
             token = tokens[index]
@@ -479,6 +486,20 @@ class RuntimeCommandRouter:
                 sort_mode = self.session_browser.normalize_sort_mode(tokens[index])
             elif token.startswith("--sort="):
                 sort_mode = self.session_browser.normalize_sort_mode(token.split("=", 1)[1])
+            elif token == "--path":
+                index += 1
+                if index >= len(tokens):
+                    raise ValueError("--path 缺少目录")
+                target_path = tokens[index]
+            elif token.startswith("--path="):
+                target_path = token.split("=", 1)[1]
+            elif token == "--query":
+                index += 1
+                if index >= len(tokens):
+                    raise ValueError("--query 缺少搜索词")
+                query = tokens[index]
+            elif token.startswith("--query="):
+                query = token.split("=", 1)[1]
             elif token.startswith("--"):
                 raise ValueError(f"不支持的选项：{token}")
             elif not target:
@@ -486,7 +507,7 @@ class RuntimeCommandRouter:
             else:
                 raise ValueError(f"多余参数：{token}")
             index += 1
-        return PagingCommandArgs(target=target, page=page, sort_mode=sort_mode)
+        return PagingCommandArgs(target=target, page=page, sort_mode=sort_mode, target_path=target_path, query=query)
 
     def _normalize_panel_view(self, value: str) -> PanelView:
         aliases: dict[str, PanelView] = {
@@ -569,10 +590,30 @@ class RuntimeCommandRouter:
 
     async def _handle_workspace(self, message: IncomingMessage, session_key: str, session: SessionRecord, arg_text: str) -> bool:
         tokens = shlex.split(arg_text) if arg_text else []
-        if not tokens or tokens[0] in {"list", "open"}:
+        if not tokens or tokens[0] in {"list", "search"} or tokens[0].startswith("--"):
             try:
                 remainder = arg_text if (not tokens or tokens[0].startswith("--")) else " ".join(tokens[1:])
                 args = self._parse_panel_command_args(f"workspace {remainder}".strip())
+            except ValueError as exc:
+                await self.hooks.reply(message, f"workspace 参数无效：{exc}", command_reply=True, command_name="/workspace")
+                return True
+            await self.hooks.send_panel(message, session_key, session, args)
+            return True
+        if tokens[0] == "open":
+            if len(tokens) < 2:
+                await self.hooks.reply(message, "workspace 参数无效：open 需要目录路径", command_reply=True, command_name="/workspace")
+                return True
+            try:
+                path = self.workspace.resolve_workspace_selection(tokens[1], session)
+            except ValueError as exc:
+                await self.hooks.reply(message, f"workspace 参数无效：{exc}", command_reply=True, command_name="/workspace")
+                return True
+            extra_query = ""
+            if len(tokens) > 2:
+                extra_query = " ".join(tokens[2:])
+            remainder = f"workspace --path {shlex.quote(str(path))} {extra_query}".strip()
+            try:
+                args = self._parse_panel_command_args(remainder)
             except ValueError as exc:
                 await self.hooks.reply(message, f"workspace 参数无效：{exc}", command_reply=True, command_name="/workspace")
                 return True
@@ -583,7 +624,7 @@ class RuntimeCommandRouter:
                 await self.hooks.reply(message, "workspace 参数无效：select 需要目录路径", command_reply=True, command_name="/workspace")
                 return True
             return await self._switch_workspace_directory(message, session_key, session, tokens[1], command_name="/workspace")
-        await self.hooks.reply(message, "workspace 参数无效：只支持 /workspace、/workspace --page N、/workspace select <path>", command_reply=True, command_name="/workspace")
+        await self.hooks.reply(message, "workspace 参数无效：只支持 /workspace、/workspace --page N [--path <dir>] [--query <text>]、/workspace open <path>、/workspace select <path>", command_reply=True, command_name="/workspace")
         return True
 
     async def _switch_workspace_directory(
