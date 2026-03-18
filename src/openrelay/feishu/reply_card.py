@@ -419,13 +419,14 @@ def _render_history_item(item: dict[str, Any], spinner_frame: int) -> list[str]:
 
     if item_type == "web_search":
         detail_entries.extend([[line] for line in _describe_web_search_queries(item)])
-        _append_tree_entries(lines, detail_entries)
+        _append_pipe_entries(lines, detail_entries)
         return lines
 
     if item_type == "reasoning":
+        lines[0] = f"{bullet} {title}"
         reasoning_text = clean_reasoning_prefix(item.get("text"))
         detail_entries.extend([[line] for line in _split_detail_lines(reasoning_text)])
-        _append_tree_entries(lines, detail_entries)
+        _append_pipe_entries(lines, detail_entries)
         return lines
 
     if item_type == "file_change":
@@ -549,12 +550,13 @@ def _render_streaming_history_item(item: dict[str, Any]) -> list[str]:
 
     if item_type == "web_search":
         detail_entries.extend([[line] for line in _describe_web_search_queries(item)])
-        _append_tree_entries(lines, detail_entries)
+        _append_pipe_entries(lines, detail_entries)
         return lines
 
     if item_type == "reasoning":
+        lines[0] = f"{_streaming_history_bullet(item)} {title}"
         detail_entries.extend([[line] for line in _split_detail_lines(clean_reasoning_prefix(item.get("text")))])
-        _append_tree_entries(lines, detail_entries)
+        _append_pipe_entries(lines, detail_entries)
         return lines
 
     if item_type == "file_change":

@@ -63,7 +63,7 @@ def test_build_streaming_content_prefers_partial_text_then_reasoning() -> None:
         }
     )
     assert "• Thinking" in reasoning_content
-    assert "└ 先看代码" in reasoning_content
+    assert "│ 先看代码" in reasoning_content
     assert build_streaming_content({}) == ""
 
 
@@ -87,6 +87,9 @@ def test_build_streaming_content_returns_answer_only_after_answer_starts() -> No
     )
 
     assert "🔵 Explored" in content
+    assert "│ Search Voyager" in content
+    assert "│ --- Output ---" in content
+    assert "│ `Gemini Voyager`" in content
     assert "---" in content
     assert content.endswith("找到结果，准备整理。")
     assert content.index("🔵 Explored") < content.index("---")
@@ -222,8 +225,8 @@ def test_build_streaming_content_renders_web_search_as_blue_exploration() -> Non
     )
 
     assert "🔵 Searched" in content
-    assert "├ Search March 11 2026 AI news Reuters generative AI" in content
-    assert "└ Search site:techcrunch.com AI March 11 2026" in content
+    assert "│ Search March 11 2026 AI news Reuters generative AI" in content
+    assert "│ Search site:techcrunch.com AI March 11 2026" in content
 
 
 def test_build_streaming_content_renders_plan_with_static_purple_bullets_and_strikethrough() -> None:
