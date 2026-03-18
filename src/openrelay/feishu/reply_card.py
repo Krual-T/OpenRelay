@@ -212,7 +212,9 @@ def _append_plain_entries(lines: list[str], entries: list[list[str]]) -> None:
 def _append_command_block(lines: list[str], command_lines: list[str], detail_entries: list[list[str]]) -> None:
     if command_lines:
         lines.append("│")
-        lines.extend(f"│ {line}" for line in command_lines)
+        for index, line in enumerate(command_lines):
+            prefix = "└" if index == len(command_lines) - 1 else "│"
+            lines.append(f"{prefix} {line}")
     _append_plain_entries(lines, detail_entries)
 
 

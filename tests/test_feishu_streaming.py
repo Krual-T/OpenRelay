@@ -127,7 +127,7 @@ def test_build_streaming_content_interleaves_summary_blocks_with_history_items()
     assert "---\n\n第一段总结" in content
     assert "🟢 Ran" in content
     assert "🟢 Ran  \n│  \n│ `sed -n '1,10p'`" in content
-    assert "│ `src/openrelay/runtime/live.py`" in content
+    assert "└ `src/openrelay/runtime/live.py`" in content
     assert "--- Output ---" in content
     assert "---\n\n第二段总结" in content
 
@@ -157,7 +157,7 @@ def test_build_streaming_content_keeps_summary_and_partial_text_in_one_transcrip
 
     assert "---\n\n已经确认 reply_card 是入口。" in content
     assert "🟢 Ran" in content
-    assert "🟢 Ran  \n│  \n│ `git status --short`" in content
+    assert "🟢 Ran  \n│  \n└ `git status --short`" in content
     assert content.endswith("---\n\n下一步检查 streaming session 的更新路径。")
 
 
@@ -179,7 +179,7 @@ def test_build_streaming_content_marks_failed_command_with_red_dot() -> None:
         }
     )
 
-    assert "🔴 Ran  \n│  \n│ `pytest`" in content
+    assert "🔴 Ran  \n│  \n└ `pytest`" in content
     assert "exit 1" in content
     assert "--- Output ---" in content
     assert "1 failed" in content
@@ -205,7 +205,7 @@ def test_build_streaming_content_wraps_long_command_into_pipe_lines() -> None:
     assert "🟢 Ran" in content
     assert "│  \n│ `uv run python`" in content
     assert "│ `scripts/export_schema.py --format`" in content
-    assert "│ `json --output docs/schema.json`" in content
+    assert "└ `json --output docs/schema.json`" in content
 
 
 def test_build_streaming_content_wraps_command_by_target_character_width() -> None:
@@ -225,7 +225,7 @@ def test_build_streaming_content_wraps_command_by_target_character_width() -> No
     )
 
     assert "│ `/bin/bash -lc \"sed -n '150,260p'`" in content
-    assert "│ `src/openrelay/feishu/reply_card.py\"`" in content
+    assert "└ `src/openrelay/feishu/reply_card.py\"`" in content
 
 
 def test_build_streaming_content_renders_web_search_as_blue_exploration() -> None:
