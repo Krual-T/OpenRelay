@@ -1,8 +1,13 @@
 from .orchestrator import RuntimeOrchestrator, DEFAULT_IMAGE_PROMPT
 from .commands import PanelCommandArgs, RuntimeCommandHooks, RuntimeCommandRouter
+from .command_context import ParsedCommand
+from .command_parser import CommandParser
+from .command_registry import CommandRegistry, CommandSpec
+from .dispatch_models import DispatchDecision, ResolvedMessageContext
 from .execution import RuntimeExecutionCoordinator
 from .follow_up import MERGED_FOLLOW_UP_INTRO, QueuedFollowUp
 from .help import HelpRenderer
+from .message_dispatch import MessageDispatchService
 from .panel_service import RuntimePanelService
 from .replying import ReplyRoute, RuntimeReplyPolicy
 from .restart import DEFAULT_SYSTEMD_SERVICE_UNIT, RuntimeRestartController, get_systemd_service_unit, is_systemd_service_process
@@ -24,8 +29,13 @@ __all__ = [
     "DEFAULT_IMAGE_PROMPT",
     "DEFAULT_SYSTEMD_SERVICE_UNIT",
     "BackendTurnSession",
+    "CommandParser",
+    "CommandRegistry",
+    "CommandSpec",
+    "DispatchDecision",
     "HelpRenderer",
     "MERGED_FOLLOW_UP_INTRO",
+    "MessageDispatchService",
     "PanelCommandArgs",
     "PANEL_COMMANDS",
     "PANEL_HOME",
@@ -33,8 +43,10 @@ __all__ = [
     "PANEL_STATUS",
     "PANEL_WORKSPACE",
     "PANEL_VIEW_LABELS",
+    "ParsedCommand",
     "QueuedFollowUp",
     "ReplyRoute",
+    "ResolvedMessageContext",
     "RuntimeExecutionCoordinator",
     "RuntimePanelService",
     "RuntimeRestartController",

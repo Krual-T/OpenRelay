@@ -1,4 +1,5 @@
 import logging
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -6,7 +7,7 @@ import pytest
 from openrelay.agent_runtime import SessionLocator, SessionSummary, SessionTranscript
 from openrelay.agent_runtime.backend import BackendCapabilities
 from openrelay.agent_runtime.models import TranscriptMessage
-from openrelay.core import AppConfig, BackendConfig, FeishuConfig, IncomingMessage
+from openrelay.core import AppConfig, BackendConfig, FeishuConfig, IncomingMessage, SessionRecord, get_release_workspace
 from openrelay.presentation.runtime_status import RuntimeStatusPresenter
 from openrelay.presentation.session import SessionPresentation
 from openrelay.release import ReleaseCommandService
@@ -15,7 +16,6 @@ from openrelay.runtime import RuntimeCommandHooks, RuntimeCommandRouter
 from openrelay.session import (
     SESSION_SORT_ACTIVE,
     SessionBrowser,
-    SessionMutationService,
     SessionScopeResolver,
     SessionShortcutService,
     SessionWorkspaceService,
@@ -170,6 +170,118 @@ class FakeHooks:
         return ["claude", "codex"]
 
 
+class FakeSessionMutationService:
+    def __init__(self, config: AppConfig, store: StateStore, session_ux: SessionPresentation) -> None:
+        self.config = config
+        self.store = store
+        self.session_ux = session_ux
+
+    def clear_context(self, scope_key: str, current: SessionRecord) -> SessionRecord:
+        return self._update_scope_session(
+            scope_key,
+            current,
+            native_session_id="",
+            last_usage={},
+            clear_messages=True,
+        )
+
+    def switch_model(self, scope_key: str, current: SessionRecord, model_override: str) -> SessionRecord:
+        return self._update_scope_session(
+            scope_key,
+            current,
+            model_override=model_override,
+            native_session_id="",
+            last_usage={},
+            clear_messages=True,
+        )
+
+    def switch_sandbox(self, scope_key: str, current: SessionRecord, safety_mode: str) -> SessionRecord:
+        return self._update_scope_session(
+            scope_key,
+            current,
+            safety_mode=safety_mode,
+            native_session_id="",
+            last_usage={},
+            clear_messages=True,
+        )
+
+    def switch_backend(self, scope_key: str, current: SessionRecord, backend: str) -> SessionRecord:
+        return self._update_scope_session(
+            scope_key,
+            current,
+            backend=backend,
+            native_session_id="",
+            last_usage={},
+            clear_messages=True,
+        )
+
+    def switch_cwd(self, scope_key: str, current: SessionRecord, cwd: Path) -> SessionRecord:
+        return self._update_scope_session(
+            scope_key,
+            current,
+            cwd=str(cwd),
+            native_session_id="",
+            last_usage={},
+            clear_messages=True,
+        )
+
+    def switch_release_channel(self, scope_key: str, current: SessionRecord, channel: str, label: str) -> SessionRecord:
+        updates: dict[str, object] = {
+            "label": label,
+            "release_channel": channel,
+            "cwd": str(get_release_workspace(self.config, channel)),
+            "native_session_id": "",
+            "last_usage": {},
+        }
+        if channel == "main":
+            updates["safety_mode"] = "read-only"
+        return self._update_scope_session(scope_key, current, clear_messages=True, **updates)
+
+    def reset_scope(self, scope_key: str) -> SessionRecord:
+        self.store.clear_sessions(scope_key)
+        return self.store.load_session(scope_key)
+
+    def bind_native_thread(
+        self,
+        scope_key: str,
+        current: SessionRecord,
+        thread_id: str,
+        *,
+        cwd: str | None = None,
+        label: str = "",
+    ) -> SessionRecord:
+        updates: dict[str, object] = {
+            "native_session_id": thread_id.strip(),
+            "release_channel": "",
+            "last_usage": {},
+        }
+        if cwd:
+            updates["cwd"] = cwd
+        if label:
+            updates["label"] = label
+        return self._update_scope_session(scope_key, current, clear_messages=True, **updates)
+
+    def save_directory_shortcut(self, shortcut) -> object:
+        return self.store.save_directory_shortcut(shortcut)
+
+    def remove_directory_shortcut(self, name: str) -> bool:
+        return self.store.remove_directory_shortcut(name)
+
+    def _update_scope_session(
+        self,
+        scope_key: str,
+        current: SessionRecord,
+        *,
+        clear_messages: bool = False,
+        **updates: object,
+    ) -> SessionRecord:
+        next_session = replace(current, **updates)
+        saved = self.store.save_scope_session(scope_key, next_session)
+        if clear_messages:
+            self.store.clear_session_messages(saved.session_id)
+        return self.store.get_session(saved.session_id)
+
+
 
 def make_config(tmp_path: Path) -> AppConfig:
     home_dir = tmp_path / "home"
@@ -247,7 +359,7 @@ def build_router(tmp_path: Path) -> tuple[RuntimeCommandRouter, StateStore, Fake
     session_ux = SessionPresentation(config, store)
     workspace = SessionWorkspaceService(config)
     browser = SessionBrowser(config, store)
-    session_mutations = SessionMutationService(config, store, session_ux)
+    session_mutations = FakeSessionMutationService(config, store, session_ux)
     session_scope = SessionScopeResolver(config, store, logging.getLogger("test.runtime.commands"))
     hooks = FakeHooks()
     runtime_service = FakeRuntimeService(str(config.main_workspace_dir))
