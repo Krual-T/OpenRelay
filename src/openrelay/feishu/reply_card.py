@@ -4,7 +4,6 @@ import re
 from datetime import datetime
 from typing import Any
 
-
 STREAMING_ELEMENT_ID = "streaming_content"
 LOADING_ELEMENT_ID = "loading_icon"
 DEFAULT_THINKING_TEXT = "Executing"
@@ -19,7 +18,11 @@ def strip_invalid_image_keys(text: str) -> str:
 
     def replace(match: re.Match[str]) -> str:
         value = match.group(2)
-        if value.startswith("img_") or value.startswith("http://") or value.startswith("https://"):
+        if (
+            value.startswith("img_")
+            or value.startswith("http://")
+            or value.startswith("https://")
+        ):
             return match.group(0)
         return value
 
@@ -39,19 +42,52 @@ def optimize_markdown_style(text: object, card_version: int = 2) -> str:
         rendered = re.sub(r"```[\s\S]*?```", replace_code_block, raw)
 
         if re.search(r"^#{1,3} ", raw, flags=re.MULTILINE):
-            rendered = re.sub(r"^#{2,6} (.+)$", r"##### \1", rendered, flags=re.MULTILINE)
+            rendered = re.sub(
+                r"^#{2,6} (.+)$", r"##### \1", rendered, flags=re.MULTILINE
+            )
             rendered = re.sub(r"^# (.+)$", r"#### \1", rendered, flags=re.MULTILINE)
 
         if card_version >= 2:
-            rendered = re.sub(r"^(#{4,5} .+)\n{1,2}(#{4,5} )", r"\1\n<br>\n\2", rendered, flags=re.MULTILINE)
-            rendered = re.sub(r"^([^|\n].*)\n(\|.+\|)", r"\1\n\n\2", rendered, flags=re.MULTILINE)
-            rendered = re.sub(r"\n\n((?:\|.+\|[^\S\n]*\n?)+)", r"\n\n<br>\n\n\1", rendered)
-            rendered = re.sub(r"((?:^\|.+\|[^\S\n]*\n?)+)", r"\1\n<br>\n", rendered, flags=re.MULTILINE)
-            rendered = re.sub(r"^((?!#{4,5} )(?!\*\*).+)\n\n(<br>)\n\n(\|)", r"\1\n\2\n\3", rendered, flags=re.MULTILINE)
-            rendered = re.sub(r"^(\*\*.+)\n\n(<br>)\n\n(\|)", r"\1\n\2\n\n\3", rendered, flags=re.MULTILINE)
-            rendered = re.sub(r"(\|[^\n]*\n)\n(<br>\n)((?!#{4,5} )(?!\*\*))", r"\1\2\3", rendered, flags=re.MULTILINE)
+            rendered = re.sub(
+                r"^(#{4,5} .+)\n{1,2}(#{4,5} )",
+                r"\1\n<br>\n\2",
+                rendered,
+                flags=re.MULTILINE,
+            )
+            rendered = re.sub(
+                r"^([^|\n].*)\n(\|.+\|)", r"\1\n\n\2", rendered, flags=re.MULTILINE
+            )
+            rendered = re.sub(
+                r"\n\n((?:\|.+\|[^\S\n]*\n?)+)", r"\n\n<br>\n\n\1", rendered
+            )
+            rendered = re.sub(
+                r"((?:^\|.+\|[^\S\n]*\n?)+)",
+                r"\1\n<br>\n",
+                rendered,
+                flags=re.MULTILINE,
+            )
+            rendered = re.sub(
+                r"^((?!#{4,5} )(?!\*\*).+)\n\n(<br>)\n\n(\|)",
+                r"\1\n\2\n\3",
+                rendered,
+                flags=re.MULTILINE,
+            )
+            rendered = re.sub(
+                r"^(\*\*.+)\n\n(<br>)\n\n(\|)",
+                r"\1\n\2\n\n\3",
+                rendered,
+                flags=re.MULTILINE,
+            )
+            rendered = re.sub(
+                r"(\|[^\n]*\n)\n(<br>\n)((?!#{4,5} )(?!\*\*))",
+                r"\1\2\3",
+                rendered,
+                flags=re.MULTILINE,
+            )
             for index, block in enumerate(code_blocks):
-                rendered = rendered.replace(f"{mark}{index}___", f"\n<br>\n{block}\n<br>\n")
+                rendered = rendered.replace(
+                    f"{mark}{index}___", f"\n<br>\n{block}\n<br>\n"
+                )
         else:
             for index, block in enumerate(code_blocks):
                 rendered = rendered.replace(f"{mark}{index}___", block)
@@ -66,7 +102,9 @@ def extract_thinking_content(text: object) -> str:
     value = str(text or "")
     if not value:
         return ""
-    scan_re = re.compile(r"<\s*(/?)\s*(?:think(?:ing)?|thought|antthinking)\s*>", re.IGNORECASE)
+    scan_re = re.compile(
+        r"<\s*(/?)\s*(?:think(?:ing)?|thought|antthinking)\s*>", re.IGNORECASE
+    )
     result = []
     last_index = 0
     in_thinking = False
@@ -83,15 +121,32 @@ def extract_thinking_content(text: object) -> str:
 
 def strip_reasoning_tags(text: object) -> str:
     value = str(text or "")
-    stripped = re.sub(r"<\s*(?:think(?:ing)?|thought|antthinking)\s*>[\s\S]*?<\s*/\s*(?:think(?:ing)?|thought|antthinking)\s*>", "", value, flags=re.IGNORECASE)
-    stripped = re.sub(r"<\s*(?:think(?:ing)?|thought|antthinking)\s*>[\s\S]*$", "", stripped, flags=re.IGNORECASE)
-    stripped = re.sub(r"<\s*/\s*(?:think(?:ing)?|thought|antthinking)\s*>", "", stripped, flags=re.IGNORECASE)
+    stripped = re.sub(
+        r"<\s*(?:think(?:ing)?|thought|antthinking)\s*>[\s\S]*?<\s*/\s*(?:think(?:ing)?|thought|antthinking)\s*>",
+        "",
+        value,
+        flags=re.IGNORECASE,
+    )
+    stripped = re.sub(
+        r"<\s*(?:think(?:ing)?|thought|antthinking)\s*>[\s\S]*$",
+        "",
+        stripped,
+        flags=re.IGNORECASE,
+    )
+    stripped = re.sub(
+        r"<\s*/\s*(?:think(?:ing)?|thought|antthinking)\s*>",
+        "",
+        stripped,
+        flags=re.IGNORECASE,
+    )
     return stripped.strip()
 
 
 def clean_reasoning_prefix(text: object) -> str:
     cleaned = re.sub(r"^Reasoning:\s*", "", str(text or ""), flags=re.IGNORECASE)
-    return "\n".join(re.sub(r"^_(.+)_$", r"\1", line) for line in cleaned.splitlines()).strip()
+    return "\n".join(
+        re.sub(r"^_(.+)_$", r"\1", line) for line in cleaned.splitlines()
+    ).strip()
 
 
 def split_reasoning_text(text: object) -> tuple[str, str]:
@@ -140,7 +195,9 @@ def shorten_inline(text: object, max_length: int = 120) -> str:
     return f"{value[: max_length - 3]}..."
 
 
-def _wrap_code_words(text: object, *, target_length: int = 34, max_lines: int = 4) -> list[str]:
+def _wrap_code_words(
+    text: object, *, target_length: int = 34, max_lines: int = 4
+) -> list[str]:
     tokens = str(text or "").replace("`", "'").split()
     if not tokens:
         return []
@@ -173,8 +230,12 @@ def _append_tree_lines(lines: list[str], text: object) -> None:
     lines.extend(f"  {line}" for line in raw_lines[1:])
 
 
-def _split_detail_lines(text: object, *, code: bool = False, max_lines: int = 6, max_length: int = 120) -> list[str]:
-    normalized_lines = [line.strip() for line in str(text or "").splitlines() if line.strip()]
+def _split_detail_lines(
+    text: object, *, code: bool = False, max_lines: int = 6, max_length: int = 120
+) -> list[str]:
+    normalized_lines = [
+        line.strip() for line in str(text or "").splitlines() if line.strip()
+    ]
     if not normalized_lines:
         return []
     visible_lines = normalized_lines[:max_lines]
@@ -186,6 +247,30 @@ def _split_detail_lines(text: object, *, code: bool = False, max_lines: int = 6,
     if hidden > 0:
         result.append(f"... +{hidden} lines")
     return result
+
+
+def _preserve_markdown_indentation(text: str) -> str:
+    value = text.replace("\t", "    ")
+    leading_spaces = len(value) - len(value.lstrip(" "))
+    if leading_spaces <= 0:
+        return value
+    return f"{'&nbsp;' * leading_spaces}{value[leading_spaces:]}"
+
+
+def _split_output_lines(text: object, *, max_lines: int = 6, max_length: int = 120) -> list[str]:
+    raw_lines = str(text or "").splitlines()
+    visible_lines = [line.rstrip() for line in raw_lines if line.strip()]
+    if not visible_lines:
+        return []
+    trimmed_lines = visible_lines[:max_lines]
+    hidden = max(0, len(visible_lines) - len(trimmed_lines))
+    rendered = [
+        shorten_inline(_preserve_markdown_indentation(line), max_length=max_length)
+        for line in trimmed_lines
+    ]
+    if hidden > 0:
+        rendered.append(f"... +{hidden} lines")
+    return rendered
 
 
 def _append_tree_entries(lines: list[str], entries: list[list[str]]) -> None:
@@ -209,7 +294,9 @@ def _append_plain_entries(lines: list[str], entries: list[list[str]]) -> None:
         lines.extend(entry)
 
 
-def _append_command_block(lines: list[str], command_lines: list[str], detail_entries: list[list[str]]) -> None:
+def _append_command_block(
+    lines: list[str], command_lines: list[str], detail_entries: list[list[str]]
+) -> None:
     if command_lines:
         lines.append("│")
         for index, line in enumerate(command_lines):
@@ -233,10 +320,10 @@ def _append_section_block(lines: list[str], detail_entries: list[list[str]]) -> 
 
 
 def _build_output_entries(text: object) -> list[list[str]]:
-    output_lines = _split_detail_lines(text, code=False)
+    output_lines = _split_output_lines(text)
     if not output_lines:
         return []
-    return [["--- Output ---"], ["```text", *output_lines, "```"]]
+    return [["<hr>"], *[[line] for line in output_lines]]
 
 
 def _join_markdown_lines(lines: list[str]) -> str:
@@ -261,7 +348,11 @@ def _format_worked_for(started_at: object) -> str:
         return ""
     try:
         started = datetime.fromisoformat(raw_value)
-        now = datetime.now(started.tzinfo) if started.tzinfo is not None else datetime.now()
+        now = (
+            datetime.now(started.tzinfo)
+            if started.tzinfo is not None
+            else datetime.now()
+        )
         elapsed_seconds = max(0, int((now - started).total_seconds()))
     except Exception:
         return ""
@@ -278,7 +369,11 @@ def _normalize_history_title(item: dict[str, Any]) -> str:
     title = normalize_inline(item.get("title"))
     mode = str(item.get("mode") or "").strip()
     if title in {"Explored codebase", "Exploring codebase"}:
-        return "Explored" if mode == "exploration" and str(item.get("state") or "") != "running" else "Exploring"
+        return (
+            "Explored"
+            if mode == "exploration" and str(item.get("state") or "") != "running"
+            else "Exploring"
+        )
     if title in {"Ran shell command", "Running shell command"}:
         return "Ran" if str(item.get("state") or "") != "running" else "Running"
     if title in {"Searched web", "Searching web"}:
@@ -292,7 +387,9 @@ def _describe_exploration_command(command_text: object) -> str:
         return ""
     lowered = normalized.lower()
     if lowered.startswith("rg ") or lowered.startswith("grep "):
-        detail = re.sub(r"^(?:rg|grep)\s+(?:-[A-Za-z]+\s+)*", "", normalized, count=1).strip()
+        detail = re.sub(
+            r"^(?:rg|grep)\s+(?:-[A-Za-z]+\s+)*", "", normalized, count=1
+        ).strip()
         return f"Search {detail}" if detail else "Search"
     return normalized
 
@@ -333,7 +430,9 @@ def _describe_file_changes(item: dict[str, Any]) -> list[str]:
             continue
         if change_type == "update":
             moved_to = normalize_inline(kind.get("move_path"))
-            lines.append(f"Edit `{path}`" if not moved_to else f"Move `{path}` -> `{moved_to}`")
+            lines.append(
+                f"Edit `{path}`" if not moved_to else f"Move `{path}` -> `{moved_to}`"
+            )
             continue
         lines.append(path)
     return lines
@@ -380,7 +479,10 @@ def _history_item_tone(item: dict[str, Any]) -> str:
     if str(item.get("type") or "").strip() == "web_search" and state == "completed":
         return "exploration"
     if str(item.get("type") or "").strip() == "command":
-        if str(item.get("mode") or "").strip() == "exploration" and state == "completed":
+        if (
+            str(item.get("mode") or "").strip() == "exploration"
+            and state == "completed"
+        ):
             return "exploration"
         exit_code = item.get("exit_code")
         if isinstance(exit_code, int) and exit_code != 0:
@@ -408,7 +510,10 @@ def _history_item_bullet(item: dict[str, Any], spinner_frame: int) -> str:
     if tone == "error":
         return "🔴"
     if tone == "success":
-        if str(item.get("type") or "").strip() == "command" and str(item.get("mode") or "").strip() == "command":
+        if (
+            str(item.get("type") or "").strip() == "command"
+            and str(item.get("mode") or "").strip() == "command"
+        ):
             return "🟢"
         return "•"
     return "•"
@@ -425,7 +530,9 @@ def _render_history_item(item: dict[str, Any], spinner_frame: int) -> list[str]:
         if not summary_text:
             return []
         _partial_reasoning, partial_answer = split_reasoning_text(summary_text)
-        rendered_summary = optimize_markdown_style(partial_answer or strip_reasoning_tags(summary_text)).strip()
+        rendered_summary = optimize_markdown_style(
+            partial_answer or strip_reasoning_tags(summary_text)
+        ).strip()
         if not rendered_summary:
             return []
         return ["---", "", rendered_summary]
@@ -448,7 +555,11 @@ def _render_history_item(item: dict[str, Any], spinner_frame: int) -> list[str]:
         else:
             command_lines = _wrap_code_words(command_value)
         exit_code = item.get("exit_code")
-        if exit_code is not None and str(item.get("state") or "") != "running" and int(exit_code) != 0:
+        if (
+            exit_code is not None
+            and str(item.get("state") or "") != "running"
+            and int(exit_code) != 0
+        ):
             detail_entries.append([f"exit {exit_code}"])
         detail_entries.extend(_build_output_entries(item.get("output_preview")))
         if mode == "command":
@@ -483,7 +594,9 @@ def _render_history_item(item: dict[str, Any], spinner_frame: int) -> list[str]:
                 if rendered_step:
                     detail_entries.append([rendered_step])
         if not detail_entries:
-            detail_entries.extend([[line] for line in _split_detail_lines(item.get("detail"))])
+            detail_entries.extend(
+                [[line] for line in _split_detail_lines(item.get("detail"))]
+            )
         _append_plan_block(lines, detail_entries)
         return lines
 
@@ -556,7 +669,9 @@ def _render_streaming_history_item(item: dict[str, Any]) -> list[str]:
         if not summary_text:
             return []
         _partial_reasoning, partial_answer = split_reasoning_text(summary_text)
-        rendered_summary = optimize_markdown_style(partial_answer or strip_reasoning_tags(summary_text)).strip()
+        rendered_summary = optimize_markdown_style(
+            partial_answer or strip_reasoning_tags(summary_text)
+        ).strip()
         if not rendered_summary:
             return []
         return ["---", "", rendered_summary]
@@ -578,7 +693,11 @@ def _render_streaming_history_item(item: dict[str, Any]) -> list[str]:
         else:
             command_lines = _wrap_code_words(command_value)
         exit_code = item.get("exit_code")
-        if exit_code is not None and str(item.get("state") or "") != "running" and int(exit_code) != 0:
+        if (
+            exit_code is not None
+            and str(item.get("state") or "") != "running"
+            and int(exit_code) != 0
+        ):
             detail_entries.append([f"exit {exit_code}"])
         detail_entries.extend(_build_output_entries(item.get("output_preview")))
         if mode == "command":
@@ -593,7 +712,14 @@ def _render_streaming_history_item(item: dict[str, Any]) -> list[str]:
         return lines
 
     if item_type == "reasoning":
-        detail_entries.extend([[line] for line in _split_detail_lines(clean_reasoning_prefix(item.get("text")))])
+        detail_entries.extend(
+            [
+                [line]
+                for line in _split_detail_lines(
+                    clean_reasoning_prefix(item.get("text"))
+                )
+            ]
+        )
         _append_plain_entries(lines, detail_entries)
         return lines
 
@@ -612,7 +738,9 @@ def _render_streaming_history_item(item: dict[str, Any]) -> list[str]:
                 if rendered_step:
                     detail_entries.append([rendered_step])
         if not detail_entries:
-            detail_entries.extend([[line] for line in _split_detail_lines(item.get("detail"))])
+            detail_entries.extend(
+                [[line] for line in _split_detail_lines(item.get("detail"))]
+            )
         _append_plan_block(lines, detail_entries)
         return lines
 
@@ -689,7 +817,9 @@ def _build_basic_process_panel_text(state: dict[str, Any]) -> str:
         lines.append("**命令**")
         lines.extend(command_lines)
 
-    reasoning_text = str(state.get("reasoning_text") or state.get("last_reasoning") or "").strip()
+    reasoning_text = str(
+        state.get("reasoning_text") or state.get("last_reasoning") or ""
+    ).strip()
     if reasoning_text:
         if lines:
             lines.append("")
@@ -703,16 +833,26 @@ def build_process_panel_text(state: dict[str, Any] | None) -> str:
     return render_transcript_markdown(state)
 
 
-def render_transcript_markdown(state: dict[str, Any] | None, *, include_summary: bool = True) -> str:
+def render_transcript_markdown(
+    state: dict[str, Any] | None, *, include_summary: bool = True
+) -> str:
     if not isinstance(state, dict):
         return ""
-    history_items = state.get("transcript_items") if isinstance(state.get("transcript_items"), list) else state.get("history_items")
+    history_items = (
+        state.get("transcript_items")
+        if isinstance(state.get("transcript_items"), list)
+        else state.get("history_items")
+    )
     history_items = history_items if isinstance(history_items, list) else []
-    rendered_history = _render_history_items(history_items, int(state.get("spinner_frame") or 0))
+    rendered_history = _render_history_items(
+        history_items, int(state.get("spinner_frame") or 0)
+    )
     worked_for = _format_worked_for(state.get("started_at") or state.get("startedAt"))
     partial_text = str(state.get("partial_text") or "").strip()
     partial_reasoning, partial_answer = split_reasoning_text(partial_text)
-    summary_text = optimize_markdown_style(partial_answer or strip_reasoning_tags(partial_text)).strip()
+    summary_text = optimize_markdown_style(
+        partial_answer or strip_reasoning_tags(partial_text)
+    ).strip()
     reasoning_text = clean_reasoning_prefix(partial_reasoning).strip()
 
     blocks: list[str] = []
@@ -755,7 +895,9 @@ def _build_streaming_loading_element() -> dict[str, Any]:
     }
 
 
-def _build_process_panel_element(panel_text: object, panel_title: object = PROCESS_LOG_PANEL_TITLE) -> dict[str, Any] | None:
+def _build_process_panel_element(
+    panel_text: object, panel_title: object = PROCESS_LOG_PANEL_TITLE
+) -> dict[str, Any] | None:
     content = str(panel_text or "").strip()
     if not content:
         return None
@@ -763,7 +905,10 @@ def _build_process_panel_element(panel_text: object, panel_title: object = PROCE
         "tag": "collapsible_panel",
         "expanded": False,
         "header": {
-            "title": {"tag": "markdown", "content": str(panel_title or PROCESS_LOG_PANEL_TITLE).strip()},
+            "title": {
+                "tag": "markdown",
+                "content": str(panel_title or PROCESS_LOG_PANEL_TITLE).strip(),
+            },
             "vertical_align": "center",
             "icon": {
                 "tag": "standard_icon",
@@ -789,7 +934,10 @@ def _build_process_panel_element(panel_text: object, panel_title: object = PROCE
 def _streaming_inline_content(live_state: dict[str, Any] | None = None) -> str:
     return render_transcript_markdown(live_state or {})
 
-def build_streaming_card_signature(live_state: dict[str, Any] | None = None) -> tuple[str, str]:
+
+def build_streaming_card_signature(
+    live_state: dict[str, Any] | None = None,
+) -> tuple[str, str]:
     _ = live_state
     return ("plain", "")
 
@@ -807,7 +955,9 @@ def build_thinking_card_json() -> dict[str, Any]:
     }
 
 
-def build_streaming_card_json(live_state: dict[str, Any] | None = None) -> dict[str, Any]:
+def build_streaming_card_json(
+    live_state: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     content = build_streaming_content(live_state)
     card = build_thinking_card_json()
     card["body"]["elements"][0]["content"] = content
@@ -816,12 +966,18 @@ def build_streaming_card_json(live_state: dict[str, Any] | None = None) -> dict[
 
 def build_streaming_content(live_state: dict[str, Any] | None = None) -> str:
     live_state = live_state or {}
-    history_items = live_state.get("transcript_items") if isinstance(live_state.get("transcript_items"), list) else live_state.get("history_items")
+    history_items = (
+        live_state.get("transcript_items")
+        if isinstance(live_state.get("transcript_items"), list)
+        else live_state.get("history_items")
+    )
     history_items = history_items if isinstance(history_items, list) else []
     rendered_history = _render_streaming_history_items(history_items)
     partial_text = str(live_state.get("partial_text") or "").strip()
     partial_reasoning, partial_answer = split_reasoning_text(partial_text)
-    summary_text = optimize_markdown_style(partial_answer or strip_reasoning_tags(partial_text)).strip()
+    summary_text = optimize_markdown_style(
+        partial_answer or strip_reasoning_tags(partial_text)
+    ).strip()
     reasoning_text = clean_reasoning_prefix(partial_reasoning).strip()
 
     blocks: list[str] = []
@@ -848,7 +1004,9 @@ def build_complete_card(
     rendered_answer = optimize_markdown_style(final_answer)
 
     if transcript_content:
-        elements: list[dict[str, Any]] = [{"tag": "markdown", "content": transcript_content}]
+        elements: list[dict[str, Any]] = [
+            {"tag": "markdown", "content": transcript_content}
+        ]
     else:
         elements = []
         process_panel = _build_process_panel_element(panel_text, panel_title)

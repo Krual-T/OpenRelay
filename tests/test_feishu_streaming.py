@@ -88,8 +88,7 @@ def test_build_streaming_content_returns_answer_only_after_answer_starts() -> No
 
     assert "🔵 Explored" in content
     assert "Search Voyager" in content
-    assert "--- Output ---" in content
-    assert "```text" in content
+    assert "<hr>" in content
     assert "Gemini Voyager" in content
     assert "---" in content
     assert content.endswith("找到结果，准备整理。")
@@ -129,8 +128,7 @@ def test_build_streaming_content_interleaves_summary_blocks_with_history_items()
     assert "🟢 Ran" in content
     assert "🟢 Ran  \n│  \n│ `sed -n '1,10p'`" in content
     assert "└ `src/openrelay/runtime/live.py`" in content
-    assert "--- Output ---" in content
-    assert "```text" in content
+    assert "<hr>" in content
     assert "---\n\n第二段总结" in content
 
 
@@ -183,10 +181,32 @@ def test_build_streaming_content_marks_failed_command_with_red_dot() -> None:
 
     assert "🔴 Ran  \n│  \n└ `pytest`" in content
     assert "exit 1" in content
-    assert "--- Output ---" in content
-    assert "```text" in content
+    assert "<hr>" in content
     assert "1 failed" in content
     assert "AssertionError" in content
+
+
+def test_build_streaming_content_preserves_output_indentation_without_code_fence() -> None:
+    content = build_streaming_content(
+        {
+            "history_items": [
+                {
+                    "type": "command",
+                    "state": "completed",
+                    "title": "Ran shell command",
+                    "mode": "command",
+                    "command": "python demo.py",
+                    "exit_code": 0,
+                    "output_preview": "def main():\n    print('hi')",
+                }
+            ]
+        }
+    )
+
+    assert "```text" not in content
+    assert "<hr>" in content
+    assert "def main():" in content
+    assert "&nbsp;&nbsp;&nbsp;&nbsp;print('hi')" in content
 
 
 def test_build_streaming_content_wraps_long_command_into_pipe_lines() -> None:
