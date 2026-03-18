@@ -126,7 +126,8 @@ def test_build_streaming_content_interleaves_summary_blocks_with_history_items()
     assert "🔵 Explored" in content
     assert "---\n\n第一段总结" in content
     assert "🟢 Ran" in content
-    assert "🟢 Ran  \n│  \n│ `sed -n '1,10p' src/openrelay/runtime/live.py`" in content
+    assert "🟢 Ran  \n│  \n│ `sed -n '1,10p'`" in content
+    assert "│ `src/openrelay/runtime/live.py`" in content
     assert "--- Output ---" in content
     assert "---\n\n第二段总结" in content
 
@@ -202,8 +203,29 @@ def test_build_streaming_content_wraps_long_command_into_pipe_lines() -> None:
     )
 
     assert "🟢 Ran" in content
-    assert "│  \n│ `uv run python scripts/export_schema.py --format json`" in content
-    assert "│ `--output docs/schema.json`" in content
+    assert "│  \n│ `uv run python`" in content
+    assert "│ `scripts/export_schema.py --format`" in content
+    assert "│ `json --output docs/schema.json`" in content
+
+
+def test_build_streaming_content_wraps_command_by_target_character_width() -> None:
+    content = build_streaming_content(
+        {
+            "history_items": [
+                {
+                    "type": "command",
+                    "state": "completed",
+                    "title": "Ran shell command",
+                    "mode": "command",
+                    "command": '/bin/bash -lc "sed -n \'150,260p\' src/openrelay/feishu/reply_card.py"',
+                    "exit_code": 0,
+                }
+            ]
+        }
+    )
+
+    assert "│ `/bin/bash -lc \"sed -n '150,260p'`" in content
+    assert "│ `src/openrelay/feishu/reply_card.py\"`" in content
 
 
 def test_build_streaming_content_renders_web_search_as_blue_exploration() -> None:
@@ -250,7 +272,7 @@ def test_build_streaming_content_renders_plan_with_static_purple_bullets_and_str
     assert "🟣 Plan" in content
     assert "🟣 Plan  \n│  \n● ~~Inspect runtime~~" in content
     assert "● ~~Inspect runtime~~" in content
-    assert "◉ In Progress Adjust Feishu rendering" in content
+    assert "◉ Adjust Feishu rendering" in content
     assert "○ Verify snapshot output" in content
 
 

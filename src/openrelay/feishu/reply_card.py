@@ -140,14 +140,25 @@ def shorten_inline(text: object, max_length: int = 120) -> str:
     return f"{value[: max_length - 3]}..."
 
 
-def _wrap_code_words(text: object, *, words_per_line: int = 6, max_lines: int = 4) -> list[str]:
+def _wrap_code_words(text: object, *, target_length: int = 34, max_lines: int = 4) -> list[str]:
     tokens = str(text or "").replace("`", "'").split()
     if not tokens:
         return []
-    chunks = [
-        " ".join(tokens[index : index + words_per_line])
-        for index in range(0, len(tokens), words_per_line)
-    ]
+    chunks: list[str] = []
+    current: list[str] = []
+    current_length = 0
+    for token in tokens:
+        token_length = len(token)
+        separator = 1 if current else 0
+        if current and current_length + separator + token_length > target_length:
+            chunks.append(" ".join(current))
+            current = [token]
+            current_length = token_length
+            continue
+        current.append(token)
+        current_length += separator + token_length
+    if current:
+        chunks.append(" ".join(current))
     visible_chunks = chunks[:max_lines]
     if len(chunks) > max_lines and visible_chunks:
         visible_chunks[-1] = f"{visible_chunks[-1]} ..."
@@ -338,7 +349,7 @@ def _render_plan_step(step: dict[str, Any]) -> str:
     if label == "completed":
         return f"● ~~{text}~~"
     if label == "in_progress":
-        return f"◉ In Progress {text}"
+        return f"◉ {text}"
     return f"○ {text}"
 
 
