@@ -232,6 +232,13 @@ def _append_section_block(lines: list[str], detail_entries: list[list[str]]) -> 
     _append_plain_entries(lines, detail_entries)
 
 
+def _build_output_entries(text: object) -> list[list[str]]:
+    output_lines = _split_detail_lines(text, code=False)
+    if not output_lines:
+        return []
+    return [["--- Output ---"], ["```text", *output_lines, "```"]]
+
+
 def _join_markdown_lines(lines: list[str]) -> str:
     if not lines:
         return ""
@@ -396,6 +403,8 @@ def _history_item_bullet(item: dict[str, Any], spinner_frame: int) -> str:
         return "🟡"
     if tone == "exploration":
         return "🔵"
+    if str(item.get("type") or "").strip() == "file_change":
+        return "🟠"
     if tone == "error":
         return "🔴"
     if tone == "success":
@@ -441,10 +450,7 @@ def _render_history_item(item: dict[str, Any], spinner_frame: int) -> list[str]:
         exit_code = item.get("exit_code")
         if exit_code is not None and str(item.get("state") or "") != "running" and int(exit_code) != 0:
             detail_entries.append([f"exit {exit_code}"])
-        output_preview_lines = _split_detail_lines(item.get("output_preview"), code=False)
-        if output_preview_lines:
-            detail_entries.append(["--- Output ---"])
-            detail_entries.extend([[line] for line in output_preview_lines])
+        detail_entries.extend(_build_output_entries(item.get("output_preview")))
         if mode == "command":
             _append_command_block(lines, command_lines, detail_entries)
         else:
@@ -534,6 +540,8 @@ def _streaming_history_bullet(item: dict[str, Any]) -> str:
             return "🔵"
         if state == "completed":
             return "🟢"
+    if item_type == "file_change":
+        return "🟠"
     if state in {"failed", "error"}:
         return "🔴"
     return "•"
@@ -572,10 +580,7 @@ def _render_streaming_history_item(item: dict[str, Any]) -> list[str]:
         exit_code = item.get("exit_code")
         if exit_code is not None and str(item.get("state") or "") != "running" and int(exit_code) != 0:
             detail_entries.append([f"exit {exit_code}"])
-        output_preview_lines = _split_detail_lines(item.get("output_preview"), code=False)
-        if output_preview_lines:
-            detail_entries.append(["--- Output ---"])
-            detail_entries.extend([[line] for line in output_preview_lines])
+        detail_entries.extend(_build_output_entries(item.get("output_preview")))
         if mode == "command":
             _append_command_block(lines, command_lines, detail_entries)
         else:

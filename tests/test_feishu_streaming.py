@@ -89,6 +89,7 @@ def test_build_streaming_content_returns_answer_only_after_answer_starts() -> No
     assert "🔵 Explored" in content
     assert "Search Voyager" in content
     assert "--- Output ---" in content
+    assert "```text" in content
     assert "Gemini Voyager" in content
     assert "---" in content
     assert content.endswith("找到结果，准备整理。")
@@ -129,6 +130,7 @@ def test_build_streaming_content_interleaves_summary_blocks_with_history_items()
     assert "🟢 Ran  \n│  \n│ `sed -n '1,10p'`" in content
     assert "└ `src/openrelay/runtime/live.py`" in content
     assert "--- Output ---" in content
+    assert "```text" in content
     assert "---\n\n第二段总结" in content
 
 
@@ -182,6 +184,7 @@ def test_build_streaming_content_marks_failed_command_with_red_dot() -> None:
     assert "🔴 Ran  \n│  \n└ `pytest`" in content
     assert "exit 1" in content
     assert "--- Output ---" in content
+    assert "```text" in content
     assert "1 failed" in content
     assert "AssertionError" in content
 
@@ -293,8 +296,8 @@ def test_build_streaming_content_renders_updated_files_with_section_separator() 
         }
     )
 
-    assert "• Updated files" in content
-    assert "• Updated files  \n│  \nEdit `src/openrelay/feishu/reply_card.py`" in content
+    assert "🟠 Updated files" in content
+    assert "🟠 Updated files  \n│  \nEdit `src/openrelay/feishu/reply_card.py`" in content
     assert "Edit `tests/test_feishu_streaming.py`" in content
 
 
