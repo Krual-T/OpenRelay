@@ -1,11 +1,14 @@
 from __future__ import annotations
 
 import json
+import logging
 from typing import Any, Callable
 
 from openrelay.agent_runtime import ApprovalDecision, ApprovalRequest, LiveTurnViewModel, ToolState
 from openrelay.core import SessionRecord, utc_now
 from openrelay.feishu import build_complete_card, render_transcript_markdown
+
+LOGGER = logging.getLogger("openrelay.presentation.live_turn")
 
 
 class LiveTurnPresenter:
@@ -76,6 +79,17 @@ class LiveTurnPresenter:
             for item in snapshot["transcript_items"]
             if isinstance(item, dict) and item.get("type") == "plan"
         ]
+        if snapshot["plan_history_items"]:
+            LOGGER.info(
+                "live turn snapshot built session_id=%s turn_id=%s plan_steps=%s transcript_plan_details=%s",
+                state.session_id,
+                state.turn_id,
+                [
+                    {"step": step.step, "status": step.status}
+                    for step in state.plan_steps
+                ],
+                [str(item.get("detail") or "") for item in snapshot["plan_history_items"]],
+            )
         return snapshot
 
     def build_process_text(self, state: dict[str, Any] | LiveTurnViewModel) -> str:

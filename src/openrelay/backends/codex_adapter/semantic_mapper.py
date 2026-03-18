@@ -1,11 +1,14 @@
 from __future__ import annotations
 
+import logging
 from typing import Any
 
 from openrelay.agent_runtime import PlanStep, ToolState, UsageSnapshot
 
 from .event_registry import CodexEventDescriptor
 from .semantic_events import CodexRawEventEnvelope, CodexSemanticEvent
+
+LOGGER = logging.getLogger("openrelay.backends.codex_adapter.semantic_mapper")
 
 
 def combine_indexed_text(parts_by_index: dict[int, str]) -> str:
@@ -238,6 +241,15 @@ class CodexSemanticMapper:
         if raw_steps:
             steps = tuple(self._to_plan_step(item) for item in raw_steps if isinstance(item, dict))
             explanation = str(envelope.params.get("explanation") or "")
+            LOGGER.info(
+                "plan notification mapped method=%s thread_id=%s turn_id=%s raw_statuses=%s normalized_statuses=%s explanation=%s",
+                envelope.method,
+                envelope.thread_id,
+                envelope.turn_id,
+                [str(item.get("status") or "") for item in raw_steps if isinstance(item, dict)],
+                [step.status for step in steps],
+                explanation,
+            )
             return (
                 CodexSemanticEvent(
                     semantic_name="plan.updated",
@@ -690,9 +702,17 @@ class CodexSemanticMapper:
 
     def _to_plan_step(self, item: dict[str, Any]) -> PlanStep:
         step = str(item.get("step") or item.get("title") or item.get("content") or item.get("text") or "").strip()
-        status = str(item.get("status") or "pending").strip() or "pending"
+        raw_status = str(item.get("status") or "pending").strip() or "pending"
+        status = raw_status
         if status not in {"pending", "in_progress", "completed"}:
             status = "pending"
+        if raw_status != status:
+            LOGGER.info(
+                "plan step status normalized step=%s raw_status=%s normalized_status=%s",
+                step,
+                raw_status,
+                status,
+            )
         return PlanStep(step=step, status=status)  # type: ignore[arg-type]
 
     def _to_tool_state(self, item: dict[str, Any], *, status: str, state: Any) -> ToolState | None:

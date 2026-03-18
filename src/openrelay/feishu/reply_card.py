@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import re
 from datetime import datetime
 from typing import Any
@@ -12,6 +13,7 @@ DEFAULT_THINKING_TEXT = "Executing"
 PROCESS_LOG_PANEL_TITLE = "Execution Log"
 LOADING_ICON_IMAGE_KEY = "img_v3_02vb_496bec09-4b43-4773-ad6b-0cdd103cd2bg"
 REASONING_PREFIX = "Reasoning:\n"
+LOGGER = logging.getLogger("openrelay.feishu.reply_card")
 
 
 def strip_invalid_image_keys(text: str) -> str:
@@ -479,6 +481,13 @@ def _render_plan_step(step: dict[str, Any]) -> str:
     text = normalize_inline(step.get("step"))
     if not text:
         return ""
+    if status != label:
+        LOGGER.info(
+            "reply card plan step normalized step=%s raw_status=%s rendered_status=%s",
+            text,
+            status,
+            label,
+        )
     if label == "completed":
         return f"● ~~{text}~~"
     if label == "in_progress":
@@ -1015,7 +1024,10 @@ def build_streaming_content(live_state: dict[str, Any] | None = None) -> str:
         blocks.append(f"---\n\n💭 **Thinking...**\n\n{reasoning_text}")
     if summary_text:
         blocks.append(f"---\n\n{summary_text}")
-    return "\n\n".join(block for block in blocks if block).strip()
+    content = "\n\n".join(block for block in blocks if block).strip()
+    if any(isinstance(item, dict) and item.get("type") == "plan" for item in history_items):
+        LOGGER.info("streaming content rendered plan_content=%s", content)
+    return content
 
 
 def build_complete_card(

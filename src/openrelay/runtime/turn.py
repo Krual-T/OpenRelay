@@ -226,6 +226,18 @@ class BackendTurnSession:
                 session=self.session,
                 format_cwd=self.runtime.session_ux.format_cwd,
             )
+            if event.event_type == "plan.updated" or state.plan_steps:
+                LOGGER.info(
+                    "runtime live state updated event_type=%s session_id=%s turn_id=%s plan_steps=%s streaming_text=%s",
+                    event.event_type,
+                    event.session_id,
+                    event.turn_id,
+                    [
+                        {"step": step.step, "status": step.status}
+                        for step in state.plan_steps
+                    ],
+                    build_streaming_content(self.live_state),
+                )
         if isinstance(event, AssistantDeltaEvent) and state is not None:
             self.last_live_text = ""
         if isinstance(event, ApprovalRequestedEvent):
