@@ -2,13 +2,16 @@ from __future__ import annotations
 
 import json
 import logging
+from dataclasses import replace
 from typing import Any, Callable
 
 from openrelay.agent_runtime import ApprovalDecision, ApprovalRequest, LiveTurnViewModel, ToolState
 from openrelay.core import SessionRecord, utc_now
+from openrelay.feishu.reply_card import clean_reasoning_prefix, optimize_markdown_style, render_transcript_markdown as legacy_render_transcript_markdown, split_reasoning_text
 from openrelay.feishu.common import summarize_text_entities
 
-from .live_turn_view_builder import LiveTurnViewBuilder
+from .models import TurnHistoryItem, TurnViewSnapshot
+
 
 LOGGER = logging.getLogger("openrelay.presentation.live_turn")
 
@@ -25,45 +28,90 @@ def _looks_like_diff(text: object) -> bool:
     return plus > 0 and minus > 0
 
 
-class LiveTurnPresenter:
-    def __init__(self) -> None:
-        self.builder = LiveTurnViewBuilder()
-
-    def create_initial_snapshot(
+class LiveTurnViewBuilder:
+    def create_initial_view(
         self,
         session: SessionRecord,
         format_cwd: Callable[[str, SessionRecord | None, str | None], str],
-    ) -> dict[str, Any]:
-        return self.builder.create_initial_view(session, format_cwd).to_legacy_dict()
+    ) -> TurnViewSnapshot:
+        return TurnViewSnapshot(
+            session_id=session.session_id,
+            native_session_id=session.native_session_id,
+            cwd=format_cwd(session.cwd, session),
+            history=(),
+            history_items=(),
+            plan_history_items=(),
+            transcript_items=(),
+            heading="Generating reply",
+            status="Waiting for streamed output",
+            current_command="",
+            last_command=None,
+            commands=(),
+            last_reasoning="",
+            reasoning_text="",
+            reasoning_started_at="",
+            reasoning_elapsed_ms=0,
+            partial_text="",
+            committed_partial_text="",
+            spinner_frame=0,
+            started_at=utc_now(),
+        )
 
     def build_snapshot(
         self,
         state: LiveTurnViewModel,
         *,
-        previous: dict[str, Any] | None = None,
+        previous: dict[str, Any] | TurnViewSnapshot | None = None,
         session: SessionRecord | None = None,
         format_cwd: Callable[[str, SessionRecord | None, str | None], str] | None = None,
-    ) -> dict[str, Any]:
-        return self.builder.build_snapshot(
-            state,
-            previous=previous,
-            session=session,
-            format_cwd=format_cwd,
-        ).to_legacy_dict()
-
-    def build_process_text(self, state: dict[str, Any] | LiveTurnViewModel) -> str:
-        return self.build_transcript_markdown(state)
+    ) -> TurnViewSnapshot:
+        previous_dict = self._legacy_snapshot(previous)
+        heading, status = self.build_status_heading(state)
+        history_items = self._history_items(state, previous_dict)
+        transcript_items = self._merge_transcript_items(history_items, previous_dict)
+        plan_history_items = tuple(item for item in transcript_items if item.item_type == "plan")
+        snapshot = TurnViewSnapshot(
+            session_id=state.session_id,
+            native_session_id=state.native_session_id,
+            cwd=format_cwd(session.cwd, session) if (session is not None and format_cwd is not None) else str(previous_dict.get("cwd") or ""),
+            history=tuple(dict(item) for item in list(previous_dict.get("history") or [])),
+            history_items=history_items,
+            plan_history_items=plan_history_items,
+            transcript_items=transcript_items,
+            heading=heading,
+            status=status,
+            current_command=self._current_command(state),
+            last_command=previous_dict.get("last_command") if isinstance(previous_dict.get("last_command"), dict) else None,
+            commands=tuple(dict(item) for item in list(previous_dict.get("commands") or []) if isinstance(item, dict)),
+            last_reasoning=state.reasoning_text,
+            reasoning_text=state.reasoning_text,
+            reasoning_started_at=str(previous_dict.get("reasoning_started_at") or ""),
+            reasoning_elapsed_ms=int(previous_dict.get("reasoning_elapsed_ms") or 0),
+            partial_text=state.assistant_text,
+            committed_partial_text=str(previous_dict.get("committed_partial_text") or ""),
+            spinner_frame=int(previous_dict.get("spinner_frame") or 0),
+            started_at=str(previous_dict.get("started_at") or utc_now()),
+        )
+        if state.reasoning_text and not snapshot.reasoning_started_at:
+            snapshot = replace(snapshot, reasoning_started_at=str(previous_dict.get("started_at") or utc_now()))
+        if snapshot.plan_history_items:
+            LOGGER.info(
+                "live turn snapshot built session_id=%s turn_id=%s plan_steps=%s transcript_plan_details=%s",
+                state.session_id,
+                state.turn_id,
+                [{"step": step.step, "status": step.status} for step in state.plan_steps],
+                [item.detail for item in snapshot.plan_history_items],
+            )
+        return snapshot
 
     def build_transcript_markdown(
         self,
-        state: dict[str, Any] | LiveTurnViewModel,
+        state: dict[str, Any] | TurnViewSnapshot | LiveTurnViewModel,
         *,
         include_summary: bool = True,
     ) -> str:
-        return self.builder.build_transcript_markdown(state, include_summary=include_summary)
-
-    def build_final_reply(self, state: LiveTurnViewModel) -> str:
-        return state.assistant_text
+        snapshot = self._coerce_snapshot(state)
+        return legacy_render_transcript_markdown(snapshot.to_legacy_dict(), include_summary=include_summary)
 
     def build_status_heading(self, state: LiveTurnViewModel) -> tuple[str, str]:
         if state.pending_approval is not None:
@@ -84,39 +132,121 @@ class LiveTurnPresenter:
             return ("Generating reply", "Streaming output")
         return ("Generating reply", "Waiting for streamed output")
 
-    def build_reply_card(self, text: str, *, process_text: str = "") -> dict[str, object]:
-        from openrelay.feishu.renderers.live_turn_renderer import FeishuLiveTurnRenderer
-
-        transcript_markdown = str(process_text or "").strip()
-        return FeishuLiveTurnRenderer().build_reply_card(text, transcript_markdown=transcript_markdown)
-
-    def build_streaming_card(self, state: dict[str, Any] | LiveTurnViewModel) -> dict[str, object]:
-        from openrelay.feishu.renderers.live_turn_renderer import FeishuLiveTurnRenderer
-
-        snapshot = state if isinstance(state, dict) else self.build_snapshot(state)
-        return FeishuLiveTurnRenderer().build_streaming_card(snapshot)
-
-    def build_final_card(self, state: dict[str, Any] | LiveTurnViewModel, *, fallback_text: str = "") -> dict[str, object]:
-        from openrelay.feishu.renderers.live_turn_renderer import FeishuLiveTurnRenderer
-
-        snapshot = state if isinstance(state, dict) else self.build_snapshot(state)
-        return FeishuLiveTurnRenderer().build_final_card(snapshot, fallback_text=fallback_text)
-
     def build_approval_resolved_snapshot(
         self,
-        previous: dict[str, Any],
+        previous: dict[str, Any] | TurnViewSnapshot,
         request: ApprovalRequest,
         decision: ApprovalDecision,
-    ) -> dict[str, Any]:
-        return self.builder.build_approval_resolved_snapshot(previous, request, decision).to_legacy_dict()
+    ) -> TurnViewSnapshot:
+        previous_dict = self._legacy_snapshot(previous)
+        history_items = [dict(item) for item in list(previous_dict.get("history_items") or []) if isinstance(item, dict)]
+        updated = False
+        for item in history_items:
+            if item.get("type") != "interaction":
+                continue
+            if str(item.get("interaction_id") or "") != request.approval_id:
+                continue
+            item["state"] = "completed" if decision.decision in {"accept", "accept_for_session", "custom"} else "cancelled"
+            item["detail"] = self._approval_resolution_label(decision)
+            updated = True
+            break
+        if not updated:
+            history_items.append(
+                {
+                    "type": "interaction",
+                    "state": "completed" if decision.decision in {"accept", "accept_for_session", "custom"} else "cancelled",
+                    "interaction_id": request.approval_id,
+                    "title": request.title,
+                    "detail": self._approval_resolution_label(decision),
+                }
+            )
+        previous_dict["history_items"] = history_items
+        previous_dict["heading"] = "Resuming"
+        previous_dict["status"] = self._approval_resolution_label(decision)
+        return self._snapshot_from_dict(previous_dict)
 
-    def with_native_session_id(self, previous: dict[str, Any], native_session_id: str) -> dict[str, Any]:
-        return self.builder.with_native_session_id(previous, native_session_id).to_legacy_dict()
+    def with_native_session_id(self, previous: dict[str, Any] | TurnViewSnapshot, native_session_id: str) -> TurnViewSnapshot:
+        previous_dict = self._legacy_snapshot(previous)
+        previous_dict["native_session_id"] = str(native_session_id or "")
+        return self._snapshot_from_dict(previous_dict)
 
-    def bump_spinner(self, previous: dict[str, Any]) -> dict[str, Any]:
-        return self.builder.bump_spinner(previous).to_legacy_dict()
+    def bump_spinner(self, previous: dict[str, Any] | TurnViewSnapshot) -> TurnViewSnapshot:
+        previous_dict = self._legacy_snapshot(previous)
+        previous_dict["spinner_frame"] = (int(previous_dict.get("spinner_frame", 0) or 0) + 1) % 3
+        return self._snapshot_from_dict(previous_dict)
 
-    def _history_items(self, state: LiveTurnViewModel, previous: dict[str, Any] | None = None) -> list[dict[str, Any]]:
+    def _coerce_snapshot(self, state: dict[str, Any] | TurnViewSnapshot | LiveTurnViewModel) -> TurnViewSnapshot:
+        if isinstance(state, TurnViewSnapshot):
+            return state
+        if isinstance(state, LiveTurnViewModel):
+            return self.build_snapshot(state)
+        return self._snapshot_from_dict(state)
+
+    def _legacy_snapshot(self, snapshot: dict[str, Any] | TurnViewSnapshot | None) -> dict[str, Any]:
+        if snapshot is None:
+            return {}
+        if isinstance(snapshot, TurnViewSnapshot):
+            return snapshot.to_legacy_dict()
+        return dict(snapshot)
+
+    def _snapshot_from_dict(self, snapshot: dict[str, Any]) -> TurnViewSnapshot:
+        history_items = tuple(
+            TurnHistoryItem(
+                item_type=str(item.get("type") or ""),
+                state=str(item.get("state") or ""),
+                title=str(item.get("title") or ""),
+                detail=str(item.get("detail") or ""),
+                payload={key: value for key, value in item.items() if key not in {"type", "state", "title", "detail"}},
+            )
+            for item in list(snapshot.get("history_items") or [])
+            if isinstance(item, dict)
+        )
+        transcript_items = tuple(
+            TurnHistoryItem(
+                item_type=str(item.get("type") or ""),
+                state=str(item.get("state") or ""),
+                title=str(item.get("title") or ""),
+                detail=str(item.get("detail") or ""),
+                payload={key: value for key, value in item.items() if key not in {"type", "state", "title", "detail"}},
+            )
+            for item in list(snapshot.get("transcript_items") or [])
+            if isinstance(item, dict)
+        )
+        plan_history_items = tuple(
+            TurnHistoryItem(
+                item_type=str(item.get("type") or ""),
+                state=str(item.get("state") or ""),
+                title=str(item.get("title") or ""),
+                detail=str(item.get("detail") or ""),
+                payload={key: value for key, value in item.items() if key not in {"type", "state", "title", "detail"}},
+            )
+            for item in list(snapshot.get("plan_history_items") or [])
+            if isinstance(item, dict)
+        )
+        return TurnViewSnapshot(
+            session_id=str(snapshot.get("session_id") or ""),
+            native_session_id=str(snapshot.get("native_session_id") or ""),
+            cwd=str(snapshot.get("cwd") or ""),
+            history=tuple(dict(item) for item in list(snapshot.get("history") or []) if isinstance(item, dict)),
+            history_items=history_items,
+            plan_history_items=plan_history_items,
+            transcript_items=transcript_items,
+            heading=str(snapshot.get("heading") or ""),
+            status=str(snapshot.get("status") or ""),
+            current_command=str(snapshot.get("current_command") or ""),
+            last_command=snapshot.get("last_command") if isinstance(snapshot.get("last_command"), dict) else None,
+            commands=tuple(dict(item) for item in list(snapshot.get("commands") or []) if isinstance(item, dict)),
+            last_reasoning=str(snapshot.get("last_reasoning") or ""),
+            reasoning_text=str(snapshot.get("reasoning_text") or ""),
+            reasoning_started_at=str(snapshot.get("reasoning_started_at") or ""),
+            reasoning_elapsed_ms=int(snapshot.get("reasoning_elapsed_ms") or 0),
+            partial_text=str(snapshot.get("partial_text") or ""),
+            committed_partial_text=str(snapshot.get("committed_partial_text") or ""),
+            spinner_frame=int(snapshot.get("spinner_frame") or 0),
+            started_at=str(snapshot.get("started_at") or ""),
+        )
+
+    def _history_items(self, state: LiveTurnViewModel, previous: dict[str, Any] | None = None) -> tuple[TurnHistoryItem, ...]:
         items: list[dict[str, Any]] = []
         if state.reasoning_text:
             items.append(
@@ -132,11 +262,7 @@ class LiveTurnPresenter:
             if item is not None:
                 items.append(item)
         if state.plan_steps:
-            plan_steps = [
-                {"step": step.step.strip(), "status": step.status}
-                for step in state.plan_steps
-                if step.step.strip()
-            ]
+            plan_steps = [{"step": step.step.strip(), "status": step.status} for step in state.plan_steps if step.step.strip()]
             plan_lines = [f"{entry['status']} {entry['step']}" for entry in plan_steps]
             if plan_lines:
                 items.append(
@@ -148,7 +274,6 @@ class LiveTurnPresenter:
                         "detail": "\n".join(plan_lines),
                     }
                 )
-        items.extend(self._system_history_items(state))
         for backend_event in state.backend_events:
             items.append(
                 {
@@ -168,13 +293,19 @@ class LiveTurnPresenter:
                     "detail": state.pending_approval.description,
                 }
             )
-        return self._merge_preserved_interactions(items, previous)
+        merged = self._merge_preserved_interactions(items, previous)
+        return tuple(
+            TurnHistoryItem(
+                item_type=str(item.get("type") or ""),
+                state=str(item.get("state") or ""),
+                title=str(item.get("title") or ""),
+                detail=str(item.get("detail") or ""),
+                payload={key: value for key, value in item.items() if key not in {"type", "state", "title", "detail"}},
+            )
+            for item in merged
+        )
 
-    def _merge_preserved_interactions(
-        self,
-        items: list[dict[str, Any]],
-        previous: dict[str, Any] | None,
-    ) -> list[dict[str, Any]]:
+    def _merge_preserved_interactions(self, items: list[dict[str, Any]], previous: dict[str, Any] | None) -> list[dict[str, Any]]:
         if previous is None:
             return items
         existing_ids = {
@@ -194,11 +325,7 @@ class LiveTurnPresenter:
             preserved.append(dict(item))
         return preserved + items
 
-    def _merge_transcript_items(
-        self,
-        items: list[dict[str, Any]],
-        previous: dict[str, Any] | None,
-    ) -> list[dict[str, Any]]:
+    def _merge_transcript_items(self, items: tuple[TurnHistoryItem, ...], previous: dict[str, Any] | None) -> tuple[TurnHistoryItem, ...]:
         prior_items = (previous or {}).get("transcript_items")
         if not isinstance(prior_items, list):
             prior_items = (previous or {}).get("history_items")
@@ -209,18 +336,11 @@ class LiveTurnPresenter:
             if (key := self._transcript_item_key(item)) is not None
         }
         for item in items:
-            current_item = dict(item)
+            current_item = item.to_legacy_dict()
             if current_item.get("type") == "plan":
                 signature = self._plan_signature(current_item)
                 current_item["transcript_signature"] = signature
-                last_plan_index = next(
-                    (
-                        index
-                        for index in range(len(transcript_items) - 1, -1, -1)
-                        if transcript_items[index].get("type") == "plan"
-                    ),
-                    None,
-                )
+                last_plan_index = next((index for index in range(len(transcript_items) - 1, -1, -1) if transcript_items[index].get("type") == "plan"), None)
                 if last_plan_index is not None and str(transcript_items[last_plan_index].get("transcript_signature") or "") == signature:
                     transcript_items[last_plan_index] = current_item
                     continue
@@ -236,7 +356,16 @@ class LiveTurnPresenter:
                 transcript_items.append(current_item)
                 continue
             transcript_items[existing_index] = current_item
-        return transcript_items
+        return tuple(
+            TurnHistoryItem(
+                item_type=str(item.get("type") or ""),
+                state=str(item.get("state") or ""),
+                title=str(item.get("title") or ""),
+                detail=str(item.get("detail") or ""),
+                payload={key: value for key, value in item.items() if key not in {"type", "state", "title", "detail"}},
+            )
+            for item in transcript_items
+        )
 
     def _plan_signature(self, item: dict[str, Any]) -> str:
         steps = item.get("steps")
@@ -246,12 +375,7 @@ class LiveTurnPresenter:
         for step in steps:
             if not isinstance(step, dict):
                 continue
-            normalized_steps.append(
-                {
-                    "step": str(step.get("step") or "").strip(),
-                    "status": str(step.get("status") or "").strip(),
-                }
-            )
+            normalized_steps.append({"step": str(step.get("step") or "").strip(), "status": str(step.get("status") or "").strip()})
         return json.dumps(normalized_steps, ensure_ascii=False, sort_keys=True)
 
     def _transcript_item_key(self, item: dict[str, Any]) -> tuple[str, str] | None:
@@ -286,35 +410,11 @@ class LiveTurnPresenter:
             blocks.append(json.dumps(raw_event, ensure_ascii=False, indent=2, sort_keys=True))
         return "\n\n".join(blocks).strip()
 
-    def _system_history_items(self, state: LiveTurnViewModel) -> list[dict[str, Any]]:
-        items: list[dict[str, Any]] = []
-        _ = state
-        return items
-
-    def _terminal_interaction_detail(self, process_id: str, stdin: str) -> str:
-        parts: list[str] = []
-        if process_id:
-            parts.append(f"process: {process_id}")
-        normalized_stdin = str(stdin or "")
-        if normalized_stdin:
-            parts.append(f"stdin: {normalized_stdin}")
-        return "\n".join(parts).strip() or "terminal interaction"
-
-    def _tool_history_item(
-        self,
-        tool: ToolState,
-        state: LiveTurnViewModel,
-    ) -> dict[str, Any] | None:
+    def _tool_history_item(self, tool: ToolState, state: LiveTurnViewModel) -> dict[str, Any] | None:
         if tool.kind == "command":
             detail_summary = summarize_text_entities(tool.detail)
-            if (
-                detail_summary["length"]
-                and (
-                    detail_summary["nbsp_entity_count"]
-                    or detail_summary["nbsp_char_count"]
-                    or detail_summary["question_mark_count"]
-                    or str(tool.detail or "").startswith(" ")
-                )
+            if detail_summary["length"] and (
+                detail_summary["nbsp_entity_count"] or detail_summary["nbsp_char_count"] or detail_summary["question_mark_count"] or str(tool.detail or "").startswith(" ")
             ):
                 LOGGER.info(
                     "command tool mapped output_preview tool_id=%s len=%s nbsp_entity=%s nbsp_char=%s question=%s preview=%r",

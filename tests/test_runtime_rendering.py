@@ -1,4 +1,7 @@
 from openrelay.runtime import build_activity_summary, render_live_status_markdown, render_live_status_sections
+from openrelay.agent_runtime import LiveTurnViewModel
+from openrelay.feishu.renderers.live_turn_renderer import FeishuLiveTurnRenderer
+from openrelay.presentation.live_turn_view_builder import LiveTurnViewBuilder
 
 
 
@@ -61,3 +64,24 @@ def test_render_live_status_sections_show_reasoning_when_answer_not_started() ->
 
     assert "💭 **Thinking...**" in sections["body"]
     assert "先检查 runtime 和 card 渲染。" in sections["body"]
+
+
+def test_live_turn_builder_and_renderer_accept_typed_view_model() -> None:
+    builder = LiveTurnViewBuilder()
+    renderer = FeishuLiveTurnRenderer()
+    view = builder.build_snapshot(
+        LiveTurnViewModel(
+            backend="codex",
+            session_id="relay_1",
+            native_session_id="thread_1",
+            turn_id="turn_1",
+            status="running",
+            assistant_text="partial answer",
+        )
+    )
+
+    transcript = builder.build_transcript_markdown(view)
+    card = renderer.build_final_card(view, fallback_text="fallback")
+
+    assert transcript.endswith("---\n\npartial answer")
+    assert card["body"]["elements"]

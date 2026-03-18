@@ -71,7 +71,7 @@
 
 ### [ ] OR-TASK-009 架构重构总体设计与分阶段实施收敛
 - **目标**：从模块职责划分和长期演化角度，为下一轮架构重构固定总体边界、事实来源、依赖方向和分阶段实施顺序。
-- **当前状态**：总体设计稿与详细设计稿均已完成；当前已明确目标架构、关键设计决策、分阶段实施顺序，以及每阶段涉及的模块、文件、类、方法与改动原因，下一步可按 Phase 1 到 Phase 5 进入逐段实现。
+- **当前状态**：总体设计稿、详细设计稿与端到端执行级蓝图均已完成；消息、session、command、turn 和 rendering 的主链路目标模块已按 Phase 1-5 排列，并形成可并行推进的实施入口。当前已落一轮 C 线实现：`BackendTurnSession` 已退化为 facade，turn 生命周期已拆到 `TurnApplicationService` / `TurnRunController` / `TurnRuntimeEventBridge`，同时补上 typed live turn view model builder 与 Feishu renderer 分层。
 - **关闭条件**：
   - 完成正式总体设计稿，明确目标边界、事实来源、实施阶段和风险控制。
   - 任务板中记录对应设计证据和后续实施方向。
@@ -79,10 +79,17 @@
 - **已完成证据**：
   - `docs/design/or-task-009-architecture-refactor-overall-design.md`
   - `docs/design/or-task-009-architecture-refactor-detailed-design.md`
+  - `docs/design/or-task-009-end-to-end-refactor-blueprint.md`
+  - `src/openrelay/runtime/turn.py`
+  - `src/openrelay/runtime/turn_application.py`
+  - `src/openrelay/runtime/turn_run_controller.py`
+  - `src/openrelay/runtime/turn_runtime_event_bridge.py`
+  - `src/openrelay/presentation/live_turn_view_builder.py`
+  - `src/openrelay/presentation/models.py`
+  - `src/openrelay/feishu/renderers/live_turn_renderer.py`
 - **后续 follow-up**：
-  - 优先补 repository 边界详细设计，避免后续实现再次从 `StateStore` 直接开口。
-  - 单独拆 session / binding source-of-truth 详细设计，不要和 command/turn 拆分混成一个大稿。
-  - command、turn、rendering 三条线各自独立出详细设计或实施任务。
+  - 已形成端到端执行级设计，可按并行子任务推进 Phase 1-5 实施。
+  - 主控接线仍需把 turn/rendering 新边界从 `runtime/orchestrator.py` 继续收敛到独立 application service。
 
 ## 使用约定
 
