@@ -488,10 +488,13 @@ def test_build_complete_card_renders_answer_only_without_transcript() -> None:
     assert "summary" not in card["config"]
 
 
-def test_build_complete_card_renders_answer_only_without_transcript() -> None:
-    card = build_complete_card("最终答案")
+def test_build_complete_card_uses_collapsible_panel_when_panel_text_provided() -> None:
+    card = build_complete_card("最终答案", panel_text="• **Ran** `pytest -q`")
 
-    assert card["body"]["elements"] == [{"tag": "markdown", "content": "最终答案"}]
+    assert card["body"]["elements"][0]["tag"] == "collapsible_panel"
+    assert card["body"]["elements"][0]["header"]["title"]["content"] == "Execution Log"
+    assert card["body"]["elements"][0]["elements"][0]["content"] == "• **Ran** `pytest -q`"
+    assert card["body"]["elements"][1] == {"tag": "markdown", "content": "最终答案"}
     assert "summary" not in card["config"]
 
 
