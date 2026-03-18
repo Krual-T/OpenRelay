@@ -704,6 +704,8 @@ class CodexSemanticMapper:
         step = str(item.get("step") or item.get("title") or item.get("content") or item.get("text") or "").strip()
         raw_status = str(item.get("status") or "pending").strip() or "pending"
         status = raw_status
+        if status == "inProgress":
+            status = "in_progress"
         if status not in {"pending", "in_progress", "completed"}:
             status = "pending"
         if raw_status != status:

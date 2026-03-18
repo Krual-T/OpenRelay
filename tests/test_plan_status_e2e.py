@@ -292,9 +292,8 @@ async def test_e2e_plan_status_trace_reaches_feishu_final_card(tmp_path: Path, m
     print("\n=== FINAL FEISHU CARD MARKDOWN ===")
     print(rendered_card_text)
 
-    assert any("raw_status=inProgress normalized_status=pending" in record.getMessage() for record in caplog.records)
+    assert any("raw_status=inProgress normalized_status=in_progress" in record.getMessage() for record in caplog.records)
     assert "Inspect runtime" in rendered_card_text
     assert "Wire mapper" in rendered_card_text
-    assert "○ Wire mapper" in rendered_card_text
-    assert "in_progress" not in rendered_card_text
+    assert "◉ Wire mapper" in rendered_card_text
     assert "inProgress" not in rendered_card_text

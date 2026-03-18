@@ -237,7 +237,7 @@ def test_codex_mapper_maps_structured_plan_update() -> None:
             "turnId": "turn_1",
             "plan": [
                 {"step": "Inspect runtime", "status": "completed"},
-                {"step": "Wire mapper", "status": "in_progress"},
+                {"step": "Wire mapper", "status": "inProgress"},
             ],
             "explanation": "phase 1",
         },
