@@ -140,11 +140,18 @@ def shorten_inline(text: object, max_length: int = 120) -> str:
     return f"{value[: max_length - 3]}..."
 
 
-def _sanitize_code_inline(text: object, max_length: int = 96) -> str:
-    value = shorten_inline(str(text or "").replace("`", "'"), max_length)
-    if not value:
-        return ""
-    return f"`{value}`"
+def _wrap_code_words(text: object, *, words_per_line: int = 6, max_lines: int = 4) -> list[str]:
+    tokens = str(text or "").replace("`", "'").split()
+    if not tokens:
+        return []
+    chunks = [
+        " ".join(tokens[index : index + words_per_line])
+        for index in range(0, len(tokens), words_per_line)
+    ]
+    visible_chunks = chunks[:max_lines]
+    if len(chunks) > max_lines and visible_chunks:
+        visible_chunks[-1] = f"{visible_chunks[-1]} ..."
+    return [f"`{chunk}`" for chunk in visible_chunks if chunk]
 
 
 def _append_tree_lines(lines: list[str], text: object) -> None:
@@ -181,6 +188,15 @@ def _append_tree_entries(lines: list[str], entries: list[list[str]]) -> None:
         lines.append(f"{branch} {entry[0]}")
         for line in entry[1:]:
             lines.append(f"{continuation} {line}")
+
+
+def _append_pipe_entries(lines: list[str], entries: list[list[str]]) -> None:
+    normalized_entries = [entry for entry in entries if entry]
+    if not normalized_entries:
+        return
+    for entry in normalized_entries:
+        for line in entry:
+            lines.append(f"│ {line}")
 
 
 def _join_markdown_lines(lines: list[str]) -> str:
@@ -300,18 +316,17 @@ def _describe_collab_targets(item: dict[str, Any]) -> list[str]:
     return labels[:4]
 
 
-def _render_plan_step(item: dict[str, Any], step: dict[str, Any]) -> str:
+def _render_plan_step(step: dict[str, Any]) -> str:
     status = normalize_inline(step.get("status")).lower() or "pending"
     label = status if status in {"pending", "in_progress", "completed"} else "pending"
     text = normalize_inline(step.get("step"))
     if not text:
         return ""
-    display_label = {
-        "pending": "Pending",
-        "in_progress": "In Progress",
-        "completed": "Completed",
-    }[label]
-    return f"**[{display_label}]** {text}"
+    if label == "completed":
+        return f"● ~~{text}~~"
+    if label == "in_progress":
+        return f"◉ In Progress {text}"
+    return f"○ Pending {text}"
 
 
 def _history_item_tone(item: dict[str, Any]) -> str:
@@ -383,20 +398,23 @@ def _render_history_item(item: dict[str, Any], spinner_frame: int) -> list[str]:
     if item_type == "command":
         command_value = str(item.get("command") or "").strip()
         mode = str(item.get("mode") or "").strip()
-        command_text = _sanitize_code_inline(command_value)
         if mode == "exploration":
             detail = _describe_exploration_command(command_value)
             if detail:
                 detail_entries.append([detail])
-        elif command_text:
-            lines[0] = f"{lines[0]} {command_text}"
+        else:
+            command_lines = _wrap_code_words(command_value)
+            if command_lines:
+                lines[0] = f"{bullet} {title}"
+                detail_entries.extend([[line] for line in command_lines])
         exit_code = item.get("exit_code")
         if exit_code is not None and str(item.get("state") or "") != "running" and int(exit_code) != 0:
             detail_entries.append([f"exit {exit_code}"])
         output_preview_lines = _split_detail_lines(item.get("output_preview"), code=True)
         if output_preview_lines:
+            detail_entries.append(["--- Output ---"])
             detail_entries.extend([[line] for line in output_preview_lines])
-        _append_tree_entries(lines, detail_entries)
+        _append_pipe_entries(lines, detail_entries)
         return lines
 
     if item_type == "web_search":
@@ -416,17 +434,18 @@ def _render_history_item(item: dict[str, Any], spinner_frame: int) -> list[str]:
         return lines
 
     if item_type == "plan":
+        lines[0] = f"{bullet} {title}"
         steps = item.get("steps")
         if isinstance(steps, list):
             for step in steps:
                 if not isinstance(step, dict):
                     continue
-                rendered_step = _render_plan_step(item, step)
+                rendered_step = _render_plan_step(step)
                 if rendered_step:
                     detail_entries.append([rendered_step])
         if not detail_entries:
             detail_entries.extend([[line] for line in _split_detail_lines(item.get("detail"))])
-        _append_tree_entries(lines, detail_entries)
+        _append_pipe_entries(lines, detail_entries)
         return lines
 
     if item_type == "collab":
@@ -510,20 +529,22 @@ def _render_streaming_history_item(item: dict[str, Any]) -> list[str]:
     if item_type == "command":
         command_value = str(item.get("command") or "").strip()
         mode = str(item.get("mode") or "").strip()
-        command_text = _sanitize_code_inline(command_value)
         if mode == "exploration":
             detail = _describe_exploration_command(command_value)
             if detail:
                 detail_entries.append([detail])
-        elif command_text:
-            lines[0] = f"{lines[0]} {command_text}"
+        else:
+            command_lines = _wrap_code_words(command_value)
+            if command_lines:
+                detail_entries.extend([[line] for line in command_lines])
         exit_code = item.get("exit_code")
         if exit_code is not None and str(item.get("state") or "") != "running" and int(exit_code) != 0:
             detail_entries.append([f"exit {exit_code}"])
         output_preview_lines = _split_detail_lines(item.get("output_preview"), code=True)
         if output_preview_lines:
+            detail_entries.append(["--- Output ---"])
             detail_entries.extend([[line] for line in output_preview_lines])
-        _append_tree_entries(lines, detail_entries)
+        _append_pipe_entries(lines, detail_entries)
         return lines
 
     if item_type == "web_search":
@@ -542,17 +563,18 @@ def _render_streaming_history_item(item: dict[str, Any]) -> list[str]:
         return lines
 
     if item_type == "plan":
+        lines[0] = f"{_streaming_history_bullet(item)} {title}"
         steps = item.get("steps")
         if isinstance(steps, list):
             for step in steps:
                 if not isinstance(step, dict):
                     continue
-                rendered_step = _render_plan_step(item, step)
+                rendered_step = _render_plan_step(step)
                 if rendered_step:
                     detail_entries.append([rendered_step])
         if not detail_entries:
             detail_entries.extend([[line] for line in _split_detail_lines(item.get("detail"))])
-        _append_tree_entries(lines, detail_entries)
+        _append_pipe_entries(lines, detail_entries)
         return lines
 
     if item_type == "collab":
