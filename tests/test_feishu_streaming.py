@@ -186,7 +186,7 @@ def test_build_streaming_content_marks_failed_command_with_red_dot() -> None:
     assert "<font color='green'>pytest</font>" in content
     assert "exit 1" in content
     assert "<hr>" in content
-    assert "<font color='red'>1&nbsp;failed</font>" in content
+    assert "<font color='orange'>1</font>&nbsp;<font color='red'>failed</font>" in content
     assert "<font color='red'>AssertionError</font>" in content
 
 
@@ -258,6 +258,93 @@ def test_build_streaming_content_wraps_long_command_into_pipe_lines() -> None:
     assert "<font color='green'>uv</font>" in content
     assert "<font color='wathet'>scripts/export_schema.py</font>" in content
     assert "<font color='orange'>--format</font>" in content
+
+
+def test_build_streaming_content_composes_plain_output_colors() -> None:
+    content = build_streaming_content(
+        {
+            "history_items": [
+                {
+                    "type": "command",
+                    "state": "completed",
+                    "title": "Ran shell command",
+                    "mode": "command",
+                    "command": "pytest -q tests/test_feishu_streaming.py",
+                    "exit_code": 1,
+                    "output_preview": "tests/test_feishu_streaming.py:193: AssertionError",
+                }
+            ]
+        }
+    )
+
+    assert "<font color='wathet'>tests/test_feishu_streaming.py</font>" in content
+    assert "<font color='orange'>193</font>" in content
+    assert "<font color='red'>AssertionError</font>" in content
+
+
+def test_build_streaming_content_strips_ansi_sequences_from_output() -> None:
+    content = build_streaming_content(
+        {
+            "history_items": [
+                {
+                    "type": "command",
+                    "state": "completed",
+                    "title": "Ran shell command",
+                    "mode": "command",
+                    "command": "pytest -q",
+                    "exit_code": 1,
+                    "output_preview": "\x1b[31mFAILED\x1b[0m tests/test_x.py::test_a - AssertionError",
+                }
+            ]
+        }
+    )
+
+    assert "\x1b" not in content
+    assert "<font color='red'>FAILED</font>" in content
+    assert "<font color='wathet'>tests/test_x.py</font>" in content
+
+
+def test_build_streaming_content_keeps_url_and_path_colors_separate() -> None:
+    content = build_streaming_content(
+        {
+            "history_items": [
+                {
+                    "type": "command",
+                    "state": "completed",
+                    "title": "Ran shell command",
+                    "mode": "command",
+                    "command": "curl https://example.com",
+                    "exit_code": 0,
+                    "output_preview": "See https://example.com/docs/index.html and ./tmp/out.json",
+                }
+            ]
+        }
+    )
+
+    assert "<font color='blue'>https://example.com/docs/index.html</font>" in content
+    assert "<font color='wathet'>./tmp/out.json</font>" in content
+
+
+def test_build_streaming_content_does_not_infer_json_lexer_from_output_target_path() -> None:
+    content = build_streaming_content(
+        {
+            "history_items": [
+                {
+                    "type": "command",
+                    "state": "completed",
+                    "title": "Ran shell command",
+                    "mode": "command",
+                    "command": "uv run python scripts/export_schema.py --format json --output docs/schema.json",
+                    "exit_code": 0,
+                    "output_preview": "File saved to docs/schema.json in 0.12s",
+                }
+            ]
+        }
+    )
+
+    assert "<font color='green'>saved</font>" in content
+    assert "<font color='wathet'>docs/schema.json</font>" in content
+    assert "<font color='orange'>0.12</font>" in content
     assert "<font color='wathet'>docs/schema.json</font>" in content
 
 

@@ -25,13 +25,15 @@
 
 ### [ ] OR-TASK-006 Codex TUI 与飞书端体验差距收敛
 - **目标**：以飞书用户体验而不是 TUI 命令面对齐为主，判断哪些 Codex 能力值得迁移，哪些能力应明确不纳入飞书场景，并据此收敛真正的高优先级体验问题。
-- **当前状态**：调研稿已重写为 UX 视角；当前任务剩余的是把“等待用户处理的统一交互”“当前会话状态与控制入口”“异步回看”拆成后续设计或实现任务。
+- **当前状态**：调研稿已重写为 UX 视角；飞书 transcript card 已落首轮 Codex 风格命令/输出高亮，并修正了 plain-text 输出的颜色组合、ANSI 清洗与 URL/路径冲突；当前任务剩余的是把“等待用户处理的统一交互”“当前会话状态与控制入口”“异步回看”拆成后续设计或实现任务。
 - **待完成**：
   - 把“等待用户处理”的统一交互体验拆成独立任务。
   - 把“当前会话控制入口”和“异步回看”拆成独立任务。
   - 明确记录哪些 Codex CLI 能力在飞书场景下属于刻意不支持，而不是残缺未补。
 - **已完成证据**：
   - `docs/design/or-task-006-feishu-vs-codex-tui-gap-analysis.md`
+  - `src/openrelay/feishu/highlight.py`
+  - `tests/test_feishu_streaming.py`
 - **后续 follow-up**：
   - 优先把 terminal interaction、user input、MCP elicitation 从用户视角收敛成统一“等待用户处理”模型，再讨论底层事件差异。
   - 对 `fork`、`login`、`logout`、`cloud`、`features` 等能力先做产品取舍，不默认进入实现队列。
