@@ -8,6 +8,20 @@
 
 ## Active
 
+### [ ] OR-TASK-007 消息行为日志与可观测性收敛
+- **目标**：为 Feishu 入站消息到最终回复建立一条可持久化、可查询、可回放的结构化消息行为日志链路，替代当前零散文本日志 + 内存态 runtime event 的弱观测方式。
+- **当前状态**：总体设计已完成，推荐方案是以 SQLite 为第一阶段存储，围绕统一消息事件模型、采集埋点、查询入口和保留策略分阶段落地。
+- **关闭条件**：
+  - 完成正式设计稿，明确事件模型、关联键、埋点位置、SQLite schema、保留策略与分阶段实施路径。
+  - 在代码中落地最小闭环：至少能记录 ingress、session resolve、turn terminal、reply sent 等主路径事件。
+  - 提供一个仓库内可用的 trace 读取入口，用于按 message / session / trace 查看时间线。
+- **已完成证据**：
+  - `docs/design/or-task-007-message-observability-design.md`
+- **后续 follow-up**：
+  - 第一阶段优先实现 `MessageTraceRecorder` 与 `message_event_log`，不要先做 UI。
+  - 高频 provider delta 先做聚合观测，不默认逐条入库。
+  - observability 逻辑应独立成 store / recorder，不继续膨胀 `StateStore`。
+
 ### [ ] OR-TASK-006 Codex TUI 与飞书端体验差距收敛
 - **目标**：以飞书用户体验而不是 TUI 命令面对齐为主，判断哪些 Codex 能力值得迁移，哪些能力应明确不纳入飞书场景，并据此收敛真正的高优先级体验问题。
 - **当前状态**：调研稿已重写为 UX 视角；当前任务剩余的是把“等待用户处理的统一交互”“当前会话状态与控制入口”“异步回看”拆成后续设计或实现任务。
