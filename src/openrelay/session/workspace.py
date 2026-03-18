@@ -7,6 +7,24 @@ from openrelay.core import AppConfig, SessionRecord, get_release_workspace, get_
 
 
 @dataclass(slots=True)
+class WorkspaceDirectoryEntry:
+    label: str
+    relative_path: str
+    absolute_path: str
+    state: str
+
+
+@dataclass(slots=True)
+class WorkspaceDirectoryPage:
+    entries: tuple[WorkspaceDirectoryEntry, ...]
+    page: int
+    total_pages: int
+    total_entries: int
+    has_previous: bool
+    has_next: bool
+
+
+@dataclass(slots=True)
 class SessionWorkspaceService:
     config: AppConfig
 
@@ -48,3 +66,62 @@ class SessionWorkspaceService:
         workspace_root = self.workspace_root(session)
         base = Path(current_cwd).expanduser().resolve() if current_cwd else workspace_root
         return self.resolve_directory(relative_path, workspace_root=workspace_root, base=base)
+
+    def resolve_workspace_selection(self, raw_path: str, session: SessionRecord) -> Path:
+        workspace_root = self.workspace_root(session)
+        return self.resolve_directory(raw_path, workspace_root=workspace_root, base=workspace_root)
+
+    def list_workspace_directories(
+        self,
+        session: SessionRecord,
+        *,
+        page: int = 1,
+        page_size: int = 8,
+    ) -> WorkspaceDirectoryPage:
+        workspace_root = self.workspace_root(session)
+        current = Path(session.cwd).expanduser().resolve() if session.cwd else workspace_root
+        candidates = [workspace_root]
+        if workspace_root.exists():
+            visible_directories = sorted(
+                (
+                    child.resolve()
+                    for child in workspace_root.iterdir()
+                    if child.is_dir() and not child.name.startswith(".")
+                ),
+                key=lambda item: item.name.lower(),
+            )
+            candidates.extend(visible_directories)
+
+        entries = tuple(self._build_workspace_directory_entry(workspace_root, current, target) for target in candidates)
+        total_entries = len(entries)
+        safe_page_size = max(page_size, 1)
+        total_pages = max((total_entries + safe_page_size - 1) // safe_page_size, 1)
+        current_page = min(max(page, 1), total_pages)
+        start = (current_page - 1) * safe_page_size
+        visible_entries = entries[start:start + safe_page_size]
+        return WorkspaceDirectoryPage(
+            entries=visible_entries,
+            page=current_page,
+            total_pages=total_pages,
+            total_entries=total_entries,
+            has_previous=current_page > 1,
+            has_next=start + safe_page_size < total_entries,
+        )
+
+    def _build_workspace_directory_entry(self, workspace_root: Path, current: Path, target: Path) -> WorkspaceDirectoryEntry:
+        relative_path = "." if target == workspace_root else str(target.relative_to(workspace_root))
+        if target == workspace_root:
+            label = "工作区根目录"
+        else:
+            label = target.name
+        state = "available"
+        if current == target:
+            state = "current"
+        elif target in current.parents:
+            state = "active_branch"
+        return WorkspaceDirectoryEntry(
+            label=label,
+            relative_path=relative_path,
+            absolute_path=str(target),
+            state=state,
+        )

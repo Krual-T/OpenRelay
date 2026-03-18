@@ -1,4 +1,4 @@
-from .actions import ACTION_CONTEXT_KEYS, build_button, build_button_value, build_command_button, build_command_value
+from .actions import ACTION_CONTEXT_KEYS, build_button, build_button_value, build_command_button, build_command_value, build_interactive_container
 from .theme import (
     CARD_CONFIG,
     build_card_shell,
@@ -29,6 +29,7 @@ __all__ = [
     "build_collapsible_panel",
     "build_command_button",
     "build_command_value",
+    "build_interactive_container",
     "build_fact_panel",
     "build_note_bar",
     "build_section_block",

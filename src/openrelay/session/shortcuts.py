@@ -30,7 +30,7 @@ class SessionShortcutService:
                 {
                     "label": shortcut.name,
                     "display_path": self.workspace.format_cwd(str(target), None, channel),
-                    "command": f"/cwd {shlex.quote(str(target))}",
+                    "command": f"/workspace select {shlex.quote(str(target))}",
                     "channels": ",".join(shortcut.channels),
                     "raw_path": shortcut.path,
                 }

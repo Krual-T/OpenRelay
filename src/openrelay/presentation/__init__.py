@@ -1,9 +1,9 @@
 from .panel import (
     PANEL_COMMANDS,
-    PANEL_DIRECTORIES,
     PANEL_HOME,
     PANEL_SESSIONS,
     PANEL_STATUS,
+    PANEL_WORKSPACE,
     PANEL_VIEW_LABELS,
     SESSION_SORT_LABELS,
     RuntimePanelPresenter,
@@ -14,10 +14,10 @@ from .session import SessionPresentation, build_resume_list_command, build_sessi
 
 __all__ = [
     "PANEL_COMMANDS",
-    "PANEL_DIRECTORIES",
     "PANEL_HOME",
     "PANEL_SESSIONS",
     "PANEL_STATUS",
+    "PANEL_WORKSPACE",
     "PANEL_VIEW_LABELS",
     "SESSION_SORT_LABELS",
     "RuntimePanelPresenter",

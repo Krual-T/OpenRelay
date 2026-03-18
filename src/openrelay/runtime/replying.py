@@ -45,7 +45,7 @@ class RuntimeReplyPolicy:
     def should_force_new_message_for_command(self, message: IncomingMessage, command_name: str) -> bool:
         if not self.is_top_level_p2p_command(message):
             return False
-        return command_name not in {"/cwd", "/cd", "/resume"}
+        return command_name not in {"/workspace", "/resume"}
 
     def should_force_new_message_for_command_card(self, message: IncomingMessage) -> bool:
         return self.is_top_level_p2p_command(message) and not self.is_card_action_message(message)

@@ -35,11 +35,11 @@ from .help import HelpRenderer
 
 
 ADMIN_ONLY_COMMANDS = {"/restart"}
-PANEL_USAGE = "使用 /panel [sessions|directories|commands|status] [--page N] [--sort updated-desc|active-first]。"
+PANEL_USAGE = "使用 /panel [sessions|workspace|commands|status] [--page N] [--sort updated-desc|active-first]。"
 RESUME_USAGE = "使用 /resume 打开后端会话卡片，或 /resume [latest|<序号>|<session_id>|<local_session_id>] 直接连接。"
 SHORTCUT_USAGE = (
     "使用 /shortcut list | /shortcut add <name> <path> [all|main|develop] | "
-    "/shortcut remove <name> | /shortcut cd <name>。"
+    "/shortcut remove <name> | /shortcut use <name>。"
 )
 
 ReplyHook = Callable[..., Awaitable[None]]
@@ -52,7 +52,7 @@ IsAdminHook = Callable[[str], bool]
 AvailableBackendsHook = Callable[[], list[str]]
 CancelActiveRunHook = Callable[[SessionRecord, str], Awaitable[bool]]
 
-PanelView = Literal["home", "sessions", "directories", "commands", "status"]
+PanelView = Literal["home", "sessions", "workspace", "commands", "status"]
 
 
 @dataclass(slots=True)
@@ -233,8 +233,8 @@ class RuntimeCommandRouter:
             await self.hooks.reply(message, self.status_presenter.build_text(name, session_key, session), command_reply=True, command_name=name)
             return True
 
-        if name in {"/cwd", "/cd"}:
-            return await self._handle_cwd(name, arg_text, message, session_key, session)
+        if name in {"/workspace", "/ws"}:
+            return await self._handle_workspace(message, session_key, session, arg_text)
 
         if name in {"/shortcut", "/shortcuts"}:
             return await self._handle_shortcut(message, session_key, session, arg_text)
@@ -451,8 +451,10 @@ class RuntimeCommandRouter:
         args = self._parse_paging_command_args(arg_text)
         uses_session_paging = args.page != 1 or args.sort_mode != DEFAULT_SESSION_LIST_SORT
         view = self._normalize_panel_view(args.target or ("sessions" if uses_session_paging else "home"))
-        if view != "sessions" and uses_session_paging:
-            raise ValueError("只有 /panel sessions 支持 --page 和 --sort")
+        if view not in {"sessions", "workspace"} and uses_session_paging:
+            raise ValueError("只有 /panel sessions 和 /panel workspace 支持分页参数")
+        if view == "workspace" and args.sort_mode != DEFAULT_SESSION_LIST_SORT:
+            raise ValueError("工作区视图不支持 --sort")
         return PanelCommandArgs(view=view, page=args.page, sort_mode=args.sort_mode)
 
     def _parse_paging_command_args(self, arg_text: str) -> PagingCommandArgs:
@@ -495,10 +497,12 @@ class RuntimeCommandRouter:
             "session": "sessions",
             "sessions": "sessions",
             "list": "sessions",
-            "directory": "directories",
-            "directories": "directories",
-            "dir": "directories",
-            "dirs": "directories",
+            "workspace": "workspace",
+            "workspaces": "workspace",
+            "directory": "workspace",
+            "directories": "workspace",
+            "dir": "workspace",
+            "dirs": "workspace",
             "command": "commands",
             "commands": "commands",
             "action": "commands",
@@ -563,29 +567,44 @@ class RuntimeCommandRouter:
             command_reply=True,
         )
 
-    async def _handle_cwd(self, command_name: str, arg_text: str, message: IncomingMessage, session_key: str, session: SessionRecord) -> bool:
-        if not arg_text:
-            await self.hooks.reply(
-                message,
-                "\n".join([
-                    f"cwd={self.workspace.format_cwd(session.cwd, session)}",
-                    "切换目录：/cwd <path> 或 /cd <path>",
-                    "切目录会直接修改当前 scope；下一条真实消息会在新目录绑定新的 backend thread。",
-                ]),
-                command_reply=True,
-                command_name=command_name,
-            )
+    async def _handle_workspace(self, message: IncomingMessage, session_key: str, session: SessionRecord, arg_text: str) -> bool:
+        tokens = shlex.split(arg_text) if arg_text else []
+        if not tokens or tokens[0] in {"list", "open"}:
+            try:
+                remainder = arg_text if (not tokens or tokens[0].startswith("--")) else " ".join(tokens[1:])
+                args = self._parse_panel_command_args(f"workspace {remainder}".strip())
+            except ValueError as exc:
+                await self.hooks.reply(message, f"workspace 参数无效：{exc}", command_reply=True, command_name="/workspace")
+                return True
+            await self.hooks.send_panel(message, session_key, session, args)
             return True
+        if tokens[0] == "select":
+            if len(tokens) < 2:
+                await self.hooks.reply(message, "workspace 参数无效：select 需要目录路径", command_reply=True, command_name="/workspace")
+                return True
+            return await self._switch_workspace_directory(message, session_key, session, tokens[1], command_name="/workspace")
+        await self.hooks.reply(message, "workspace 参数无效：只支持 /workspace、/workspace --page N、/workspace select <path>", command_reply=True, command_name="/workspace")
+        return True
+
+    async def _switch_workspace_directory(
+        self,
+        message: IncomingMessage,
+        session_key: str,
+        session: SessionRecord,
+        raw_path: str,
+        *,
+        command_name: str,
+    ) -> bool:
         try:
-            next_cwd = self.workspace.resolve_cwd(session.cwd, arg_text, session)
+            next_cwd = self.workspace.resolve_workspace_selection(raw_path, session)
         except ValueError as exc:
-            await self.hooks.reply(message, f"cwd 切换失败：{exc}", command_reply=True, command_name=command_name)
+            await self.hooks.reply(message, f"工作区切换失败：{exc}", command_reply=True, command_name=command_name)
             return True
         next_session = self.session_mutations.switch_cwd(session_key, session, next_cwd)
         await self.hooks.reply(
             message,
             "\n".join([
-                f"cwd 已切换到 {self.workspace.format_cwd(next_session.cwd, next_session)}。",
+                f"工作区已切换到 {self.workspace.format_cwd(next_session.cwd, next_session)}。",
                 "现在直接发消息，就会在这个目录进入 Codex。",
                 "当前 scope 已原地更新；如需切回旧 thread，请用 /resume。",
             ]),
@@ -616,7 +635,7 @@ class RuntimeCommandRouter:
             if not shortcut_entries:
                 await self.hooks.reply(
                     message,
-                    "当前没有可用的快捷目录。\n\n先用 `/shortcut add <name> <path>` 新增一个，或直接 `/cwd <path>`。",
+                    "当前没有可用的快捷目录。\n\n先用 `/shortcut add <name> <path>` 新增一个，或直接打开 `/workspace`。",
                     command_reply=True,
                     command_name="/shortcut",
                 )
@@ -624,7 +643,7 @@ class RuntimeCommandRouter:
             lines = ["快捷目录："]
             for entry in shortcut_entries:
                 lines.append(f"- {entry['label']} -> {entry['display_path']} [{entry['channels']}]")
-            lines.extend(["", "快速切换：/shortcut cd <name>"])
+            lines.extend(["", "快速切换：/shortcut use <name>"])
             await self.hooks.reply(message, "\n".join(lines), command_reply=True, command_name="/shortcut")
             return True
 
@@ -642,7 +661,7 @@ class RuntimeCommandRouter:
                         f"已保存快捷目录 `{shortcut.name}`。",
                         f"path={shortcut.path}",
                         f"channels={','.join(shortcut.channels)}",
-                        f"使用 `/shortcut cd {shortcut.name}` 或 `/panel directories`。",
+                        f"使用 `/shortcut use {shortcut.name}` 或 `/workspace`。",
                     ]
                 ),
                 command_reply=True,
@@ -676,7 +695,7 @@ class RuntimeCommandRouter:
                     command_name="/shortcut",
                 )
                 return True
-            return await self._handle_cwd("/shortcut", str(target), message, session_key, session)
+            return await self._switch_workspace_directory(message, session_key, session, str(target), command_name="/shortcut")
 
         await self.hooks.reply(message, f"shortcut 参数无效：不支持的动作 `{action}`\n{SHORTCUT_USAGE}", command_reply=True, command_name="/shortcut")
         return True

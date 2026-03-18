@@ -10,10 +10,10 @@ from .rendering import build_activity_summary, render_live_status_markdown, rend
 from .turn import BackendTurnSession, TurnRuntimeContext
 from openrelay.presentation import (
     PANEL_COMMANDS,
-    PANEL_DIRECTORIES,
     PANEL_HOME,
     PANEL_SESSIONS,
     PANEL_STATUS,
+    PANEL_WORKSPACE,
     PANEL_VIEW_LABELS,
     SESSION_SORT_LABELS,
     build_panel_card,
@@ -28,10 +28,10 @@ __all__ = [
     "MERGED_FOLLOW_UP_INTRO",
     "PanelCommandArgs",
     "PANEL_COMMANDS",
-    "PANEL_DIRECTORIES",
     "PANEL_HOME",
     "PANEL_SESSIONS",
     "PANEL_STATUS",
+    "PANEL_WORKSPACE",
     "PANEL_VIEW_LABELS",
     "QueuedFollowUp",
     "ReplyRoute",

@@ -296,7 +296,7 @@ class SessionPresentation:
                 lines.append(f"- {role}：{self.shorten(item.get('content', ''), 96)}")
         elif entry and (entry.first_user_message or self.build_session_preview(entry)):
             lines.extend(["", f"首条问题：{entry.first_user_message or self.build_session_preview(entry)}"])
-        lines.extend(["", "继续发送消息即可；想在指定目录进入 Codex：先 /cwd <path>，再发消息。"])
+        lines.extend(["", "继续发送消息即可；想在指定目录进入 Codex：先打开 /workspace 选目录，再发消息。"])
         return "\n".join(lines)
 
     def build_context_preview(self, session: SessionRecord, limit: int = 2) -> str:

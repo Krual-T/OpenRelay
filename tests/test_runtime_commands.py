@@ -455,6 +455,17 @@ async def test_runtime_command_router_compact_current_native_thread(tmp_path: Pa
 
 
 @pytest.mark.asyncio
+async def test_runtime_command_router_opens_workspace_panel(tmp_path: Path) -> None:
+    router, store, hooks = build_router(tmp_path)
+    session = store.load_session("p2p:oc_1")
+
+    await router.handle(make_message("/workspace", suffix="workspace"), session.base_key, session)
+
+    assert hooks.panel_calls[-1] == ("om_workspace", session.base_key, "workspace", 1, "updated-desc")
+    store.close()
+
+
+@pytest.mark.asyncio
 async def test_runtime_command_router_manages_directory_shortcuts(tmp_path: Path) -> None:
     router, store, hooks = build_router(tmp_path)
     docs_dir = router.config.main_workspace_dir / "docs"
@@ -463,13 +474,13 @@ async def test_runtime_command_router_manages_directory_shortcuts(tmp_path: Path
 
     await router.handle(make_message("/shortcut add docs docs main", suffix="shortcut_add"), session.base_key, session)
     await router.handle(make_message("/shortcut list", suffix="shortcut_list"), session.base_key, session)
-    await router.handle(make_message("/shortcut cd docs", suffix="shortcut_cd"), session.base_key, session)
+    await router.handle(make_message("/shortcut use docs", suffix="shortcut_use"), session.base_key, session)
     await router.handle(make_message("/shortcut remove docs", suffix="shortcut_remove"), session.base_key, session)
 
     assert store.get_directory_shortcut("docs") is None
     assert hooks.replies[0]["text"].startswith("已保存快捷目录 `docs`。")
     assert "快捷目录：" in str(hooks.replies[1]["text"])
     assert "docs -> docs [main]" in str(hooks.replies[1]["text"])
-    assert str(hooks.replies[2]["text"]).startswith("cwd 已切换到 docs。")
+    assert str(hooks.replies[2]["text"]).startswith("工作区已切换到 docs。")
     assert hooks.replies[3]["text"] == "已删除快捷目录 `docs`。"
     store.close()

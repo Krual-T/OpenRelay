@@ -68,3 +68,24 @@ def test_directory_shortcut_resolution_reuses_workspace_guardrails(tmp_path: Pat
     assert shortcuts.resolve_directory_shortcut("project", session) == (config.main_workspace_dir / "project").resolve()
     assert shortcuts.resolve_directory_shortcut("outside", session) is None
     store.close()
+
+
+def test_workspace_directory_page_lists_visible_top_level_entries(tmp_path: Path) -> None:
+    config = make_config(tmp_path)
+    prepare_dirs(config)
+    (config.main_workspace_dir / "docs").mkdir()
+    (config.main_workspace_dir / "src").mkdir()
+    (config.main_workspace_dir / ".git").mkdir()
+    session = SessionRecord(
+        session_id="s_1",
+        base_key="p2p:oc_1",
+        backend="codex",
+        cwd=str(config.main_workspace_dir / "src"),
+        release_channel="main",
+    )
+    workspace = SessionWorkspaceService(config)
+
+    page = workspace.list_workspace_directories(session, page_size=10)
+
+    assert [entry.relative_path for entry in page.entries] == [".", "docs", "src"]
+    assert [entry.state for entry in page.entries] == ["active_branch", "available", "current"]

@@ -8,6 +8,22 @@
 
 ## Active
 
+### [ ] OR-TASK-008 工作区目录选择卡收敛
+- **目标**：把工作区切换从 `/cwd`、`/cd` 的命令式输入收敛成面向飞书用户的工作区目录选择卡，先选工作区，再选顶层目录。
+- **当前状态**：设计稿已补齐；代码已落第一阶段闭环，新增 `/workspace` 主入口、`/panel workspace` 结果面、顶层目录分页和 `interactive_container` 行级点击；剩余工作主要是继续打磨视觉样式和快捷目录维护体验。
+- **关闭条件**：
+  - 完成正式设计稿，明确顶层目录边界、交互容器语义、分页策略和不做项。
+  - 代码主路径不再依赖 `/cwd`、`/cd` 作为用户入口。
+  - 工作区选择卡可稳定切换 `main` / `develop` 与顶层目录，并具备基本分页能力。
+- **已完成证据**：
+  - `docs/design/or-task-008-workspace-picker-design.md`
+  - `src/openrelay/session/workspace.py`
+  - `src/openrelay/presentation/panel.py`
+  - `src/openrelay/runtime/commands.py`
+- **后续 follow-up**：
+  - 补“最近使用目录 / 固定目录”分组，而不只是一页顶层目录。
+  - 评估是否要把 `/shortcut` 的增删改也收敛到卡片里。
+
 ### [ ] OR-TASK-007 消息行为日志与可观测性收敛
 - **目标**：为 Feishu 入站消息到最终回复建立一条可持久化、可查询、可回放的结构化消息行为日志链路，替代当前零散文本日志 + 内存态 runtime event 的弱观测方式。
 - **当前状态**：总体设计和详细设计均已完成；当前进入第一阶段实现准备，下一步应落 `observability/` 包、SQLite schema 和主路径最小埋点。

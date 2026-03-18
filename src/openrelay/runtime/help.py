@@ -167,7 +167,7 @@ class HelpRenderer:
         if message_count == 0:
             return [
                 "- 先把目标说完整：要改什么、在哪个目录、是否要直接改代码。",
-                "- 有明确目录就先 /cwd <path>；没有就直接发任务，别把时间花在命令上。",
+                "- 如果要先选执行目录，打开 /workspace；没有就直接发任务，别把时间花在命令上。",
                 "- 如果这是稳定版本排障，用 /main；如果是实验性修复，用 /develop。",
             ]
         if session.native_session_id:
@@ -222,15 +222,15 @@ class HelpRenderer:
             "- 开新任务或切话题：直接回顶层发新消息；查看或恢复旧后端会话：/resume、/resume latest。",
             "- `/resume` 只允许在私聊顶层使用；子 thread 会固定绑定当前后端会话。",
             "- `/resume` 会读取并绑定当前 backend 的可恢复会话；`/compact` 会等待当前会话 compact 完成后再返回结果。",
-            "- 换执行位置：/cwd <path> 切目录；/main 回稳定工作区；/develop 进修复工作区。",
-            "- 快捷目录：/shortcut add <name> <path> [all|main|develop]、/shortcut list、/shortcut cd <name>。",
+            "- 换执行位置：/workspace 打开工作区选择器；/main 回稳定工作区；/develop 进修复工作区。",
+            "- 快捷目录：/shortcut add <name> <path> [all|main|develop]、/shortcut list、/shortcut use <name>。",
             "- 看现场：/status 看会话、目录、最近上下文；/usage 看 token 和 context_usage。",
-            "- 面板导航：/panel 打开总入口；/panel sessions、/panel directories、/panel commands、/panel status 进入对应结果面；从卡片按钮切换时会优先留在同一张卡。",
+            "- 面板导航：/panel 打开总入口；/panel sessions、/panel workspace、/panel commands、/panel status 进入对应结果面；从卡片按钮切换时会优先留在同一张卡。",
             "- 控制运行：/stop 停止生成；/clear 清空当前上下文；需要更完整说明时再发 /help。",
             "- 环境与维护：/model 切模型；/sandbox 切执行模式；/ping 连通性检查；/restart 管理员用。",
         ]
         if shortcut_entries:
-            lines.insert(4, "- 常用目录：如果 `/panel` 已显示快捷目录，优先直接点按钮；这些入口会稳定复用 `/cwd` 主路径。")
+            lines.insert(4, "- 常用目录：如果 `/panel` 已显示快捷目录，优先直接点按钮；这些入口会直接切到对应工作区目录。")
         if len(available_backends) > 1:
             lines.append(f"- 切后端：/backend [list|{'|'.join(available_backends)}]。")
         return lines
@@ -239,7 +239,7 @@ class HelpRenderer:
         groups: list[list[tuple[str, str, str]]] = [
             [("状态", "/status", "primary"), ("用量", "/usage", "default"), ("面板", "/panel", "default")],
             [("会话列表", "/resume", "primary"), ("清空上下文", "/clear", "default")],
-            [("当前目录", "/cwd", "default"), ("切到 main", "/main", "default"), ("切到 develop", "/develop", "default")],
+            [("工作区选择", "/workspace", "primary"), ("切到 main", "/main", "default"), ("切到 develop", "/develop", "default")],
             [("模型", "/model", "default"), ("Sandbox", "/sandbox", "default"), ("停止", "/stop", "default")],
         ]
         if len(available_backends) > 1:
