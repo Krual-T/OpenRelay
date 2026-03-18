@@ -311,10 +311,7 @@ def _render_plan_step(item: dict[str, Any], step: dict[str, Any]) -> str:
         "in_progress": "In Progress",
         "completed": "Completed",
     }[label]
-    rendered = f"**[{display_label}]** {text}"
-    if label == "completed":
-        return f"~~{rendered}~~"
-    return rendered
+    return f"**[{display_label}]** {text}"
 
 
 def _history_item_tone(item: dict[str, Any]) -> str:

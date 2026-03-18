@@ -204,7 +204,7 @@ def test_live_turn_presenter_preserves_plan_history_in_transcript() -> None:
 
     assert len(second_snapshot["plan_history_items"]) == 2
     assert transcript.count("**Plan**") == 2
-    assert "**Plan**  \n├ ~~**[Completed]** Inspect runtime~~" in transcript
+    assert "**Plan**  \n├ **[Completed]** Inspect runtime" in transcript
     assert "Adjust Feishu rendering" in transcript
     assert "Verify snapshot output" in transcript
 
@@ -269,7 +269,7 @@ def test_live_turn_presenter_interleaves_plan_history_with_command_timeline() ->
     assert [item["type"] for item in second_snapshot["transcript_items"]] == ["command", "plan", "command", "plan"]
 
 
-def test_live_turn_presenter_builds_final_card_with_collapsed_execution_log() -> None:
+def test_live_turn_presenter_builds_final_card_as_linear_transcript() -> None:
     presenter = LiveTurnPresenter()
     state = LiveTurnViewModel(
         backend="codex",
@@ -292,7 +292,9 @@ def test_live_turn_presenter_builds_final_card_with_collapsed_execution_log() ->
 
     card = presenter.build_final_card(state)
 
-    assert card["body"]["elements"][0]["tag"] == "collapsible_panel"
-    assert card["body"]["elements"][0]["header"]["title"]["content"] == "Execution Log"
-    assert "pytest" in card["body"]["elements"][0]["elements"][0]["content"]
-    assert card["body"]["elements"][1] == {"tag": "markdown", "content": "最终答案"}
+    assert card["body"]["elements"] == [
+        {
+            "tag": "markdown",
+            "content": "🟢 **Ran** `pytest -q`  \n└ `1 passed`\n\n- Worked for 0s\n\n---\n\n最终答案",
+        }
+    ]

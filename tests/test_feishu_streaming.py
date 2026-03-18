@@ -488,6 +488,13 @@ def test_build_complete_card_renders_answer_only_without_transcript() -> None:
     assert "summary" not in card["config"]
 
 
+def test_build_complete_card_renders_answer_only_without_transcript() -> None:
+    card = build_complete_card("最终答案")
+
+    assert card["body"]["elements"] == [{"tag": "markdown", "content": "最终答案"}]
+    assert "summary" not in card["config"]
+
+
 @pytest.mark.asyncio
 async def test_streaming_session_appends_delta_when_transcript_is_prefix(monkeypatch: pytest.MonkeyPatch) -> None:
     session = FeishuStreamingSession(object())
