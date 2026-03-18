@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import html
 import re
+from dataclasses import dataclass
 from pathlib import PurePosixPath
 
 from pygments import lex
@@ -114,33 +115,22 @@ EXTENSION_LANGUAGE = {
 }
 
 
+@dataclass(frozen=True)
+class ShellSegment:
+    text: str
+    role: str | None = None
+
+
 def render_command_chunks(
     text: object, *, target_length: int = 34, max_lines: int = 4
 ) -> list[str]:
-    tokens = _split_command_tokens(str(text or "").strip())
-    if not tokens:
+    command = str(text or "").strip()
+    if not command:
         return []
-    chunks: list[str] = []
-    current_parts: list[str] = []
-    current_length = 0
-    previous_token = ""
-    command_position = 0
-    for token in tokens:
-        visible = token
-        rendered = _style_shell_token(token, previous_token, command_position)
-        if token.strip():
-            command_position += 1
-            previous_token = token
-        if current_parts and current_length + len(visible) > target_length:
-            chunks.append("".join(current_parts).rstrip())
-            current_parts = [rendered]
-            current_length = len(visible)
-            continue
-        current_parts.append(rendered)
-        current_length += len(visible)
-    if current_parts:
-        chunks.append("".join(current_parts).rstrip())
-    visible_chunks = chunks[:max_lines]
+    visible_budget = max(12, target_length - 2)
+    segments = _build_shell_segments(command)
+    chunks = _wrap_shell_segments(segments, visible_budget)
+    visible_chunks = [_render_shell_line(chunk) for chunk in chunks[:max_lines]]
     if len(chunks) > max_lines and visible_chunks:
         visible_chunks[-1] = f"{visible_chunks[-1]} {_font('grey', '...')}"
     return visible_chunks
@@ -255,35 +245,182 @@ def _lookup_color_name(token_type: object) -> str | None:
     return _map_rgb_to_feishu(rgb)
 
 
-def _split_command_tokens(text: str) -> list[str]:
-    if not text:
+def _build_shell_segments(text: str) -> list[ShellSegment]:
+    tokens = _scan_shell_tokens(text)
+    if not tokens:
         return []
-    return re.findall(r"\s+|[^\s]+", text)
+    segments: list[ShellSegment] = []
+    previous_token = ""
+    command_position = 0
+    for token in tokens:
+        if token.isspace():
+            segments.append(ShellSegment(token))
+            continue
+        role = _shell_token_role(token, previous_token, command_position)
+        segments.extend(_split_shell_token(token, role))
+        command_position += 1
+        previous_token = token
+    return segments
 
 
-def _style_shell_token(token: str, previous_token: str, position: int) -> str:
-    if not token.strip():
-        return _escape(token)
-    if token in COMMAND_OPERATORS:
-        return _themed_font("operator", token)
+def _scan_shell_tokens(text: str) -> list[str]:
+    tokens: list[str] = []
+    index = 0
+    while index < len(text):
+        character = text[index]
+        if character.isspace():
+            end = index + 1
+            while end < len(text) and text[end].isspace():
+                end += 1
+            tokens.append(text[index:end])
+            index = end
+            continue
+        if text.startswith(("&&", "||"), index):
+            tokens.append(text[index : index + 2])
+            index += 2
+            continue
+        if character in COMMAND_OPERATORS:
+            tokens.append(character)
+            index += 1
+            continue
+        if character in {'"', "'"}:
+            end = _find_shell_quote_end(text, index)
+            tokens.append(text[index:end])
+            index = end
+            continue
+        if character in {">", "<"}:
+            end = index + 1
+            while end < len(text) and text[end] in {">", "<", "&"}:
+                end += 1
+            while end < len(text) and text[end].isdigit():
+                end += 1
+            tokens.append(text[index:end])
+            index = end
+            continue
+        end = index + 1
+        while end < len(text):
+            next_character = text[end]
+            if next_character.isspace():
+                break
+            if text.startswith(("&&", "||"), end):
+                break
+            if next_character in COMMAND_OPERATORS or next_character in {'"', "'", ">", "<"}:
+                break
+            end += 1
+        tokens.append(text[index:end])
+        index = end
+    return tokens
+
+
+def _find_shell_quote_end(text: str, start: int) -> int:
+    quote = text[start]
+    index = start + 1
+    while index < len(text):
+        if text[index] == "\\" and index + 1 < len(text):
+            index += 2
+            continue
+        if text[index] == quote:
+            return index + 1
+        index += 1
+    return len(text)
+
+
+def _shell_token_role(token: str, previous_token: str, position: int) -> str | None:
+    if token in COMMAND_OPERATORS or _looks_like_redirection(token):
+        return "operator"
     if token.startswith("-"):
-        return _themed_font("flag", token)
+        return "flag"
     if token.startswith("$"):
-        return _themed_font("env", token)
+        return "env"
     if URL_RE.fullmatch(token):
-        return _themed_font("url", token)
-    if token.startswith(('"', "'")) or token.endswith(('"', "'")):
-        return _themed_font("string", token)
+        return "url"
+    if token.startswith(('"', "'")) and token.endswith(('"', "'")):
+        return "string"
     if PATH_RE.fullmatch(token.strip("\"'")):
-        return _themed_font("path", token)
+        return "path"
     if "=" in token and token.split("=", 1)[0].isidentifier():
-        name, value = token.split("=", 1)
-        return f"{_themed_font('env', name)}={_themed_font('string', value)}"
+        return "env"
     if position == 0 or previous_token in COMMAND_OPERATORS:
-        return _themed_font("command", token)
-    if token.isdigit():
-        return _themed_font("number", token)
-    return _escape(token)
+        return "command"
+    if NUMBER_RE.fullmatch(token):
+        return "number"
+    return None
+
+
+def _split_shell_token(token: str, role: str | None) -> list[ShellSegment]:
+    if len(token) <= 16:
+        return [ShellSegment(token, role)]
+    parts = re.findall(r"\s+|[^\s]+", token)
+    if len(parts) <= 1:
+        return [ShellSegment(token, role)]
+    return [ShellSegment(part, role) for part in parts]
+
+
+def _wrap_shell_segments(
+    segments: list[ShellSegment], target_length: int
+) -> list[list[ShellSegment]]:
+    if not segments:
+        return []
+    lines: list[list[ShellSegment]] = []
+    current: list[ShellSegment] = []
+    current_length = 0
+
+    def flush() -> None:
+        nonlocal current, current_length
+        trimmed = _trim_shell_line(current)
+        if trimmed:
+            lines.append(trimmed)
+        current = []
+        current_length = 0
+
+    for segment in segments:
+        parts = _split_segment_for_width(segment, target_length)
+        for part in parts:
+            part_length = len(part.text)
+            if not current and part.text.isspace():
+                continue
+            if current and current_length + part_length > target_length:
+                flush()
+                if part.text.isspace():
+                    continue
+            current.append(part)
+            current_length += part_length
+    flush()
+    return lines
+
+
+def _split_segment_for_width(
+    segment: ShellSegment, target_length: int
+) -> list[ShellSegment]:
+    if len(segment.text) <= target_length:
+        return [segment]
+    if segment.text.isspace():
+        return [ShellSegment(" ", segment.role)]
+    parts = re.findall(r"[^\s]+\s*|\s+", segment.text)
+    if len(parts) > 1:
+        return [ShellSegment(part, segment.role) for part in parts if part]
+    return [segment]
+
+
+def _trim_shell_line(segments: list[ShellSegment]) -> list[ShellSegment]:
+    start = 0
+    end = len(segments)
+    while start < end and segments[start].text.isspace():
+        start += 1
+    while end > start and segments[end - 1].text.isspace():
+        end -= 1
+    return segments[start:end]
+
+
+def _render_shell_line(segments: list[ShellSegment]) -> str:
+    parts: list[str] = []
+    for segment in segments:
+        parts.append(_themed_font(segment.role, segment.text) if segment.role else _escape(segment.text))
+    return "".join(parts)
+
+
+def _looks_like_redirection(token: str) -> bool:
+    return bool(re.fullmatch(r"[<>][<>&0-9]*|[0-9]*[<>][<>&0-9]*|[0-9]*>&[0-9-]+", token))
 
 
 def _highlight_paths(text: str) -> str:
@@ -455,7 +592,9 @@ def _font(color: str | None, text: str) -> str:
     return f"<font color='{color}'>{escaped}</font>"
 
 
-def _themed_font(role: str, text: str) -> str:
+def _themed_font(role: str | None, text: str) -> str:
+    if role is None:
+        return _font(None, text)
     rgb = SHELL_THEME_RGBS.get(role)
     return _font(_map_rgb_to_feishu(rgb) if rgb is not None else None, text)
 

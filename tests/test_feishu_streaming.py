@@ -3,6 +3,8 @@ import pytest
 import openrelay.feishu.streaming as streaming_card_module
 from openrelay.feishu.reply_card import build_streaming_card_signature
 from openrelay.feishu.reply_card import build_complete_card
+from openrelay.feishu.reply_card import optimize_markdown_style
+from openrelay.feishu.highlight import render_command_chunks
 from openrelay.feishu import (
     DEFAULT_THINKING_TEXT,
     FeishuStreamingSession,
@@ -274,6 +276,23 @@ def test_build_streaming_content_wraps_long_command_into_pipe_lines() -> None:
     assert "<font color='purple'>--format</font>" in content
 
 
+def test_render_command_chunks_wraps_shell_script_argument_without_losing_string_style() -> None:
+    chunks = render_command_chunks(
+        "/bin/bash -lc \"printf 'Using skill: project-memory, to check whether this repo already has a recorded project summary.\\n' >&2 ...\"",
+        target_length=34,
+        max_lines=6,
+    )
+
+    assert len(chunks) == 5
+    assert chunks[0].startswith("<font color='wathet'>/bin/bash</font>")
+    assert "<font color='purple'>-lc</font>" in chunks[0]
+    assert "<font color='green'>\"printf</font>" in chunks[0]
+    assert "<font color='green'>skill:</font>" in chunks[1]
+    assert "<font color='green'>project-memory,</font>" in chunks[1]
+    assert any("<font color='green'>recorded</font>" in chunk for chunk in chunks)
+    assert any("<font color='green'>summary.\\n'</font>" in chunk for chunk in chunks)
+
+
 def test_build_streaming_content_composes_plain_output_colors() -> None:
     content = build_streaming_content(
         {
@@ -382,6 +401,30 @@ def test_build_streaming_content_wraps_command_by_target_character_width() -> No
     assert "<font color='purple'>-lc</font>" in content
     assert '<font color=\'green\'>"sed</font>' in content
     assert '<font color=\'green\'>src/openrelay/feishu/reply_card.py"</font>' in content
+
+
+def test_build_streaming_content_keeps_tree_prefix_outside_command_highlight() -> None:
+    content = build_streaming_content(
+        {
+            "history_items": [
+                {
+                    "type": "command",
+                    "state": "completed",
+                    "title": "Ran shell command",
+                    "mode": "command",
+                    "command": "/bin/bash -lc \"printf 'Using skill: project-memory, to check whether this repo already has a recorded project summary.\\n' >&2 ...\"",
+                    "exit_code": 0,
+                }
+            ]
+        }
+    )
+
+    assert "\n│ <font color='wathet'>/bin/bash</font>" in content
+    assert "\n│ <font color='green'>skill:</font>" in content
+    assert "\n└ <font color='green'>recorded</font>" in content
+    assert "<font color='green'>summary.\\n'</font>" in content
+    assert "<font color='grey'>│</font>" not in content
+    assert "<font color='grey'>└</font>" not in content
 
 
 def test_build_streaming_content_renders_web_search_as_blue_exploration() -> None:
@@ -719,6 +762,21 @@ def test_build_complete_card_prefers_transcript_markdown() -> None:
 
     assert card["body"]["elements"] == [{"tag": "markdown", "content": "• **Ran** `pytest`\n\n---\n\n最终答案"}]
     assert "summary" not in card["config"]
+
+
+def test_optimize_markdown_style_replaces_inline_code_with_custom_font_color() -> None:
+    rendered = optimize_markdown_style("执行 `pytest -q`，查看 `src/openrelay/feishu/highlight.py`。")
+
+    assert "`pytest -q`" not in rendered
+    assert "<font color='#294D0C'>pytest&nbsp;-q</font>" in rendered
+    assert "<font color='#294D0C'>src/openrelay/feishu/highlight.py</font>" in rendered
+
+
+def test_optimize_markdown_style_keeps_code_fence_untouched_while_restyling_inline_code() -> None:
+    rendered = optimize_markdown_style("先看 `uv run pytest`\n\n```bash\npytest -q\n```")
+
+    assert "<font color='#294D0C'>uv&nbsp;run&nbsp;pytest</font>" in rendered
+    assert "```bash\npytest -q\n```" in rendered
 
 
 def test_build_complete_card_renders_answer_only_without_transcript() -> None:

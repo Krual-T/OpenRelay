@@ -25,7 +25,7 @@
 
 ### [ ] OR-TASK-006 Codex TUI 与飞书端体验差距收敛
 - **目标**：以飞书用户体验而不是 TUI 命令面对齐为主，判断哪些 Codex 能力值得迁移，哪些能力应明确不纳入飞书场景，并据此收敛真正的高优先级体验问题。
-- **当前状态**：调研稿已重写为 UX 视角；飞书 transcript card 已落首轮 Codex 风格命令/输出高亮，并继续把 git diff 收敛为“前缀红绿标签 + 行内容彩色文本”；streaming 路径已进一步收敛为“history 区变化整卡刷新，只有回答续写走增量更新”，避免 output / plan 区块出现打字机式追加；同时已把 `history_items[].type=summary` 与 `partial_text` 的语义拆开，前者只留在 transcript/history，后者只渲染 answer；当前任务剩余的是把“等待用户处理的统一交互”“当前会话状态与控制入口”“异步回看”拆成后续设计或实现任务。
+- **当前状态**：调研稿已重写为 UX 视角；飞书 transcript card 已落首轮 Codex 风格命令/输出高亮，并继续把 git diff 收敛为“前缀红绿标签 + 行内容彩色文本”；streaming 路径已进一步收敛为“history 区变化整卡刷新，只有回答续写走增量更新”，避免 output / plan 区块出现打字机式追加；同时已把 `history_items[].type=summary` 与 `partial_text` 的语义拆开，前者只留在 transcript/history，后者只渲染 answer；这一轮又补上了 shell-aware 命令换行和正文内联代码的自定义颜色渲染；当前任务剩余的是把“等待用户处理的统一交互”“当前会话状态与控制入口”“异步回看”拆成后续设计或实现任务。
 - **待完成**：
   - 把“等待用户处理”的统一交互体验拆成独立任务。
   - 把“当前会话控制入口”和“异步回看”拆成独立任务。

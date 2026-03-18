@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import html
 import logging
 import re
 from datetime import datetime
@@ -14,6 +15,7 @@ PROCESS_LOG_PANEL_TITLE = "Execution Log"
 LOADING_ICON_IMAGE_KEY = "img_v3_02vb_496bec09-4b43-4773-ad6b-0cdd103cd2bg"
 REASONING_PREFIX = "Reasoning:\n"
 LOGGER = logging.getLogger("openrelay.feishu.reply_card")
+INLINE_CODE_COLOR = "#294D0C"
 
 
 def strip_invalid_image_keys(text: str) -> str:
@@ -50,6 +52,8 @@ def optimize_markdown_style(text: object, card_version: int = 2) -> str:
                 r"^#{2,6} (.+)$", r"##### \1", rendered, flags=re.MULTILINE
             )
             rendered = re.sub(r"^# (.+)$", r"#### \1", rendered, flags=re.MULTILINE)
+
+        rendered = _render_inline_code(rendered)
 
         if card_version >= 2:
             rendered = re.sub(
@@ -100,6 +104,15 @@ def optimize_markdown_style(text: object, card_version: int = 2) -> str:
         return strip_invalid_image_keys(rendered)
     except Exception:
         return str(text or "")
+
+
+def _render_inline_code(text: str) -> str:
+    return re.sub(r"`([^`\n]+)`", _replace_inline_code, text)
+
+
+def _replace_inline_code(match: re.Match[str]) -> str:
+    value = html.escape(match.group(1), quote=False).replace(" ", "&nbsp;")
+    return f"<font color='{INLINE_CODE_COLOR}'>{value}</font>"
 
 
 def extract_thinking_content(text: object) -> str:
