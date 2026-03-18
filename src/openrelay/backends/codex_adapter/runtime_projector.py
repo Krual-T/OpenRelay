@@ -153,7 +153,7 @@ class CodexRuntimeEventProjector:
                     event.turn_id,
                     "thread.diff.updated",
                     provider_payload,
-                    diff_id=str(event.payload.get("diff_id") or ""),
+                    diff=str(event.payload.get("diff") or ""),
                 ),
             )
         if event.semantic_name == "turn.completed":

@@ -314,7 +314,7 @@ def test_codex_mapper_maps_typed_system_events_and_updates_snapshot() -> None:
         {
             "threadId": "thread_1",
             "turnId": "turn_1",
-            "diffId": "diff_9",
+            "diff": "--- a/foo.py\n+++ b/foo.py\n@@ -1 +1 @@\n-old\n+new",
         },
         state,
     )
@@ -327,12 +327,12 @@ def test_codex_mapper_maps_typed_system_events_and_updates_snapshot() -> None:
     assert skills[0].version == "skills-v3"
     assert skills[0].skills == ("search", "apply_patch")
     assert len(diff) == 1 and isinstance(diff[0], ThreadDiffUpdatedEvent)
-    assert diff[0].diff_id == "diff_9"
+    assert diff[0].diff == "--- a/foo.py\n+++ b/foo.py\n@@ -1 +1 @@\n-old\n+new"
     assert state.system_snapshot["thread_status"] == "active"
     assert state.system_snapshot["rate_limits_payload"]["limitId"] == "codex"
     assert state.system_snapshot["skills_version"] == "skills-v3"
     assert state.system_snapshot["skills"] == ("search", "apply_patch")
-    assert state.system_snapshot["last_diff_id"] == "diff_9"
+    assert state.system_snapshot["latest_diff"] == "--- a/foo.py\n+++ b/foo.py\n@@ -1 +1 @@\n-old\n+new"
 
 
 def test_codex_mapper_maps_assistant_completed_event() -> None:

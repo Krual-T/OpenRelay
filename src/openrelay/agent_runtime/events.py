@@ -108,7 +108,7 @@ class SkillsUpdatedEvent(RuntimeEvent):
 
 @dataclass(slots=True, frozen=True)
 class ThreadDiffUpdatedEvent(RuntimeEvent):
-    diff_id: str = ""
+    diff: str = ""
 
 
 @dataclass(slots=True, frozen=True)

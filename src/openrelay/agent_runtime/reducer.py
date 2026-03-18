@@ -90,8 +90,8 @@ class LiveTurnReducer:
             case SkillsUpdatedEvent(version=version, skills=skills):
                 self.state.skills_version = version
                 self.state.available_skills = skills
-            case ThreadDiffUpdatedEvent(diff_id=diff_id):
-                self.state.last_diff_id = diff_id
+            case ThreadDiffUpdatedEvent(diff=diff):
+                self.state.latest_diff = diff
             case TerminalInteractionEvent(interaction=interaction):
                 self._upsert_terminal_interaction(interaction)
             case TurnCompletedEvent(final_text=final_text, usage=usage):

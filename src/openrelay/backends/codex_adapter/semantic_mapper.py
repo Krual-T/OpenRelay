@@ -600,7 +600,7 @@ class CodexSemanticMapper:
             dedupe_parts.append(str(payload.get("version") or ""))
             dedupe_parts.append(str(payload.get("skills") or ()))
         elif descriptor.semantic_name == "thread.diff.updated":
-            dedupe_parts.append(str(payload.get("diff_id") or ""))
+            dedupe_parts.append(str(payload.get("diff") or ""))
         return (
             CodexSemanticEvent(
                 semantic_name=descriptor.semantic_name,
@@ -628,9 +628,9 @@ class CodexSemanticMapper:
             snapshot["thread_status"] = status
             return {"status": status}
         if descriptor.semantic_name == "thread.diff.updated":
-            diff_id = str(envelope.params.get("diffId") or envelope.params.get("diff_id") or "")
-            snapshot["last_diff_id"] = diff_id
-            return {"diff_id": diff_id}
+            diff = str(envelope.params.get("diff") or "")
+            snapshot["latest_diff"] = diff
+            return {"diff": diff}
         if descriptor.semantic_name == "skills.changed":
             version = str(envelope.params.get("version") or envelope.params.get("skillsVersion") or "")
             skills = envelope.params.get("skills") if isinstance(envelope.params.get("skills"), list) else []

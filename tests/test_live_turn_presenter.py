@@ -164,7 +164,7 @@ def test_live_turn_presenter_renders_system_state_items() -> None:
         rate_limits={"limitId": "codex", "primary": {"usedPercent": 37}},
         skills_version="skills-v3",
         available_skills=("search", "apply_patch"),
-        last_diff_id="diff_9",
+        latest_diff="--- a/foo.py\n+++ b/foo.py\n@@ -1 +1 @@\n-old\n+new",
     )
 
     snapshot = presenter.build_snapshot(state)
@@ -205,6 +205,41 @@ def test_live_turn_presenter_preserves_file_change_diff_detail() -> None:
     file_change = next(item for item in snapshot["history_items"] if item["type"] == "file_change")
 
     assert file_change["detail"].startswith("--- a/src/openrelay/feishu/reply_card.py")
+
+
+def test_live_turn_presenter_uses_latest_turn_diff_when_file_change_detail_is_empty() -> None:
+    presenter = LiveTurnPresenter()
+    state = LiveTurnViewModel(
+        backend="codex",
+        session_id="relay_1",
+        native_session_id="thread_1",
+        turn_id="turn_1",
+        status="running",
+        latest_diff="--- a/foo.py\n+++ b/foo.py\n@@ -1 +1 @@\n-old\n+new",
+        tools=(
+            ToolState(
+                tool_id="fc_1",
+                kind="file_change",
+                title="File changes",
+                status="completed",
+                preview="foo.py",
+                detail="",
+                provider_payload={
+                    "changes": [
+                        {
+                            "path": "foo.py",
+                            "kind": {"type": "update"},
+                        }
+                    ]
+                },
+            ),
+        ),
+    )
+
+    snapshot = presenter.build_snapshot(state)
+    file_change = next(item for item in snapshot["history_items"] if item["type"] == "file_change")
+
+    assert file_change["detail"] == "--- a/foo.py\n+++ b/foo.py\n@@ -1 +1 @@\n-old\n+new"
 
 def test_live_turn_presenter_preserves_plan_history_in_transcript() -> None:
     presenter = LiveTurnPresenter()

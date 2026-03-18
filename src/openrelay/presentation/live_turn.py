@@ -198,7 +198,7 @@ class LiveTurnPresenter:
                 }
             )
         for tool in state.tools:
-            item = self._tool_history_item(tool)
+            item = self._tool_history_item(tool, state)
             if item is not None:
                 items.append(item)
         if state.plan_steps:
@@ -370,7 +370,11 @@ class LiveTurnPresenter:
             parts.append(f"stdin: {normalized_stdin}")
         return "\n".join(parts).strip() or "terminal interaction"
 
-    def _tool_history_item(self, tool: ToolState) -> dict[str, Any] | None:
+    def _tool_history_item(
+        self,
+        tool: ToolState,
+        state: LiveTurnViewModel,
+    ) -> dict[str, Any] | None:
         if tool.kind == "command":
             return {
                 "type": "command",
@@ -392,13 +396,14 @@ class LiveTurnPresenter:
                 "queries": [tool.preview] if tool.preview else [],
             }
         if tool.kind == "file_change":
+            detail = tool.detail or state.latest_diff
             return {
                 "type": "file_change",
                 "state": "running" if tool.status == "running" else "completed",
                 "title": "Updating files" if tool.status == "running" else "Updated files",
                 "file_change_id": tool.tool_id,
                 "changes": tool.provider_payload.get("changes") if isinstance(tool.provider_payload.get("changes"), list) else [],
-                "detail": tool.detail,
+                "detail": detail,
             }
         if tool.kind == "custom":
             return {

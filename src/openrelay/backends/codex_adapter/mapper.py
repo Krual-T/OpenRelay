@@ -56,7 +56,7 @@ class CodexTurnState:
     system_snapshot: dict[str, Any] = field(
         default_factory=lambda: {
             "thread_status": "",
-            "last_diff_id": "",
+            "latest_diff": "",
             "skills_version": "",
             "skills": (),
             "rate_limits_payload": {},

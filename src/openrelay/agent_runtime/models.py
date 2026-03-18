@@ -142,7 +142,7 @@ class LiveTurnViewModel:
     rate_limits: dict[str, Any] = field(default_factory=dict)
     skills_version: str = ""
     available_skills: tuple[str, ...] = ()
-    last_diff_id: str = ""
+    latest_diff: str = ""
     terminal_interactions: tuple[TerminalInteraction, ...] = ()
     error_message: str = ""
     updated_at: str = field(default_factory=utc_now)

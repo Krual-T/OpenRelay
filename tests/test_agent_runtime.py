@@ -145,7 +145,7 @@ def test_live_turn_registry_reduces_streaming_state() -> None:
             session_id="s1",
             turn_id="t1",
             event_type="thread.diff.updated",
-            diff_id="diff_9",
+            diff="--- a/foo.py\n+++ b/foo.py\n@@ -1 +1 @@\n-old\n+new",
         )
     )
     registry.apply(
@@ -177,7 +177,7 @@ def test_live_turn_registry_reduces_streaming_state() -> None:
     assert state.rate_limits["limitId"] == "codex"
     assert state.skills_version == "skills-v3"
     assert state.available_skills == ("search", "apply_patch")
-    assert state.last_diff_id == "diff_9"
+    assert state.latest_diff == "--- a/foo.py\n+++ b/foo.py\n@@ -1 +1 @@\n-old\n+new"
     assert len(state.terminal_interactions) == 1
     assert state.terminal_interactions[0].process_id == "89012"
     assert len(state.tools) == 1
