@@ -276,6 +276,28 @@ def test_build_streaming_content_renders_plan_with_static_purple_bullets_and_str
     assert "○ Verify snapshot output" in content
 
 
+def test_build_streaming_content_renders_updated_files_with_section_separator() -> None:
+    content = build_streaming_content(
+        {
+            "history_items": [
+                {
+                    "type": "file_change",
+                    "state": "completed",
+                    "title": "Updated files",
+                    "changes": [
+                        {"path": "src/openrelay/feishu/reply_card.py", "kind": {"type": "update"}},
+                        {"path": "tests/test_feishu_streaming.py", "kind": {"type": "update"}},
+                    ],
+                }
+            ]
+        }
+    )
+
+    assert "• Updated files" in content
+    assert "• Updated files  \n│  \nEdit `src/openrelay/feishu/reply_card.py`" in content
+    assert "Edit `tests/test_feishu_streaming.py`" in content
+
+
 def test_build_streaming_content_renders_unexpected_backend_event_payload() -> None:
     content = build_streaming_content(
         {

@@ -223,6 +223,13 @@ def _append_plan_block(lines: list[str], detail_entries: list[list[str]]) -> Non
     _append_plain_entries(lines, detail_entries)
 
 
+def _append_section_block(lines: list[str], detail_entries: list[list[str]]) -> None:
+    if not detail_entries:
+        return
+    lines.append("│")
+    _append_plain_entries(lines, detail_entries)
+
+
 def _join_markdown_lines(lines: list[str]) -> str:
     if not lines:
         return ""
@@ -455,7 +462,7 @@ def _render_history_item(item: dict[str, Any], spinner_frame: int) -> list[str]:
 
     if item_type == "file_change":
         detail_entries.extend([[line] for line in _describe_file_changes(item)])
-        _append_plain_entries(lines, detail_entries)
+        _append_section_block(lines, detail_entries)
         return lines
 
     if item_type == "plan":
@@ -585,7 +592,7 @@ def _render_streaming_history_item(item: dict[str, Any]) -> list[str]:
 
     if item_type == "file_change":
         detail_entries.extend([[line] for line in _describe_file_changes(item)])
-        _append_plain_entries(lines, detail_entries)
+        _append_section_block(lines, detail_entries)
         return lines
 
     if item_type == "plan":
