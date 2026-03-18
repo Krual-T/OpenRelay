@@ -6,6 +6,7 @@ import pytest
 from openrelay.core import AppConfig, BackendConfig, FeishuConfig, IncomingMessage
 from openrelay.core.models import SessionRecord
 from openrelay.presentation.session import build_backend_session_list_card, build_session_list_card
+from openrelay.presentation.panel import build_panel_card
 from openrelay.runtime.panel_service import RuntimePanelService
 from openrelay.runtime.replying import RuntimeReplyPolicy
 from openrelay.session.scope.resolver import SessionScopeResolver
@@ -141,6 +142,43 @@ def test_runtime_panel_service_backend_session_card_limits_to_three_and_formats_
     assert "预览" not in str(card)
     assert "preview" not in fallback
     assert "2026-03-16 18:00:00" in fallback
+
+
+def test_workspace_panel_card_uses_valid_form_container_for_search() -> None:
+    card = build_panel_card(
+        {
+            "view": "workspace",
+            "cwd": "~/Projects/openrelay",
+            "browser_path": "/repo",
+            "parent_path": "/",
+            "browser_display": "~",
+            "query": "api",
+            "page": 1,
+            "total_pages": 1,
+            "total_entries": 1,
+            "workspace_entries": [
+                {
+                    "label": "openrelay",
+                    "relative_path": "~/openrelay",
+                    "absolute_path": "/repo/openrelay",
+                    "state": "available",
+                }
+            ],
+            "action_context": {"sessionKey": "p2p:oc_1", "rootId": "root_1"},
+        }
+    )
+
+    assert card["schema"] == "2.0"
+    form_blocks = [element for element in card["body"]["elements"] if element.get("tag") == "form"]
+    assert len(form_blocks) == 1
+    form = form_blocks[0]
+    assert form["name"] == "workspace_search"
+    assert form["elements"][0]["tag"] == "input"
+    assert form["elements"][0]["name"] == "workspace_query"
+    submit_button = form["elements"][1]["columns"][0]["elements"][0]
+    assert submit_button["tag"] == "button"
+    assert submit_button["name"] == "workspace_search_submit"
+    assert submit_button["form_action_type"] == "submit"
 
 
 class _FakeMessenger:

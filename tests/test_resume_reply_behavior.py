@@ -218,6 +218,32 @@ def test_reply_policy_keeps_resume_on_original_message(tmp_path: Path) -> None:
     store.close()
 
 
+def test_reply_policy_promotes_card_action_command_reply_to_top_level(tmp_path: Path) -> None:
+    config = make_config(tmp_path)
+    prepare_dirs(config)
+    store = StateStore(config)
+    scope = SessionScopeResolver(config, store, logging.getLogger("test.command.card.reply.policy"))
+    policy = RuntimeReplyPolicy(config, scope)
+    message = IncomingMessage(
+        event_id="evt_workspace_select",
+        message_id="om_workspace_card",
+        reply_to_message_id="om_workspace_card",
+        chat_id="oc_1",
+        chat_type="p2p",
+        sender_open_id="ou_user",
+        source_kind="card_action",
+        text="/workspace select /repo",
+        actionable=True,
+    )
+
+    route = policy.command_route(message, "/workspace")
+
+    assert route.reply_to_message_id == ""
+    assert route.root_id == ""
+    assert route.force_new_message is True
+    store.close()
+
+
 @pytest.mark.asyncio
 async def test_resume_success_text_is_thread_focused(tmp_path: Path) -> None:
     router, store, hooks, backend = build_router(tmp_path)

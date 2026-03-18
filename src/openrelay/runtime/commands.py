@@ -314,6 +314,11 @@ class RuntimeCommandRouter:
     def _can_use_top_level_session_command(self, message: IncomingMessage) -> bool:
         return self.session_scope.is_top_level_p2p_command(message) or self.session_scope.is_card_action_message(message)
 
+    def _can_use_top_level_workspace_command(self, message: IncomingMessage) -> bool:
+        if self.session_scope.is_top_level_p2p_command(message):
+            return True
+        return self.session_scope.is_card_action_message(message) and not message.root_id and not message.thread_id
+
     def _top_level_thread_scope_key(self, message: IncomingMessage) -> str:
         return self.session_scope.top_level_thread_scope_key(message)
 
@@ -589,6 +594,9 @@ class RuntimeCommandRouter:
         )
 
     async def _handle_workspace(self, message: IncomingMessage, session_key: str, session: SessionRecord, arg_text: str) -> bool:
+        if not self._can_use_top_level_workspace_command(message):
+            await self.hooks.reply(message, "`/workspace` 只允许在私聊顶层使用；子 thread 不应改工作区。", command_reply=True, command_name="/workspace")
+            return True
         tokens = shlex.split(arg_text) if arg_text else []
         if not tokens or tokens[0] in {"list", "search"} or tokens[0].startswith("--"):
             try:

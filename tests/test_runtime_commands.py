@@ -455,6 +455,19 @@ async def test_runtime_command_router_opens_workspace_browser(tmp_path: Path) ->
 
 
 @pytest.mark.asyncio
+async def test_runtime_command_router_rejects_workspace_inside_thread(tmp_path: Path) -> None:
+    router, store, hooks = build_router(tmp_path)
+    session = store.load_session("p2p:oc_1")
+
+    handled = await router.handle(make_thread_message("/workspace", suffix="thread_workspace"), session.base_key, session)
+
+    assert handled is True
+    assert hooks.panel_calls == []
+    assert hooks.replies[-1]["text"] == "`/workspace` 只允许在私聊顶层使用；子 thread 不应改工作区。"
+    store.close()
+
+
+@pytest.mark.asyncio
 async def test_runtime_command_router_supports_workspace_open_and_query(tmp_path: Path) -> None:
     router, store, hooks = build_router(tmp_path)
     target = router.config.main_workspace_dir / "docs"

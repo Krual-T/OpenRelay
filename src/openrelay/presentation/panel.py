@@ -261,22 +261,37 @@ def _build_workspace_search_form(action_context: dict[str, str], browser_path: s
     }
     return {
         "tag": "form",
+        "element_id": "workspace_search_form",
         "name": "workspace_search",
         "elements": [
             {
                 "tag": "input",
                 "name": "workspace_query",
                 "required": False,
+                "width": "fill",
                 "placeholder": {"tag": "plain_text", "content": "搜索当前目录下的文件夹"},
                 "default_value": query,
-            }
-        ],
-        "actions": [
+            },
             {
-                "tag": "button",
-                "type": "primary",
-                "text": {"tag": "plain_text", "content": "搜索"},
-                "behaviors": [{"type": "callback", "value": callback_value}],
+                "tag": "column_set",
+                "horizontal_align": "right",
+                "horizontal_spacing": "8px",
+                "columns": [
+                    {
+                        "tag": "column",
+                        "width": "auto",
+                        "elements": [
+                            {
+                                "tag": "button",
+                                "name": "workspace_search_submit",
+                                "type": "primary_filled",
+                                "text": {"tag": "plain_text", "content": "搜索"},
+                                "behaviors": [{"type": "callback", "value": callback_value}],
+                                "form_action_type": "submit",
+                            }
+                        ],
+                    }
+                ],
             }
         ],
     }
