@@ -221,7 +221,7 @@ class HelpRenderer:
             "- 私聊顶层直接发新消息：默认会开新的后端会话；想回旧会话时再用 /resume。",
             "- 开新任务或切话题：直接回顶层发新消息；查看或恢复旧后端会话：/resume、/resume latest。",
             "- `/resume` 只允许在私聊顶层使用；子 thread 会固定绑定当前后端会话。",
-            "- `/resume` 会读取并绑定当前 backend 的可恢复会话；`/compact` 会对当前会话发起 compact。",
+            "- `/resume` 会读取并绑定当前 backend 的可恢复会话；`/compact` 会等待当前会话 compact 完成后再返回结果。",
             "- 换执行位置：/cwd <path> 切目录；/main 回稳定工作区；/develop 进修复工作区。",
             "- 快捷目录：/shortcut add <name> <path> [all|main|develop]、/shortcut list、/shortcut cd <name>。",
             "- 看现场：/status 看会话、目录、最近上下文；/usage 看 token 和 context_usage。",

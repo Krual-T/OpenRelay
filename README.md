@@ -196,7 +196,7 @@ curl http://127.0.0.1:3000/health
 
 - `/panel [sessions|directories|commands|status]`
 - `/resume [latest|thread_id|local_session_id]`
-- `/compact [thread_id|local_session_id]`
+- `/compact [thread_id|local_session_id]`，等待 compact 完成后返回
 - `/status`
 - `/help`
 

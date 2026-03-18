@@ -37,6 +37,8 @@ class FakeCodexClient:
         self.active_turns: set[object] = set()
         self.sent_server_results: list[tuple[int | str, dict[str, object]]] = []
         self.started = 0
+        self.compaction_item_count = 0
+        self.compact_notifies = True
 
     async def request(self, method: str, params: dict[str, object], **_: object) -> dict[str, object]:
         if method == "thread/start":
@@ -64,6 +66,29 @@ class FakeCodexClient:
             return {"turn": {"id": "turn_1"}}
         if method == "turn/interrupt":
             return {}
+        if method == "thread/read":
+            turns = [{"items": [{"id": f"compact_{index}", "type": "contextCompaction"} for index in range(self.compaction_item_count)]}]
+            return {
+                "thread": {
+                    "id": str(params.get("threadId") or ""),
+                    "preview": "preview",
+                    "cwd": str(self.workspace_root),
+                    "updatedAt": "2026-03-16T00:00:00Z",
+                    "status": {"type": "idle"},
+                    "name": "Thread 1",
+                    "turns": turns,
+                }
+            }
+        if method == "thread/compact/start":
+            self.compaction_item_count += 1
+            if self.compact_notifies:
+                for subscriber in list(self.active_turns):
+                    await subscriber.handle_notification(
+                        self,
+                        "thread/compacted",
+                        {"threadId": str(params.get("threadId") or ""), "turnId": "turn_compact_1"},
+                    )
+            return {"threadId": str(params.get("threadId") or ""), "compactId": "compact_1", "status": "started"}
         raise AssertionError(f"unexpected request: {method}")
 
     async def list_threads(self, limit: int = 20) -> tuple[list[object], str]:
@@ -87,9 +112,6 @@ class FakeCodexClient:
                 "messages": (message,),
             },
         )
-
-    async def compact_thread(self, thread_id: str) -> dict[str, object]:
-        return {"threadId": thread_id, "status": "started"}
 
     async def _send_server_result(self, request_id: int | str, result: dict[str, object]) -> None:
         self.sent_server_results.append((request_id, result))
@@ -127,7 +149,38 @@ async def test_codex_runtime_backend_starts_session_and_reads_threads(tmp_path: 
     assert sessions[0].native_session_id == "thread_1"
     assert cursor == ""
     assert transcript.messages[0].text == "from thread_1"
-    assert compact == {"threadId": "thread_1", "status": "started"}
+    assert compact == {
+        "threadId": "thread_1",
+        "compactId": "compact_1",
+        "status": "completed",
+        "completionSource": "notification",
+        "turnId": "turn_compact_1",
+    }
+
+
+@pytest.mark.asyncio
+async def test_codex_runtime_backend_waits_for_compact_via_thread_read_polling(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    class PollingCompactClient(FakeCodexClient):
+        def __init__(self, *args: object, **kwargs: object) -> None:
+            super().__init__(*args, **kwargs)
+            self.compact_notifies = False
+
+    monkeypatch.setattr("openrelay.backends.codex_adapter.transport.CodexAppServerClient", PollingCompactClient)
+    backend = CodexRuntimeBackend(
+        codex_path="codex",
+        default_model="gpt-test",
+        workspace_root=tmp_path,
+        sqlite_home=tmp_path / "sqlite",
+    )
+
+    compact = await backend.compact_session(SessionLocator(backend="codex", native_session_id="thread_1"))
+
+    assert compact == {
+        "threadId": "thread_1",
+        "compactId": "compact_1",
+        "status": "completed",
+        "completionSource": "thread_read",
+    }
 
 
 @pytest.mark.asyncio

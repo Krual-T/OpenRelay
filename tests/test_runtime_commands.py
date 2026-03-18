@@ -450,7 +450,7 @@ async def test_runtime_command_router_compact_current_native_thread(tmp_path: Pa
 
     await router.handle(make_message("/compact", suffix="compact"), session.base_key, session)
 
-    assert hooks.replies[-1]["text"] == "已发起 codex compact：thread_latest\ncompact_id=compact_1"
+    assert hooks.replies[-1]["text"] == "codex compact 已完成：thread_latest\ncompact_id=compact_1"
     store.close()
 
 

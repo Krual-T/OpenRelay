@@ -290,6 +290,7 @@ class RuntimeCommandRouter:
         if not self._supports_runtime_compact(session):
             await self.hooks.reply(message, "当前后端不支持 `/compact` 原生命令。", command_reply=True, command_name="/compact")
             return True
+        cancelled_active_run = await self.hooks.cancel_active_run_for_session(session, "/compact")
         target = arg_text.strip()
         session_id = session.native_session_id
         if target:
@@ -299,9 +300,11 @@ class RuntimeCommandRouter:
             return True
         result = await self._compact_runtime_session(session, session_id)
         compact_id = str(result.get("compactId") or result.get("id") or "").strip()
-        lines = [f"已发起 {session.backend} compact：{session_id}"]
+        lines = [f"{session.backend} compact 已完成：{session_id}"]
         if compact_id:
             lines.append(f"compact_id={compact_id}")
+        if cancelled_active_run:
+            lines.append("已先中断上一条进行中的回复。")
         await self.hooks.reply(message, "\n".join(lines), command_reply=True, command_name="/compact")
         return True
 

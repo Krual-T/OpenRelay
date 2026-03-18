@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from pathlib import Path
 from typing import Any, Awaitable, Callable
 
@@ -12,6 +13,35 @@ from openrelay.backends.codex_adapter.app_server import (
 
 NotificationSubscriber = Callable[[str, dict[str, Any]], Awaitable[None]]
 ServerRequestSubscriber = Callable[[int | str, str, dict[str, Any]], Awaitable[bool]]
+DEFAULT_COMPACT_WAIT_SECONDS = 30.0
+DEFAULT_COMPACT_POLL_SECONDS = 0.5
+
+
+def _thread_status_type(value: Any) -> str:
+    if isinstance(value, dict):
+        return str(value.get("type") or "").strip()
+    if isinstance(value, str):
+        return value.strip()
+    return ""
+
+
+def _count_context_compaction_items(thread: object) -> int:
+    if not isinstance(thread, dict):
+        return 0
+    turns = thread.get("turns")
+    if not isinstance(turns, list):
+        return 0
+    count = 0
+    for turn in turns:
+        if not isinstance(turn, dict):
+            continue
+        items = turn.get("items")
+        if not isinstance(items, list):
+            continue
+        for item in items:
+            if isinstance(item, dict) and str(item.get("type") or "").strip() == "contextCompaction":
+                count += 1
+    return count
 
 
 class _TransportBridge:
@@ -48,6 +78,8 @@ class CodexRpcTransport:
         request_timeout_seconds: float | None = DEFAULT_REQUEST_TIMEOUT_SECONDS,
         interrupt_grace_seconds: float = DEFAULT_INTERRUPT_GRACE_SECONDS,
         resume_timeout_seconds: float = DEFAULT_RESUME_TIMEOUT_SECONDS,
+        compact_wait_seconds: float = DEFAULT_COMPACT_WAIT_SECONDS,
+        compact_poll_seconds: float = DEFAULT_COMPACT_POLL_SECONDS,
     ) -> None:
         self.codex_path = codex_path
         self.workspace_root = workspace_root
@@ -57,6 +89,8 @@ class CodexRpcTransport:
         self.request_timeout_seconds = request_timeout_seconds
         self.interrupt_grace_seconds = interrupt_grace_seconds
         self.resume_timeout_seconds = resume_timeout_seconds
+        self.compact_wait_seconds = compact_wait_seconds
+        self.compact_poll_seconds = compact_poll_seconds
         self.pending_requests: dict[int | str, object] = {}
         self.notification_subscribers: list[NotificationSubscriber] = []
         self.server_request_subscribers: list[ServerRequestSubscriber] = []
@@ -114,7 +148,44 @@ class CodexRpcTransport:
     async def compact_thread(self, thread_id: str) -> dict[str, Any]:
         await self.ensure_started()
         assert self._client is not None
-        return await self._client.compact_thread(thread_id)
+        baseline_compactions = await self._read_context_compaction_count(thread_id)
+        completion_future: asyncio.Future[dict[str, Any]] = asyncio.get_running_loop().create_future()
+
+        async def handle_notification(method: str, params: dict[str, Any]) -> None:
+            if str(params.get("threadId") or "").strip() != thread_id:
+                return
+            if method == "thread/compacted" and not completion_future.done():
+                completion_future.set_result(
+                    {
+                        "threadId": thread_id,
+                        "status": "completed",
+                        "completionSource": "notification",
+                        "turnId": str(params.get("turnId") or "").strip(),
+                    }
+                )
+                return
+            if method != "thread/status/changed" or completion_future.done():
+                return
+            status = _thread_status_type(params.get("status"))
+            if status == "systemError":
+                completion_future.set_exception(RuntimeError(f"Codex compact failed for thread {thread_id}: thread entered systemError"))
+
+        self.subscribe_notifications(handle_notification)
+        try:
+            started_result = await self._client.request("thread/compact/start", {"threadId": thread_id})
+            started = started_result if isinstance(started_result, dict) else {}
+            completion = await self._wait_for_compaction_completion(thread_id, baseline_compactions, completion_future)
+        finally:
+            self.unsubscribe_notifications(handle_notification)
+
+        result = dict(started)
+        result.setdefault("threadId", thread_id)
+        result["status"] = "completed"
+        if completion.get("completionSource"):
+            result["completionSource"] = completion["completionSource"]
+        if completion.get("turnId"):
+            result["turnId"] = completion["turnId"]
+        return result
 
     async def send_result(self, request_id: int | str, result: dict[str, Any]) -> None:
         await self.ensure_started()
@@ -160,3 +231,44 @@ class CodexRpcTransport:
             if await callback(request_id, method, params):
                 return True
         return False
+
+    async def _read_context_compaction_count(self, thread_id: str) -> int:
+        await self.ensure_started()
+        assert self._client is not None
+        result = await self._client.request("thread/read", {"threadId": thread_id, "includeTurns": True})
+        thread = result.get("thread") if isinstance(result, dict) and isinstance(result.get("thread"), dict) else {}
+        return _count_context_compaction_items(thread)
+
+    async def _wait_for_compaction_completion(
+        self,
+        thread_id: str,
+        baseline_compactions: int,
+        completion_future: asyncio.Future[dict[str, Any]],
+    ) -> dict[str, Any]:
+        deadline = asyncio.get_running_loop().time() + max(self.compact_wait_seconds, self.compact_poll_seconds)
+        while True:
+            if completion_future.done():
+                return await completion_future
+            remaining = deadline - asyncio.get_running_loop().time()
+            if remaining <= 0:
+                raise RuntimeError(f"Codex compact timed out after {self.compact_wait_seconds:.0f}s for thread {thread_id}")
+            sleep_task = asyncio.create_task(asyncio.sleep(min(self.compact_poll_seconds, remaining)))
+            try:
+                done, _ = await asyncio.wait({completion_future, sleep_task}, return_when=asyncio.FIRST_COMPLETED)
+            finally:
+                sleep_task.cancel()
+            if completion_future in done:
+                return await completion_future
+            await self.ensure_started()
+            assert self._client is not None
+            result = await self._client.request("thread/read", {"threadId": thread_id, "includeTurns": True})
+            thread = result.get("thread") if isinstance(result, dict) and isinstance(result.get("thread"), dict) else {}
+            status = _thread_status_type(thread.get("status"))
+            if status == "systemError":
+                raise RuntimeError(f"Codex compact failed for thread {thread_id}: thread entered systemError")
+            if _count_context_compaction_items(thread) > baseline_compactions:
+                return {
+                    "threadId": thread_id,
+                    "status": "completed",
+                    "completionSource": "thread_read",
+                }

@@ -40,7 +40,7 @@ from .panel_service import RuntimePanelService
 from .replying import ReplyRoute, RuntimeReplyPolicy
 from .restart import RuntimeRestartController
 from .turn import BackendTurnSession, TurnRuntimeContext
-NON_BLOCKING_ACTIVE_RUN_COMMANDS = {"/ping", "/status", "/usage", "/help", "/tools", "/panel", "/restart"}
+NON_BLOCKING_ACTIVE_RUN_COMMANDS = {"/ping", "/status", "/usage", "/help", "/tools", "/panel", "/restart", "/compact"}
 DEFAULT_IMAGE_PROMPT = "用户发送了图片。请先查看图片内容，再根据图片直接回答用户。"
 LOGGER = logging.getLogger("openrelay.runtime")
 
