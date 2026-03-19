@@ -10,6 +10,7 @@ from .help import HelpRenderer
 from .message_application import RuntimeMessageApplicationService
 from .message_dispatch import MessageDispatchService
 from .panel_service import RuntimePanelService
+from .reply_service import RuntimeReplyService
 from .replying import ReplyRoute, RuntimeReplyPolicy
 from .restart import DEFAULT_SYSTEMD_SERVICE_UNIT, RuntimeRestartController, get_systemd_service_unit, is_systemd_service_process
 from .rendering import build_activity_summary, render_live_status_markdown, render_live_status_sections
@@ -51,6 +52,7 @@ __all__ = [
     "ResolvedMessageContext",
     "RuntimeExecutionCoordinator",
     "RuntimePanelService",
+    "RuntimeReplyService",
     "RuntimeRestartController",
     "RuntimeReplyPolicy",
     "RuntimeCommandHooks",

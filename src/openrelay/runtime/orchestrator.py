@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import logging
-from typing import Any
 from typing import Callable
 
 from openrelay.agent_runtime.service import AgentRuntimeService
@@ -38,7 +37,8 @@ from .help_service import RuntimeHelpService
 from .message_application import RuntimeMessageApplicationService
 from .message_dispatch import MessageDispatchService
 from .panel_service import RuntimePanelService
-from .replying import ReplyRoute, RuntimeReplyPolicy
+from .reply_service import RuntimeReplyService
+from .replying import RuntimeReplyPolicy
 from .restart import RuntimeRestartController
 from .turn import BackendTurnSession, TurnRuntimeContext
 
@@ -80,6 +80,7 @@ class RuntimeOrchestrator:
         self.session_mutations = SessionMutationService(config, store, self.session_presentation)
         self.session_scope = SessionScopeResolver(config, store, LOGGER)
         self.reply_policy = RuntimeReplyPolicy(config, self.session_scope)
+        self.reply_service = RuntimeReplyService(messenger, self.session_scope, self.reply_policy, self.live_turn_presenter)
         self.session_lifecycle = SessionLifecycleResolver(config, store)
         self.message_dispatch = MessageDispatchService(self.session_scope, self.session_lifecycle)
         self.release_command_service = ReleaseCommandService(config, store, self.session_presentation, self.session_mutations)
@@ -88,7 +89,7 @@ class RuntimeOrchestrator:
             messenger,
             self.help_renderer,
             self.reply_policy,
-            self._reply_command_fallback,
+            self.reply_service.reply_command_fallback,
         )
         self.status_presenter = RuntimeStatusPresenter(config, store, self.session_presentation)
         self.panel_presenter = RuntimePanelPresenter(
@@ -108,7 +109,7 @@ class RuntimeOrchestrator:
             self.session_workspace,
             self.session_shortcuts,
             self.reply_policy,
-            self._reply_command_fallback,
+            self.reply_service.reply_command_fallback,
             self.panel_presenter,
             self.agent_runtime,
         )
@@ -125,7 +126,7 @@ class RuntimeOrchestrator:
             self.release_command_service,
             self.status_presenter,
             RuntimeCommandHooks(
-                reply=self._reply,
+                reply=self.reply_service.reply,
                 send_help=self.help_service.send_help,
                 send_panel=self.panel_service.send_panel,
                 send_session_list=self.panel_service.send_session_list,
@@ -143,7 +144,7 @@ class RuntimeOrchestrator:
             execution_coordinator=self.execution_coordinator,
             message_dispatch=self.message_dispatch,
             is_allowed_user=self.is_allowed_user,
-            reply=self._reply,
+            reply=self.reply_service.reply,
             handle_command=self._handle_command,
             run_backend_turn=self._run_backend_turn,
             log_dispatch_resolution=self._log_dispatch_resolution,
@@ -208,7 +209,7 @@ class RuntimeOrchestrator:
 
     async def _run_backend_turn(self, message: IncomingMessage, execution_key: str, session: SessionRecord) -> None:
         if not self._supports_runtime_backend(session.backend):
-            await self._reply(message, f"Unsupported backend: {session.backend}")
+            await self.reply_service.reply(message, f"Unsupported backend: {session.backend}")
             return
 
         message_summary = self._message_summary_text(message)
@@ -240,7 +241,7 @@ class RuntimeOrchestrator:
             is_card_action_message=self.reply_policy.is_card_action_message,
             build_session_key=self.session_scope.build_session_key,
             remember_outbound_aliases=self.session_scope.remember_outbound_aliases,
-            reply_final=self._reply_final,
+            reply_final=self.reply_service.reply_final,
             live_turn_presenter=self.live_turn_presenter,
             binding_store=self.binding_store,
             runtime_service=self.agent_runtime,
@@ -261,33 +262,6 @@ class RuntimeOrchestrator:
                 default_model=self.config.backend.default_model,
             ),
         }
-
-    async def _reply_final(
-        self,
-        message: IncomingMessage,
-        text: str,
-        streaming: FeishuStreamingSession | None,
-        live_state: dict[str, Any] | None = None,
-    ) -> None:
-        live_state = live_state or {}
-        if self.config.feishu.stream_mode == "card" and streaming is not None and streaming.has_started():
-            try:
-                await streaming.close(self.live_turn_presenter.build_final_card(live_state, fallback_text=text))
-                return
-            except Exception:
-                LOGGER.exception("streaming final card update failed for event_id=%s", message.event_id)
-                try:
-                    await streaming.close()
-                except Exception:
-                    LOGGER.exception("streaming fallback close failed for event_id=%s", message.event_id)
-        await self._send_text_reply(message, text, self.reply_policy.default_route(message))
-
-    async def _reply(self, message: IncomingMessage, text: str, command_reply: bool = False, command_name: str = "") -> None:
-        route = self.reply_policy.command_route(message, command_name) if command_reply else self.reply_policy.default_route(message)
-        await self._send_text_reply(message, text, route)
-
-    async def _reply_command_fallback(self, message: IncomingMessage, text: str, command_name: str) -> None:
-        await self._reply(message, text, command_reply=True, command_name=command_name)
 
     def available_backend_names(self) -> list[str]:
         return sorted(set(self.runtime_backends))
