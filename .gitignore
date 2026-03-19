@@ -4,8 +4,7 @@ __pycache__/
 *.pyc
 .env
 .project-memory/
-.codex/
-.codex/skills/
+.agent/
 .harness/
 .openharness/
 data/
