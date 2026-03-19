@@ -71,7 +71,7 @@ class TurnApplicationService:
         binding = self._ensure_binding(binding_store)
 
         async def handle_runtime_event(event: RuntimeEvent) -> None:
-            if event.session_id != self.controller.state.session.session_id:
+            if event.session_id != self.controller.session.session_id:
                 return
             await self.event_bridge.handle_runtime_event(binding, event)
 
@@ -82,15 +82,15 @@ class TurnApplicationService:
                 TurnInput(
                     text=backend_prompt,
                     local_image_paths=self.message.local_image_paths,
-                    cwd=self.controller.state.session.cwd,
-                    model=self.controller.state.session.model_override or None,
-                    safety_mode=self.controller.state.session.safety_mode,
+                    cwd=self.controller.session.cwd,
+                    model=self.controller.session.model_override or None,
+                    safety_mode=self.controller.session.safety_mode,
                 ),
             )
         finally:
             runtime_service.event_hub.unsubscribe(handle_runtime_event)
 
-        binding = binding_store.get(self.controller.state.session.session_id) or binding
+        binding = binding_store.get(self.controller.session.session_id) or binding
         usage = None
         if state.usage is not None:
             usage = {
@@ -108,7 +108,7 @@ class TurnApplicationService:
         )
 
     def _ensure_binding(self, binding_store: TurnBindingStore) -> RelaySessionBinding:
-        session = self.controller.state.session
+        session = self.controller.session
         existing = binding_store.get(session.session_id)
         if existing is not None:
             return existing

@@ -35,16 +35,9 @@ class TurnRuntimeEventBridge:
         )
         state = runtime_service.turn_registry.read(event.session_id, event.turn_id) if event.turn_id else None
         if isinstance(event, SessionStartedEvent):
-            self.controller.update_trace_context(native_session_id=event.native_session_id)
-            await self.controller.persist_native_thread_id(event.native_session_id)
-            self.controller.state.live_state = self.presenter.with_native_session_id(self.controller.state.live_state, event.native_session_id)
+            await self.controller.attach_native_session(event.native_session_id)
         if state is not None:
-            self.controller.state.live_state = self.presenter.build_snapshot(
-                state,
-                previous=self.controller.state.live_state,
-                session=self.controller.state.session,
-                format_cwd=self.runtime.session_ux.format_cwd,
-            )
+            self.controller.apply_runtime_snapshot(state)
             if event.event_type == "plan.updated" or state.plan_steps:
                 LOGGER.info(
                     "runtime live state updated event_type=%s session_id=%s turn_id=%s plan_steps=%s",
@@ -54,16 +47,9 @@ class TurnRuntimeEventBridge:
                     [{"step": step.step, "status": step.status} for step in state.plan_steps],
                 )
         if isinstance(event, AssistantDeltaEvent) and state is not None:
-            self.controller.state.last_live_text = ""
+            self.controller.mark_assistant_delta_received()
         if isinstance(event, ApprovalRequestedEvent):
-            if self.controller.state.interaction_controller is None:
-                raise RuntimeError("interaction controller is unavailable for approval")
-            self.controller.request_streaming_update()
-            decision = await self.controller.state.interaction_controller.request_approval(event.request)
+            decision = await self.controller.resolve_approval_request(event.request)
             await runtime_service.resolve_approval(binding, event.request, decision)
-            self.controller.state.live_state = self.presenter.build_approval_resolved_snapshot(
-                self.controller.state.live_state,
-                event.request,
-                decision,
-            )
+            self.controller.apply_approval_resolution(event.request, decision)
         self.controller.request_streaming_update()

@@ -10,6 +10,7 @@ from typing import Any
 from openrelay.core import ActiveRun, BackendReply, IncomingMessage, SessionRecord, utc_now
 from openrelay.feishu import FeishuStreamingSession, STREAMING_ROLLOVER_NOTICE
 from openrelay.feishu.renderers.live_turn_renderer import FeishuLiveTurnRenderer
+from openrelay.agent_runtime import ApprovalDecision, ApprovalRequest, LiveTurnViewModel
 from openrelay.observability import MessageTraceContext
 from openrelay.presentation.live_turn import LiveTurnPresenter
 
@@ -59,6 +60,10 @@ class TurnRunController:
         self.state.trace_context = trace_context
         self.state.live_state = self.presenter.create_initial_snapshot(session, self.runtime.session_ux.format_cwd)
 
+    @property
+    def session(self) -> SessionRecord:
+        return self.state.session
+
     async def prepare(self, message_summary: str) -> None:
         self.state.session = self.runtime.session_ux.label_session_if_needed(self.state.session, message_summary)
         self.runtime.store.save_session(self.state.session)
@@ -84,6 +89,36 @@ class TurnRunController:
             self.message.message_id,
             self.state.session.session_id,
             normalized,
+        )
+
+    async def attach_native_session(self, native_session_id: str) -> None:
+        self.update_trace_context(native_session_id=native_session_id)
+        await self.persist_native_thread_id(native_session_id)
+        self.state.live_state = self.presenter.with_native_session_id(self.state.live_state, native_session_id)
+
+    def apply_runtime_snapshot(self, state: LiveTurnViewModel) -> None:
+        self.state.live_state = self.presenter.build_snapshot(
+            state,
+            previous=self.state.live_state,
+            session=self.state.session,
+            format_cwd=self.runtime.session_ux.format_cwd,
+        )
+
+    def mark_assistant_delta_received(self) -> None:
+        self.state.last_live_text = ""
+
+    async def resolve_approval_request(self, request: ApprovalRequest) -> ApprovalDecision:
+        interaction_controller = self.state.interaction_controller
+        if interaction_controller is None:
+            raise RuntimeError("interaction controller is unavailable for approval")
+        self.request_streaming_update()
+        return await interaction_controller.request_approval(request)
+
+    def apply_approval_resolution(self, request: ApprovalRequest, decision: ApprovalDecision) -> None:
+        self.state.live_state = self.presenter.build_approval_resolved_snapshot(
+            self.state.live_state,
+            request,
+            decision,
         )
 
     async def cancel(self, _reason: str) -> None:
