@@ -15,7 +15,7 @@ from openrelay.session.shortcuts import SessionShortcutService
 from openrelay.session.workspace import SessionWorkspaceService
 
 from .card_sender import CommandCardSender
-from .commands import PanelCommandArgs
+from .command_context import PanelCommandArgs
 from .replying import RuntimeReplyPolicy
 
 

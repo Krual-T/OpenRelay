@@ -1,8 +1,8 @@
-from .orchestrator import RuntimeOrchestrator, DEFAULT_IMAGE_PROMPT
-from .commands import PanelCommandArgs, RuntimeCommandHooks, RuntimeCommandRouter
-from .command_context import ParsedCommand
+from .orchestrator import RuntimeOrchestrator
+from .command_context import PanelCommandArgs, ParsedCommand, RuntimeCommandHooks
 from .command_parser import CommandParser
 from .command_registry import CommandRegistry, CommandSpec
+from .command_router import RuntimeCommandRouter
 from .dispatch_models import DispatchDecision, ResolvedMessageContext
 from .execution import RuntimeExecutionCoordinator
 from .follow_up import MERGED_FOLLOW_UP_INTRO, QueuedFollowUp
@@ -14,8 +14,8 @@ from .reply_service import RuntimeReplyService
 from .replying import ReplyRoute, RuntimeReplyPolicy
 from .restart import DEFAULT_SYSTEMD_SERVICE_UNIT, RuntimeRestartController, get_systemd_service_unit, is_systemd_service_process
 from .rendering import build_activity_summary, render_live_status_markdown, render_live_status_sections
-from .turn import BackendTurnSession, TurnRuntimeContext
-from .turn_execution import RuntimeTurnExecutionService
+from .turn import TurnRuntimeContext
+from .turn_execution import DEFAULT_IMAGE_PROMPT, RuntimeTurnExecutionService
 from openrelay.presentation import (
     PANEL_COMMANDS,
     PANEL_HOME,
@@ -31,7 +31,6 @@ __all__ = [
     "RuntimeOrchestrator",
     "DEFAULT_IMAGE_PROMPT",
     "DEFAULT_SYSTEMD_SERVICE_UNIT",
-    "BackendTurnSession",
     "CommandParser",
     "CommandRegistry",
     "CommandSpec",

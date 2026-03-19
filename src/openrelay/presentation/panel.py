@@ -14,7 +14,7 @@ from openrelay.session.workspace import SessionWorkspaceService
 from .session import SessionPresentation, build_session_list_card
 
 if TYPE_CHECKING:
-    from openrelay.runtime.commands import PanelCommandArgs
+    from openrelay.runtime.command_context import PanelCommandArgs
 
 
 PANEL_HOME = "home"

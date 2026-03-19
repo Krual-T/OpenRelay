@@ -7,7 +7,9 @@ from types import SimpleNamespace
 import pytest
 
 from openrelay.core import IncomingMessage, SessionRecord
-from openrelay.runtime.turn import BackendTurnSession, TurnRuntimeContext
+from openrelay.presentation.live_turn import LiveTurnPresenter
+from openrelay.runtime.turn import TurnRuntimeContext
+from openrelay.runtime.turn_run_controller import TurnRunController
 
 
 class _DummyStreamingSession:
@@ -72,25 +74,22 @@ def _build_session(tmp_path: Path) -> SessionRecord:
 
 @pytest.mark.asyncio
 async def test_backend_turn_cancel_closes_streaming_card_and_blocks_follow_up_updates(tmp_path: Path) -> None:
-    turn = BackendTurnSession(
-        _build_runtime_context(tmp_path),
-        _build_message(),
-        "session:session_1",
-        _build_session(tmp_path),
-    )
+    runtime = _build_runtime_context(tmp_path)
+    turn = TurnRunController(runtime, _build_message(), "session:session_1", LiveTurnPresenter())
+    turn.initialize(_build_session(tmp_path))
     streaming = _DummyStreamingSession()
-    turn.streaming = streaming
-    turn.live_state["partial_text"] = "still streaming"
-    turn.pending_streaming_states.append({"partial_text": "stale"})
-    turn.spinner_task = asyncio.create_task(asyncio.sleep(60))
+    turn.state.streaming = streaming
+    turn.state.live_state["partial_text"] = "still streaming"
+    turn.state.pending_streaming_states.append({"partial_text": "stale"})
+    turn.state.spinner_task = asyncio.create_task(asyncio.sleep(60))
 
     await turn.cancel("interrupted by /stop")
-    turn._request_streaming_update()
+    turn.request_streaming_update()
     await asyncio.sleep(0)
 
-    assert turn.cancel_event.is_set() is True
-    assert turn.spinner_task is None
-    assert list(turn.pending_streaming_states) == []
-    assert turn.streaming_update_event.is_set() is False
+    assert turn.state.cancel_event.is_set() is True
+    assert turn.state.spinner_task is None
+    assert list(turn.state.pending_streaming_states) == []
+    assert turn.state.streaming_update_event.is_set() is False
     assert streaming.closed_with is not None
     assert "已停止当前回复。" in str(streaming.closed_with)

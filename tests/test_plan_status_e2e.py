@@ -11,7 +11,11 @@ import pytest
 from openrelay.agent_runtime.service import AgentRuntimeService
 from openrelay.backends.codex_adapter.backend import CodexRuntimeBackend
 from openrelay.core import BackendReply, IncomingMessage, SessionRecord
-from openrelay.runtime.turn import BackendTurnSession, TurnRuntimeContext
+from openrelay.presentation.live_turn import LiveTurnPresenter
+from openrelay.runtime.turn import TurnRuntimeContext
+from openrelay.runtime.turn_application import TurnApplicationService
+from openrelay.runtime.turn_run_controller import TurnRunController
+from openrelay.runtime.turn_runtime_event_bridge import TurnRuntimeEventBridge
 from openrelay.session import RelaySessionBinding
 
 
@@ -242,6 +246,8 @@ async def test_e2e_plan_status_trace_reaches_feishu_final_card(tmp_path: Path, m
     streaming = FakeStreamingSession()
     final_replies: list[BackendReply] = []
 
+    presenter = LiveTurnPresenter()
+
     async def reply_final(
         message: IncomingMessage,
         text: str,
@@ -251,7 +257,7 @@ async def test_e2e_plan_status_trace_reaches_feishu_final_card(tmp_path: Path, m
         _ = message
         final_replies.append(BackendReply(text=text))
         if active_streaming is not None and active_streaming.has_started():
-            await active_streaming.close(turn.presenter.build_final_card(live_state or {}, fallback_text=text))
+            await active_streaming.close(presenter.build_final_card(live_state or {}, fallback_text=text))
 
     runtime = TurnRuntimeContext(
         config=SimpleNamespace(feishu=SimpleNamespace(stream_mode="card")),
@@ -272,13 +278,21 @@ async def test_e2e_plan_status_trace_reaches_feishu_final_card(tmp_path: Path, m
         build_session_key=lambda message: "session:test",
         remember_outbound_aliases=lambda message, session_key, alias_ids: None,
         reply_final=reply_final,
-        live_turn_presenter=None,
+        live_turn_presenter=presenter,
         binding_store=binding_store,  # type: ignore[arg-type]
         runtime_service=runtime_service,
     )
-    turn = BackendTurnSession(runtime, _build_message(), "session:relay_1", session)
+    controller = TurnRunController(runtime, _build_message(), "session:relay_1", presenter)
+    controller.initialize(session)
+    application = TurnApplicationService(
+        runtime,
+        _build_message(),
+        "session:relay_1",
+        controller,
+        TurnRuntimeEventBridge(runtime, controller, presenter),
+    )
 
-    await turn.run("trace plan status", "trace official inProgress status")
+    await application.run("trace plan status", "trace official inProgress status")
 
     assert streaming.final_card is not None
     markdown_blocks = _extract_markdown_blocks(streaming.final_card)

@@ -1,12 +1,12 @@
 # Design Task Board
 
-更新时间：2026-03-18
+更新时间：2026-03-19
 
 ## Landed
 
 - [x] OR-TASK-009 架构重构总体设计与分阶段实施收敛
   - **目标**：从模块职责划分和长期演化角度，为下一轮架构重构固定总体边界、事实来源、依赖方向和分阶段实施顺序。
-  - **完成情况**：总体设计稿、详细设计稿、端到端执行蓝图与首轮端到端代码重构已落地；storage/session repository 边界、command parser/registry/handler 拆分、turn lifecycle facade 化、typed live turn view model 与 Feishu renderer 分层，以及 orchestrator 单次 resolve 接线均已进入主路径。
+  - **完成情况**：总体设计稿、详细设计稿、端到端执行蓝图与多轮端到端代码重构已落地；storage/session repository 边界、command parser/registry/handler 拆分、消息入口 application service、runtime reply service、turn execution service、typed live turn view model 与 Feishu renderer 分层，以及 orchestrator 装配根化均已进入主路径。
   - **落地证据**：
     - `docs/design/or-task-009-architecture-refactor-overall-design.md`
     - `docs/design/or-task-009-architecture-refactor-detailed-design.md`
@@ -16,10 +16,13 @@
     - `src/openrelay/session/repositories.py`
     - `src/openrelay/session/defaults.py`
     - `src/openrelay/runtime/message_dispatch.py`
+    - `src/openrelay/runtime/message_application.py`
     - `src/openrelay/runtime/command_router.py`
     - `src/openrelay/runtime/turn_application.py`
     - `src/openrelay/runtime/turn_run_controller.py`
     - `src/openrelay/runtime/turn_runtime_event_bridge.py`
+    - `src/openrelay/runtime/reply_service.py`
+    - `src/openrelay/runtime/turn_execution.py`
     - `src/openrelay/presentation/models.py`
     - `src/openrelay/presentation/live_turn_view_builder.py`
     - `src/openrelay/feishu/renderers/live_turn_renderer.py`

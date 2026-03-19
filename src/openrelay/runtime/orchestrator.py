@@ -30,7 +30,8 @@ from openrelay.session import (
 )
 from openrelay.storage import StateStore
 
-from .commands import RuntimeCommandHooks, RuntimeCommandRouter
+from .command_context import RuntimeCommandHooks
+from .command_router import RuntimeCommandRouter
 from .execution import RuntimeExecutionCoordinator
 from .help import HelpRenderer
 from .help_service import RuntimeHelpService
