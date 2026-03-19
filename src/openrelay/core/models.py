@@ -17,6 +17,7 @@ class IncomingMessage:
     chat_id: str
     chat_type: str
     sender_open_id: str
+    trace_id: str = ""
     source_kind: str = "message"
     root_id: str = ""
     thread_id: str = ""

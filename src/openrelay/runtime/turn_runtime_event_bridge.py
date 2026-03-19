@@ -20,8 +20,14 @@ class TurnRuntimeEventBridge:
         runtime_service = self.runtime.runtime_service
         if runtime_service is None:
             return
+        self.controller.update_trace_context(
+            relay_session_id=binding.relay_session_id,
+            backend=event.backend,
+            turn_id=event.turn_id,
+        )
         state = runtime_service.turn_registry.read(event.session_id, event.turn_id) if event.turn_id else None
         if isinstance(event, SessionStartedEvent):
+            self.controller.update_trace_context(native_session_id=event.native_session_id)
             await self.controller.persist_native_thread_id(event.native_session_id)
             self.controller.state.live_state = self.presenter.with_native_session_id(self.controller.state.live_state, event.native_session_id)
         if state is not None:

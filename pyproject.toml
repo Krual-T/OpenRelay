@@ -21,6 +21,7 @@ dev = [
 
 [project.scripts]
 openrelayd = "openrelay.__main__:main"
+openrelay-trace = "openrelay.tools.trace:main"
 
 [build-system]
 requires = ["hatchling>=1.27.0"]

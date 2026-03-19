@@ -44,7 +44,7 @@ def _build_runtime_context(tmp_path: Path) -> TurnRuntimeContext:
         is_card_action_message=lambda message: False,
         build_session_key=lambda message: "session:test",
         remember_outbound_aliases=lambda message, session_key, alias_ids: None,
-        reply_final=lambda message, text, streaming, live_state: asyncio.sleep(0),
+        reply_final=lambda message, text, streaming, live_state, **kwargs: asyncio.sleep(0),
         live_turn_presenter=None,
         binding_store=None,
         runtime_service=None,

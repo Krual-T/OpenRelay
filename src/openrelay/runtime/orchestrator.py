@@ -87,6 +87,7 @@ class RuntimeOrchestrator:
             session_scope=self.session_scope,
             reply_policy=self.reply_policy,
             live_turn_presenter=self.live_turn_presenter,
+            trace_recorder=self.store.trace_recorder,
         )
         self.session_lifecycle = SessionLifecycleResolver(config, store)
         self.message_dispatch = MessageDispatchService(self.session_scope, self.session_lifecycle)
@@ -160,6 +161,7 @@ class RuntimeOrchestrator:
             build_session_key=self.session_scope.build_session_key,
             remember_outbound_aliases=self.session_scope.remember_outbound_aliases,
             reply_final=self.reply_service.reply_final,
+            trace_recorder=self.store.trace_recorder,
             live_turn_presenter=self.live_turn_presenter,
             binding_store=self.binding_store,
             runtime_service=self.agent_runtime,
@@ -176,6 +178,7 @@ class RuntimeOrchestrator:
             execution_coordinator=self.execution_coordinator,
             message_dispatch=self.message_dispatch,
             is_allowed_user=self.is_allowed_user,
+            trace_recorder=self.store.trace_recorder,
             reply=self.reply_service.reply,
             handle_command=self._handle_command,
             run_backend_turn=self.turn_execution.run,

@@ -28,11 +28,29 @@ class TurnApplicationService:
                 raise RuntimeError(f"Unsupported backend: {self.controller.state.session.backend}")
             reply = await self.run_with_agent_runtime(backend_prompt)
             self.controller.save_reply(reply)
+            self.controller.record_event(
+                stage="turn",
+                event_type="turn.completed",
+                summary=reply.text[:120],
+                payload={"usage": reply.metadata.get("usage", {}) if isinstance(reply.metadata, dict) else {}},
+            )
             await self.controller.reply_final(reply.text or "(empty reply)")
         except Exception as exc:
             if "interrupted by /stop" in str(exc).lower() or "interrupted" in str(exc).lower():
+                self.controller.record_event(
+                    stage="turn",
+                    event_type="turn.interrupted",
+                    summary=str(exc),
+                    level="warning",
+                )
                 await self.controller.reply_final("已停止当前回复。")
             else:
+                self.controller.record_event(
+                    stage="turn",
+                    event_type="turn.failed",
+                    summary=str(exc),
+                    level="error",
+                )
                 await self.controller.reply_final(f"处理失败：{exc}")
         finally:
             self.runtime.execution_coordinator.finish_run(self.execution_key)

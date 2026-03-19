@@ -9,6 +9,7 @@ from typing import Any
 
 from openrelay.core import ActiveRun, BackendReply, IncomingMessage, SessionRecord, utc_now
 from openrelay.feishu import FeishuStreamingSession, STREAMING_ROLLOVER_NOTICE
+from openrelay.observability import MessageTraceContext
 from openrelay.feishu.renderers.live_turn_renderer import FeishuLiveTurnRenderer
 
 from .interactions import RunInteractionController
@@ -20,6 +21,7 @@ LOGGER = logging.getLogger("openrelay.runtime")
 @dataclass(slots=True)
 class TurnRunState:
     session: SessionRecord
+    trace_context: MessageTraceContext | None = None
     cancel_event: asyncio.Event = field(default_factory=asyncio.Event)
     interaction_controller: RunInteractionController | None = None
     typing_state: dict[str, Any] | None = None
@@ -43,14 +45,21 @@ class TurnRunController:
             session=SessionRecord(session_id="", base_key="", backend="", cwd=""),
         )
 
-    def initialize(self, session: SessionRecord) -> None:
+    def initialize(self, session: SessionRecord, *, trace_context: MessageTraceContext | None = None) -> None:
         self.state.session = session
+        self.state.trace_context = trace_context
         self.state.live_state = self.presenter.create_initial_snapshot(session, self.runtime.session_ux.format_cwd)
 
     async def prepare(self, message_summary: str) -> None:
         self.state.session = self.runtime.session_ux.label_session_if_needed(self.state.session, message_summary)
         self.runtime.store.save_session(self.state.session)
         self.runtime.store.append_message(self.state.session.session_id, "user", message_summary)
+        self.record_event(
+            stage="turn",
+            event_type="turn.started",
+            summary=message_summary,
+            backend=self.state.session.backend,
+        )
         await self._start_typing()
         await self._start_streaming_if_needed()
 
@@ -136,7 +145,21 @@ class TurnRunController:
 
     async def reply_final(self, text: str) -> None:
         self._stop_spinner_task()
-        await self.runtime.reply_final(self.message, text, self.state.streaming, self.state.live_state)
+        if self.state.trace_context is None:
+            await self.runtime.reply_final(self.message, text, self.state.streaming, self.state.live_state)
+            return
+        try:
+            await self.runtime.reply_final(
+                self.message,
+                text,
+                self.state.streaming,
+                self.state.live_state,
+                trace_context=self.state.trace_context,
+            )
+        except TypeError as exc:
+            if "trace_context" not in str(exc):
+                raise
+            await self.runtime.reply_final(self.message, text, self.state.streaming, self.state.live_state)
 
     async def finalize(self) -> None:
         self._stop_spinner_task()
@@ -260,6 +283,54 @@ class TurnRunController:
             updated.native_session_id,
             updated.backend,
         )
+        self.record_event(
+            stage="storage",
+            event_type="storage.session.saved",
+            summary=updated.session_id,
+            backend=updated.backend,
+            native_session_id=updated.native_session_id,
+            payload={"usage": updated.last_usage},
+        )
         self.runtime.store.append_message(updated.session_id, "assistant", reply.text)
         self.state.session = updated
         return updated
+
+    def update_trace_context(self, **changes: str) -> None:
+        if self.state.trace_context is None or self.runtime.trace_recorder is None:
+            return
+        self.state.trace_context = self.runtime.trace_recorder.enrich_context(self.state.trace_context, **changes)
+
+    def record_event(
+        self,
+        *,
+        stage: str,
+        event_type: str,
+        summary: str = "",
+        level: str = "info",
+        backend: str = "",
+        native_session_id: str = "",
+        payload: dict[str, Any] | None = None,
+    ) -> None:
+        if self.runtime.trace_recorder is None or self.state.trace_context is None:
+            return
+        context = self.state.trace_context
+        updates: dict[str, str] = {}
+        if backend:
+            updates["backend"] = backend
+        if native_session_id:
+            updates["native_session_id"] = native_session_id
+        if self.state.session.session_id:
+            updates["relay_session_id"] = self.state.session.session_id
+        if self.state.session.backend:
+            updates.setdefault("backend", self.state.session.backend)
+        if updates:
+            context = self.runtime.trace_recorder.enrich_context(context, **updates)
+            self.state.trace_context = context
+        self.runtime.trace_recorder.record(
+            context,
+            stage=stage,
+            event_type=event_type,
+            level=level,
+            summary=summary,
+            payload=payload,
+        )

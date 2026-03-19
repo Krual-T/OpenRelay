@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 
 from openrelay.core import AppConfig, DirectoryShortcut, SessionRecord, SessionSummary
+from openrelay.observability import MessageEventStore, MessageTraceRecorder, TraceQueryService
 from openrelay.session.defaults import SessionDefaultsPolicy
 from openrelay.session.store import SessionBindingStore
 
@@ -27,6 +28,10 @@ class StateStore:
         self.session_aliases = SqliteSessionAliasRepository(self.context)
         self.message_dedup = SqliteMessageDedupRepository(self.context)
         self.messages = SqliteMessageRepository(self.context, max_session_messages=config.max_session_messages)
+        self.message_event_store = MessageEventStore(self.context.connection)
+        self.message_event_store.init_schema()
+        self.trace_recorder = MessageTraceRecorder(self.message_event_store)
+        self.trace_query = TraceQueryService(self.message_event_store)
         self.bindings = SessionBindingStore(self.context)
         self.sessions = SqliteRelaySessionRepository(
             self.context,

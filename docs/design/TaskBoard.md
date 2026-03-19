@@ -4,6 +4,31 @@
 
 ## Landed
 
+- [x] OR-TASK-007 消息行为日志与可观测性收敛
+  - **目标**：为 Feishu 入站消息到最终回复建立一条可持久化、可查询、可回放的结构化消息行为日志链路，替代当前零散文本日志 + 内存态 runtime event 的弱观测方式。
+  - **完成情况**：`observability/` 独立边界、SQLite `message_event_log` schema、`MessageTraceRecorder` / 查询服务、主路径最小埋点和仓库内 trace CLI 均已落地；现在已能稳定记录 ingress、session resolve、turn terminal、storage session saved、reply sent / failed 与队列补充输入等关键事件，并支持按 message / session / trace / turn 读取时间线。
+  - **落地证据**：
+    - `docs/design/or-task-007-message-observability-design.md`
+    - `docs/design/or-task-007-message-observability-detailed-design.md`
+    - `src/openrelay/observability/__init__.py`
+    - `src/openrelay/observability/models.py`
+    - `src/openrelay/observability/context.py`
+    - `src/openrelay/observability/store.py`
+    - `src/openrelay/observability/recorder.py`
+    - `src/openrelay/observability/query.py`
+    - `src/openrelay/runtime/message_application.py`
+    - `src/openrelay/runtime/reply_service.py`
+    - `src/openrelay/runtime/turn.py`
+    - `src/openrelay/runtime/turn_application.py`
+    - `src/openrelay/runtime/turn_execution.py`
+    - `src/openrelay/runtime/turn_run_controller.py`
+    - `src/openrelay/runtime/turn_runtime_event_bridge.py`
+    - `src/openrelay/storage/state.py`
+    - `src/openrelay/tools/trace.py`
+    - `pyproject.toml`
+  - **验证证据**：
+    - `uv run pytest tests/storage/test_message_observability.py tests/runtime/test_message_observability.py tests/runtime/test_turn.py tests/storage/test_state_store.py`
+
 - [x] OR-TASK-009 架构重构总体设计与分阶段实施收敛
   - **目标**：从模块职责划分和长期演化角度，为下一轮架构重构固定总体边界、事实来源、依赖方向和分阶段实施顺序。
   - **完成情况**：总体设计稿、详细设计稿、端到端执行蓝图与多轮端到端代码重构已落地；storage/session repository 边界、command parser/registry/handler 拆分、消息入口 application service、runtime reply service、turn execution service、typed live turn view model 与 Feishu renderer 分层，以及 orchestrator 装配根化均已进入主路径。
@@ -137,21 +162,6 @@
   - `src/openrelay/runtime/command_handlers/shortcut.py`
 - **后续 follow-up**：
   - 若后续需要跨用户共享目录模板，应另开任务，不把团队级目录治理提前塞进当前个人工作区体验里。
-
-### [ ] OR-TASK-007 消息行为日志与可观测性收敛
-- **目标**：为 Feishu 入站消息到最终回复建立一条可持久化、可查询、可回放的结构化消息行为日志链路，替代当前零散文本日志 + 内存态 runtime event 的弱观测方式。
-- **当前关注**：总体设计和详细设计均已完成；代码侧尚未落 `observability/` 包、SQLite schema、主路径最小埋点和 trace 读取入口。
-- **关闭条件**：
-  - 完成正式设计稿，明确事件模型、关联键、埋点位置、SQLite schema、保留策略与分阶段实施路径。
-  - 在代码中落地最小闭环：至少能记录 ingress、session resolve、turn terminal、reply sent 等主路径事件。
-  - 提供一个仓库内可用的 trace 读取入口，用于按 message / session / trace 查看时间线。
-- **已完成证据**：
-  - `docs/design/or-task-007-message-observability-design.md`
-  - `docs/design/or-task-007-message-observability-detailed-design.md`
-- **后续 follow-up**：
-  - 第一阶段优先实现 `MessageTraceRecorder` 与 `message_event_log`，不要先做 UI。
-  - 高频 provider delta 先做聚合观测，不默认逐条入库。
-  - observability 逻辑应独立成 store / recorder，不继续膨胀 `StateStore`。
 
 ## 使用约定
 
