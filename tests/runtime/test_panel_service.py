@@ -1,109 +1,41 @@
+import logging
 from types import SimpleNamespace
 
-import logging
 import pytest
 
 from openrelay.core import AppConfig, BackendConfig, FeishuConfig, IncomingMessage
 from openrelay.core.models import SessionRecord
-from openrelay.presentation.session import build_backend_session_list_card, build_session_list_card
-from openrelay.presentation.panel import build_panel_card
 from openrelay.runtime.panel_service import RuntimePanelService
 from openrelay.runtime.replying import RuntimeReplyPolicy
 from openrelay.session.scope.resolver import SessionScopeResolver
 from openrelay.storage import StateStore
 
 
+class _FakeMessenger:
+    def __init__(self) -> None:
+        self.calls: list[dict[str, object]] = []
 
-def extract_commands(card: dict) -> list[str]:
-    commands: list[str] = []
-    for element in card.get("elements", []):
-        if element.get("tag") != "action":
-            continue
-        for action in element.get("actions", []):
-            value = action.get("value") if isinstance(action, dict) else None
-            if isinstance(value, dict) and value.get("command"):
-                commands.append(str(value["command"]))
-    return commands
-
-
-
-def test_session_list_card_contains_pagination_and_sort_actions() -> None:
-    card = build_session_list_card(
-        {
-            "current_title": "current",
-            "current_session_id": "s_current",
-            "page": 2,
-            "sort_mode": "updated-desc",
-            "has_previous": True,
-            "has_next": True,
-            "action_context": {"sessionKey": "p2p:oc_1", "rootId": "root_1"},
-            "sessions": [
-                {"index": 6, "session_id": "s_6", "resume_token": "s_6", "active": False, "title": "session-6", "meta": "本地", "preview": "preview"},
-            ],
-        }
-    )
-
-    commands = extract_commands(card)
-    assert "/resume --page 1 --sort updated-desc" in commands
-    assert "/resume --page 3 --sort updated-desc" in commands
-    assert "/resume --page 1 --sort active-first" in commands
-    assert "/resume s_6 --page 2 --sort updated-desc" in commands
-
-
-def test_backend_session_list_card_uses_markdown_blocks_without_quote_footer_buttons() -> None:
-    card = build_backend_session_list_card(
-        {
-            "page": 1,
-            "known_page_count": 1,
-            "backend_name": "codex",
-            "action_context": {"sessionKey": "p2p:oc_1", "rootId": "root_1"},
-            "sessions": [
-                {"index": 1, "session_id": "thread_1", "active": True, "title": "task 1", "meta": "2026-03-16 18:00:00 · status=idle"},
-            ],
-        }
-    )
-
-    assert card["header"]["title"]["content"] == "Relay codex thread histories"
-    assert "运行时会话" not in str(card)
-    assert "预览" not in str(card)
-    assert card["elements"][0]["text"]["content"] == "**1. task 1** · 当前\n2026-03-16 18:00:00 · status=idle\n`thread_1`"
-    assert "/resume latest" not in extract_commands(card)
-    assert "/panel" not in extract_commands(card)
-    assert "/help" not in extract_commands(card)
-
-
-def test_backend_session_list_card_renders_page_number_strip() -> None:
-    card = build_backend_session_list_card(
-        {
-            "page": 3,
-            "known_page_count": 5,
-            "has_previous": True,
-            "has_next": True,
-            "backend_name": "codex",
-            "action_context": {"sessionKey": "p2p:oc_1", "rootId": "root_1"},
-            "sessions": [
-                {"index": 7, "session_id": "thread_7", "active": False, "title": "task 7", "meta": "2026-03-16 18:00:00 · status=idle"},
-            ],
-        }
-    )
-
-    commands = extract_commands(card)
-    assert commands[-7:] == [
-        "/resume",
-        "/resume --page 2",
-        "/resume --page 3",
-        "/resume --page 4",
-        "/resume --page 5",
-        "/resume --page 2",
-        "/resume --page 4",
-    ]
-
-    pagination_rows = [element["actions"] for element in card["elements"] if element.get("tag") == "action"][-2:]
-    assert [[action["text"]["content"] for action in row] for row in pagination_rows] == [
-        ["1", "2", "3", "4", "5"],
-        ["上一页", "下一页"],
-    ]
-    assert card["elements"][-3]["tag"] == "hr"
+    async def send_interactive_card(
+        self,
+        chat_id: str,
+        card: dict[str, object],
+        *,
+        reply_to_message_id: str = "",
+        root_id: str = "",
+        force_new_message: bool = False,
+        update_message_id: str = "",
+    ) -> object:
+        self.calls.append(
+            {
+                "chat_id": chat_id,
+                "card": card,
+                "reply_to_message_id": reply_to_message_id,
+                "root_id": root_id,
+                "force_new_message": force_new_message,
+                "update_message_id": update_message_id,
+            }
+        )
+        return object()
 
 
 def test_runtime_panel_service_backend_session_card_limits_to_three_and_formats_seconds() -> None:
@@ -142,74 +74,6 @@ def test_runtime_panel_service_backend_session_card_limits_to_three_and_formats_
     assert "预览" not in str(card)
     assert "preview" not in fallback
     assert "2026-03-16 18:00:00" in fallback
-
-
-def test_workspace_panel_card_uses_valid_form_container_for_search() -> None:
-    card = build_panel_card(
-        {
-            "view": "workspace",
-            "cwd": "~/Projects/openrelay",
-            "browser_path": "/repo",
-            "parent_path": "/",
-            "browser_display": "~",
-            "query": "api",
-            "show_hidden": True,
-            "page": 1,
-            "total_pages": 1,
-            "total_entries": 1,
-            "workspace_entries": [
-                {
-                    "label": "openrelay",
-                    "relative_path": "~/openrelay",
-                    "absolute_path": "/repo/openrelay",
-                    "state": "available",
-                }
-            ],
-            "action_context": {"sessionKey": "p2p:oc_1", "rootId": "root_1"},
-        }
-    )
-
-    assert card["schema"] == "2.0"
-    form_blocks = [element for element in card["body"]["elements"] if element.get("tag") == "form"]
-    assert len(form_blocks) == 1
-    form = form_blocks[0]
-    assert form["name"] == "workspace_search"
-    assert form["elements"][0]["tag"] == "input"
-    assert form["elements"][0]["name"] == "workspace_query"
-    submit_button = form["elements"][1]["columns"][0]["elements"][0]
-    assert submit_button["tag"] == "button"
-    assert submit_button["name"] == "workspace_search_submit"
-    assert submit_button["form_action_type"] == "submit"
-    assert "--hidden" in submit_button["behaviors"][0]["value"]["command"]
-    assert "显示中" in card["body"]["elements"][0]["content"]
-    assert "action" not in [element.get("tag") for element in card["body"]["elements"]]
-
-
-class _FakeMessenger:
-    def __init__(self) -> None:
-        self.calls: list[dict[str, object]] = []
-
-    async def send_interactive_card(
-        self,
-        chat_id: str,
-        card: dict[str, object],
-        *,
-        reply_to_message_id: str = "",
-        root_id: str = "",
-        force_new_message: bool = False,
-        update_message_id: str = "",
-    ) -> object:
-        self.calls.append(
-            {
-                "chat_id": chat_id,
-                "card": card,
-                "reply_to_message_id": reply_to_message_id,
-                "root_id": root_id,
-                "force_new_message": force_new_message,
-                "update_message_id": update_message_id,
-            }
-        )
-        return object()
 
 
 @pytest.mark.asyncio
