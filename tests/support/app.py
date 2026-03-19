@@ -23,6 +23,7 @@ def make_app_config(
     codex_sessions_dir: Path | None = None,
     verify_token: str | None = "verify-token",
     bot_open_id: str | None = "ou_bot",
+    connection_mode: str | None = None,
     allowed_open_ids: set[str] | None = None,
     admin_open_ids: set[str] | None = None,
     app_id: str = "app",
@@ -55,6 +56,8 @@ def make_app_config(
         feishu_kwargs["allowed_open_ids"] = allowed_open_ids
     if admin_open_ids is not None:
         feishu_kwargs["admin_open_ids"] = admin_open_ids
+    if connection_mode is not None:
+        feishu_kwargs["connection_mode"] = connection_mode
 
     config_kwargs: dict[str, object] = {
         "cwd": tmp_path,
