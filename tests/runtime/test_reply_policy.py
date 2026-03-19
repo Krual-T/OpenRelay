@@ -1,41 +1,31 @@
+import logging
 from pathlib import Path
 
-import logging
 import pytest
 
 from openrelay.agent_runtime import SessionLocator, SessionSummary, SessionTranscript
-from openrelay.agent_runtime.backend import BackendCapabilities
 from openrelay.agent_runtime.models import TranscriptMessage
-from openrelay.core import AppConfig, BackendConfig, FeishuConfig, IncomingMessage
+from openrelay.core import AppConfig, IncomingMessage
 from openrelay.presentation.runtime_status import RuntimeStatusPresenter
 from openrelay.presentation.session import SessionPresentation
 from openrelay.release import ReleaseCommandService
 from openrelay.runtime import HelpRenderer, RuntimeCommandHooks, RuntimeCommandRouter
 from openrelay.runtime.replying import RuntimeReplyPolicy
-from openrelay.session import SessionBrowser, SessionMutationService, SessionScopeResolver, SessionShortcutService, SessionWorkspaceService
+from openrelay.session import (
+    SessionBrowser,
+    SessionMutationService,
+    SessionScopeResolver,
+    SessionShortcutService,
+    SessionWorkspaceService,
+)
 from openrelay.storage import StateStore
-
-
-class FakeNativeThread:
-    def __init__(self, thread_id: str, *, preview: str = "", cwd: str = "", updated_at: str = "", status: str = "", name: str = "", messages: tuple[object, ...] = ()) -> None:
-        self.thread_id = thread_id
-        self.preview = preview
-        self.cwd = cwd
-        self.updated_at = updated_at
-        self.status = status
-        self.name = name
-        self.messages = messages
-
-
-class FakeNativeMessage:
-    def __init__(self, role: str, text: str) -> None:
-        self.role = role
-        self.text = text
+from tests.support.app import make_app_config, make_incoming_message, prepare_app_dirs
+from tests.support.runtime import FakeNativeMessage, FakeNativeThread, RuntimeBackendStub
 
 
 class FakeRuntimeService:
     def __init__(self, cwd: str) -> None:
-        self.backends = {"codex": _RuntimeBackendStub(supports_session_list=True, supports_compact=True)}
+        self.backends = {"codex": RuntimeBackendStub(supports_session_list=True, supports_compact=True)}
         self.threads = [
             FakeNativeThread(
                 "thread_latest",
@@ -90,17 +80,6 @@ class FakeRuntimeService:
         return {"compactId": f"compact_for_{locator.native_session_id}"}
 
 
-class _RuntimeBackendStub:
-    def __init__(self, *, supports_session_list: bool = False, supports_compact: bool = False) -> None:
-        self._capabilities = BackendCapabilities(
-            supports_session_list=supports_session_list,
-            supports_compact=supports_compact,
-        )
-
-    def capabilities(self) -> BackendCapabilities:
-        return self._capabilities
-
-
 class FakeHooks:
     def __init__(self) -> None:
         self.replies: list[dict[str, object]] = []
@@ -134,36 +113,15 @@ class FakeHooks:
 
 
 def make_config(tmp_path: Path) -> AppConfig:
-    return AppConfig(
-        cwd=tmp_path,
-        port=3100,
-        webhook_path="/feishu/webhook",
-        data_dir=tmp_path / "data",
-        workspace_root=tmp_path / "workspace",
-        main_workspace_dir=tmp_path / "main",
-        develop_workspace_dir=tmp_path / "develop",
-        max_request_bytes=1024,
-        max_session_messages=20,
-        feishu=FeishuConfig(app_id="app", app_secret="secret", verify_token="verify-token", bot_open_id="ou_bot"),
-        backend=BackendConfig(default_backend="codex", codex_sessions_dir=tmp_path / "native"),
-    )
+    return make_app_config(tmp_path)
 
 
 def prepare_dirs(config: AppConfig) -> None:
-    for path in [config.workspace_root, config.main_workspace_dir, config.develop_workspace_dir, config.backend.codex_sessions_dir]:
-        path.mkdir(parents=True, exist_ok=True)
+    prepare_app_dirs(config, include_data_dir=False)
 
 
 def make_message(text: str, suffix: str = "cmd") -> IncomingMessage:
-    return IncomingMessage(
-        event_id=f"evt_{suffix}",
-        message_id=f"om_{suffix}",
-        chat_id="oc_1",
-        chat_type="p2p",
-        sender_open_id="ou_user",
-        text=text,
-        actionable=True,
-    )
+    return make_incoming_message(text, event_suffix=suffix)
 
 
 def build_router(tmp_path: Path) -> tuple[RuntimeCommandRouter, StateStore, FakeHooks, FakeRuntimeService]:

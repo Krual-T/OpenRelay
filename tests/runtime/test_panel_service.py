@@ -3,39 +3,14 @@ from types import SimpleNamespace
 
 import pytest
 
-from openrelay.core import AppConfig, BackendConfig, FeishuConfig, IncomingMessage
+from openrelay.core import IncomingMessage
 from openrelay.core.models import SessionRecord
 from openrelay.runtime.panel_service import RuntimePanelService
 from openrelay.runtime.replying import RuntimeReplyPolicy
 from openrelay.session.scope.resolver import SessionScopeResolver
 from openrelay.storage import StateStore
-
-
-class _FakeMessenger:
-    def __init__(self) -> None:
-        self.calls: list[dict[str, object]] = []
-
-    async def send_interactive_card(
-        self,
-        chat_id: str,
-        card: dict[str, object],
-        *,
-        reply_to_message_id: str = "",
-        root_id: str = "",
-        force_new_message: bool = False,
-        update_message_id: str = "",
-    ) -> object:
-        self.calls.append(
-            {
-                "chat_id": chat_id,
-                "card": card,
-                "reply_to_message_id": reply_to_message_id,
-                "root_id": root_id,
-                "force_new_message": force_new_message,
-                "update_message_id": update_message_id,
-            }
-        )
-        return object()
+from tests.support.app import make_app_config, prepare_app_dirs
+from tests.support.messenger import RecordingInteractiveMessenger
 
 
 def test_runtime_panel_service_backend_session_card_limits_to_three_and_formats_seconds() -> None:
@@ -78,24 +53,16 @@ def test_runtime_panel_service_backend_session_card_limits_to_three_and_formats_
 
 @pytest.mark.asyncio
 async def test_runtime_panel_service_updates_resume_card_in_place_for_card_actions(tmp_path) -> None:
-    config = AppConfig(
-        cwd=tmp_path,
-        port=3100,
-        webhook_path="/feishu/webhook",
-        data_dir=tmp_path / "data",
+    config = make_app_config(
+        tmp_path,
         workspace_root=tmp_path,
         main_workspace_dir=tmp_path,
         develop_workspace_dir=tmp_path / "develop",
-        max_request_bytes=1024,
-        max_session_messages=20,
-        feishu=FeishuConfig(app_id="app", app_secret="secret", verify_token="verify-token", bot_open_id="ou_bot"),
-        backend=BackendConfig(codex_sessions_dir=tmp_path / "native"),
     )
-    for path in (config.data_dir, config.develop_workspace_dir, config.backend.codex_sessions_dir):
-        path.mkdir(parents=True, exist_ok=True)
+    prepare_app_dirs(config)
     store = StateStore(config)
     scope = SessionScopeResolver(config, store, logging.getLogger("test.resume.card.update"))
-    messenger = _FakeMessenger()
+    messenger = RecordingInteractiveMessenger()
 
     service = RuntimePanelService(
         config=config,

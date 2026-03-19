@@ -2,38 +2,26 @@ from pathlib import Path
 
 import pytest
 
-from openrelay.core import AppConfig, BackendConfig, DirectoryShortcut, FeishuConfig, SessionRecord
+from openrelay.core import DirectoryShortcut, SessionRecord
 from openrelay.session import SessionShortcutService, SessionWorkspaceService
 from openrelay.storage import StateStore
+from tests.support.app import make_app_config, prepare_app_dirs
 
 
-def make_config(tmp_path: Path) -> AppConfig:
-    home_dir = tmp_path / "home"
-    projects_dir = home_dir / "Projects"
-    return AppConfig(
-        cwd=tmp_path,
-        port=3100,
-        webhook_path="/feishu/webhook",
-        data_dir=tmp_path / "data",
-        workspace_root=home_dir,
+def make_config(tmp_path: Path):
+    projects_dir = tmp_path / "home" / "Projects"
+    return make_app_config(
+        tmp_path,
+        workspace_root=tmp_path / "home",
         main_workspace_dir=projects_dir,
-        develop_workspace_dir=home_dir / "develop",
-        max_request_bytes=1024,
-        max_session_messages=20,
-        feishu=FeishuConfig(app_id="app", app_secret="secret", verify_token="verify-token", bot_open_id="ou_bot"),
-        backend=BackendConfig(codex_sessions_dir=tmp_path / "native"),
+        develop_workspace_dir=tmp_path / "home" / "develop",
         workspace_default_dir=projects_dir,
     )
 
 
-def prepare_dirs(config: AppConfig) -> None:
-    for path in (config.data_dir, config.workspace_root, config.main_workspace_dir, config.develop_workspace_dir, config.backend.codex_sessions_dir):
-        path.mkdir(parents=True, exist_ok=True)
-
-
 def test_workspace_resolve_cwd_rejects_escape(tmp_path: Path) -> None:
     config = make_config(tmp_path)
-    prepare_dirs(config)
+    prepare_app_dirs(config)
     workspace = SessionWorkspaceService(config)
     session = SessionRecord(
         session_id="s_1",
@@ -49,7 +37,7 @@ def test_workspace_resolve_cwd_rejects_escape(tmp_path: Path) -> None:
 
 def test_directory_shortcut_resolution_reuses_workspace_guardrails(tmp_path: Path) -> None:
     config = make_config(tmp_path)
-    prepare_dirs(config)
+    prepare_app_dirs(config)
     (config.main_workspace_dir / "project").mkdir()
     outside = tmp_path / "outside"
     outside.mkdir()
@@ -75,7 +63,7 @@ def test_directory_shortcut_resolution_reuses_workspace_guardrails(tmp_path: Pat
 
 def test_workspace_directory_page_lists_visible_entries_for_current_browser_path(tmp_path: Path) -> None:
     config = make_config(tmp_path)
-    prepare_dirs(config)
+    prepare_app_dirs(config)
     (config.main_workspace_dir / "docs").mkdir()
     (config.main_workspace_dir / "src").mkdir()
     (config.main_workspace_dir / "src" / "api").mkdir(parents=True)
@@ -100,7 +88,7 @@ def test_workspace_directory_page_lists_visible_entries_for_current_browser_path
 
 def test_workspace_directory_page_supports_query_filter(tmp_path: Path) -> None:
     config = make_config(tmp_path)
-    prepare_dirs(config)
+    prepare_app_dirs(config)
     (config.main_workspace_dir / "api-server").mkdir()
     (config.main_workspace_dir / "web-app").mkdir()
     session = SessionRecord(
@@ -120,7 +108,7 @@ def test_workspace_directory_page_supports_query_filter(tmp_path: Path) -> None:
 
 def test_workspace_directory_page_hides_hidden_directories_by_default_but_can_show_them(tmp_path: Path) -> None:
     config = make_config(tmp_path)
-    prepare_dirs(config)
+    prepare_app_dirs(config)
     (config.main_workspace_dir / ".codex").mkdir()
     (config.main_workspace_dir / "docs").mkdir()
     session = SessionRecord(
@@ -143,7 +131,7 @@ def test_workspace_directory_page_hides_hidden_directories_by_default_but_can_sh
 
 def test_workspace_browser_defaults_to_projects_but_root_is_home(tmp_path: Path) -> None:
     config = make_config(tmp_path)
-    prepare_dirs(config)
+    prepare_app_dirs(config)
     (config.workspace_root / "Projects").mkdir(exist_ok=True)
     (config.workspace_root / "Downloads").mkdir()
     session = SessionRecord(

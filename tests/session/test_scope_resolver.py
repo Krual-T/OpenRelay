@@ -1,8 +1,9 @@
 from pathlib import Path
 
-from openrelay.core import AppConfig, BackendConfig, FeishuConfig, IncomingMessage
+from openrelay.core import AppConfig, IncomingMessage
 from openrelay.session import SessionScopeResolver
 from openrelay.storage import StateStore
+from tests.support.app import make_app_config, make_incoming_message
 
 
 class _NullLogger:
@@ -11,40 +12,16 @@ class _NullLogger:
 
 
 def make_config(tmp_path: Path) -> AppConfig:
-    return AppConfig(
-        cwd=tmp_path,
-        port=3100,
-        webhook_path="/feishu/webhook",
-        data_dir=tmp_path / "data",
-        workspace_root=tmp_path / "workspace",
-        main_workspace_dir=tmp_path / "main",
-        develop_workspace_dir=tmp_path / "develop",
-        max_request_bytes=1024,
-        max_session_messages=20,
-        feishu=FeishuConfig(
-            app_id="app",
-            app_secret="secret",
-            verify_token="verify-token",
-            bot_open_id="ou_bot",
-            allowed_open_ids={"ou_user"},
-            admin_open_ids={"ou_admin"},
-        ),
-        backend=BackendConfig(default_backend="codex", default_safety_mode="workspace-write", codex_sessions_dir=tmp_path / "native"),
+    return make_app_config(
+        tmp_path,
+        allowed_open_ids={"ou_user"},
+        admin_open_ids={"ou_admin"},
+        default_safety_mode="workspace-write",
     )
 
 
 def make_message(text: str, *, event_suffix: str = "", **overrides: str) -> IncomingMessage:
-    suffix = event_suffix or text.replace(" ", "_")
-    return IncomingMessage(
-        event_id=f"evt_{suffix}",
-        message_id=f"om_{suffix}",
-        chat_id="oc_1",
-        chat_type="p2p",
-        sender_open_id="ou_user",
-        text=text,
-        actionable=True,
-        **overrides,
-    )
+    return make_incoming_message(text, event_suffix=event_suffix, **overrides)
 
 
 def test_session_scope_prefers_root_id_scope(tmp_path: Path) -> None:

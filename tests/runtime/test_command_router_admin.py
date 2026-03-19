@@ -2,7 +2,7 @@ from pathlib import Path
 
 import pytest
 
-from tests.runtime.command_router_support import build_router, make_message
+from tests.support.runtime_command_router import build_router, make_message
 
 
 @pytest.mark.asyncio

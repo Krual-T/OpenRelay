@@ -1,4 +1,4 @@
-from tests.feishu.streaming_support import (
+from tests.support.feishu_streaming import (
     LiveTurnPresenter,
     LiveTurnViewModel,
     STREAMING_ELEMENT_ID,

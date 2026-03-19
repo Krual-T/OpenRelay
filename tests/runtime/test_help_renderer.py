@@ -1,39 +1,16 @@
 from pathlib import Path
 
-from openrelay.core import AppConfig, BackendConfig, FeishuConfig
 from openrelay.presentation.session import SessionPresentation
 from openrelay.runtime import HelpRenderer
 from openrelay.session import SessionShortcutService, SessionWorkspaceService
 from openrelay.storage import StateStore
-
-
-
-def make_config(tmp_path: Path) -> AppConfig:
-    return AppConfig(
-        cwd=tmp_path,
-        port=3100,
-        webhook_path="/feishu/webhook",
-        data_dir=tmp_path / "data",
-        workspace_root=tmp_path / "workspace",
-        main_workspace_dir=tmp_path / "main",
-        develop_workspace_dir=tmp_path / "develop",
-        max_request_bytes=1024,
-        max_session_messages=20,
-        feishu=FeishuConfig(app_id="app", app_secret="secret", verify_token="verify-token", bot_open_id="ou_bot"),
-        backend=BackendConfig(codex_sessions_dir=tmp_path / "native"),
-    )
-
-
-
-def prepare_dirs(config: AppConfig) -> None:
-    for path in [config.workspace_root, config.main_workspace_dir, config.develop_workspace_dir, config.backend.codex_sessions_dir]:
-        path.mkdir(parents=True, exist_ok=True)
+from tests.support.app import make_app_config, prepare_app_dirs
 
 
 
 def test_help_renderer_lists_commands_for_single_backend(tmp_path: Path) -> None:
-    config = make_config(tmp_path)
-    prepare_dirs(config)
+    config = make_app_config(tmp_path)
+    prepare_app_dirs(config, include_data_dir=False)
     store = StateStore(config)
     session = store.load_session("p2p:oc_1")
     session_ux = SessionPresentation(config, store)
@@ -57,8 +34,8 @@ def test_help_renderer_lists_commands_for_single_backend(tmp_path: Path) -> None
 
 
 def test_help_renderer_lists_backend_switch_when_multiple_backends(tmp_path: Path) -> None:
-    config = make_config(tmp_path)
-    prepare_dirs(config)
+    config = make_app_config(tmp_path)
+    prepare_app_dirs(config, include_data_dir=False)
     store = StateStore(config)
     session = store.load_session("p2p:oc_1")
     session_ux = SessionPresentation(config, store)

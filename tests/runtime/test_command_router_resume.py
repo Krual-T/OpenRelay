@@ -3,7 +3,7 @@ from pathlib import Path
 import pytest
 
 from openrelay.session import SESSION_SORT_ACTIVE
-from tests.runtime.command_router_support import build_router, make_card_action_message, make_message, make_thread_message
+from tests.support.runtime_command_router import build_router, make_card_action_message, make_message, make_thread_message
 
 
 @pytest.mark.asyncio

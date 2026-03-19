@@ -1,32 +1,9 @@
-from pathlib import Path
 import json
+from pathlib import Path
 
-from openrelay.core import AppConfig, BackendConfig, FeishuConfig
 from openrelay.session import DEFAULT_SESSION_LIST_SORT, SESSION_SORT_ACTIVE, SessionBrowser
 from openrelay.storage import StateStore
-
-
-
-def make_config(tmp_path: Path) -> AppConfig:
-    return AppConfig(
-        cwd=tmp_path,
-        port=3100,
-        webhook_path="/feishu/webhook",
-        data_dir=tmp_path / "data",
-        workspace_root=tmp_path / "workspace",
-        main_workspace_dir=tmp_path / "main",
-        develop_workspace_dir=tmp_path / "develop",
-        max_request_bytes=1024,
-        max_session_messages=20,
-        feishu=FeishuConfig(app_id="app", app_secret="secret", verify_token="verify-token", bot_open_id="ou_bot"),
-        backend=BackendConfig(codex_sessions_dir=tmp_path / "native"),
-    )
-
-
-
-def prepare_dirs(config: AppConfig) -> None:
-    for path in [config.workspace_root, config.main_workspace_dir, config.develop_workspace_dir, config.backend.codex_sessions_dir]:
-        path.mkdir(parents=True, exist_ok=True)
+from tests.support.app import make_app_config, prepare_app_dirs
 
 
 
@@ -41,8 +18,8 @@ def write_native_session(file_path: Path, session_id: str, cwd: Path, first_mess
 
 
 def test_session_browser_lists_only_local_backend_sessions(tmp_path: Path) -> None:
-    config = make_config(tmp_path)
-    prepare_dirs(config)
+    config = make_app_config(tmp_path)
+    prepare_app_dirs(config, include_data_dir=False)
     store = StateStore(config)
     browser = SessionBrowser(config, store)
     session_key = "p2p:oc_1"
@@ -63,8 +40,8 @@ def test_session_browser_lists_only_local_backend_sessions(tmp_path: Path) -> No
 
 
 def test_session_browser_resume_latest_uses_local_backend_sessions(tmp_path: Path) -> None:
-    config = make_config(tmp_path)
-    prepare_dirs(config)
+    config = make_app_config(tmp_path)
+    prepare_app_dirs(config, include_data_dir=False)
     store = StateStore(config)
     browser = SessionBrowser(config, store)
     session_key = "p2p:oc_1"
@@ -84,8 +61,8 @@ def test_session_browser_resume_latest_uses_local_backend_sessions(tmp_path: Pat
 
 
 def test_session_browser_builds_paged_view_with_default_updated_sort(tmp_path: Path) -> None:
-    config = make_config(tmp_path)
-    prepare_dirs(config)
+    config = make_app_config(tmp_path)
+    prepare_app_dirs(config, include_data_dir=False)
     store = StateStore(config)
     browser = SessionBrowser(config, store)
     session_key = "p2p:oc_1"

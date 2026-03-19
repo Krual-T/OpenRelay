@@ -1,4 +1,4 @@
-from tests.feishu.streaming_support import build_complete_card, optimize_markdown_style
+from tests.support.feishu_streaming import build_complete_card, optimize_markdown_style
 
 def test_build_complete_card_prefers_transcript_markdown() -> None:
     card = build_complete_card(
