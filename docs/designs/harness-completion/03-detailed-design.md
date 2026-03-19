@@ -17,14 +17,14 @@
   - `verify` keeps protocol check first, then runs package verification with clearer migration-era reporting
   - `new-design` keeps scaffolding logic inside the skill rather than under the `openrelay` product package
 - `.codex/skills/openharness/SKILL.md`
-  - absorb the repository entry-skill duties that previously lived in `using-superpowers`
+  - own the repository entry-skill duties directly inside the harness skill
   - declare that `openharness` is the only repository entry root for skill checking and routing
 - `.codex/skills/openharness/references/skill-hub.md`
   - document that entry-skill behavior now belongs to `openharness`
   - treat duplicated entry layers as protocol drift rather than a supported alias
 - `.codex/skills/openharness/tests/test_openharness.py`
   - verify the harness as skill-owned infrastructure instead of product-runtime test surface
-  - assert that the repository entry-skill contract is owned by `openharness` rather than a separate `using-superpowers` layer
+  - assert that the repository entry-skill contract is owned by `openharness` rather than a separate parallel layer
   - assert that `AGENTS.md` routes repository skill usage through `openharness`
 - `docs/designs/<task>/...`
   - new home for migrated and future design packages
@@ -147,7 +147,7 @@ Expected harness-level behavior after this task:
    - active packages should have non-empty `summary`, `done_criteria`, and verification commands or a justified empty state
 5. `workflow-root validation`
    - `openharness` is the repository entry skill
-   - no separate local `using-superpowers`-style entry layer should be treated as canonical
+   - no separate local entry-layer alias should be treated as canonical
 
 ## Delivery Phases
 1. `Phase 1: docs-root migration`

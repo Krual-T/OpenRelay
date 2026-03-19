@@ -52,6 +52,8 @@ evidence:
   - docs/designs/harness-completion/04-implementation-plan.md
   - docs/designs/harness-completion/05-verification.md
   - docs/designs/harness-completion/06-evidence.md
+  - .codex/skills/openharness/SKILL.md
+  - .codex/skills/openharness/references/skill-hub.md
   - docs/designs/legacy-design-package-maturation/
   - docs/archived/legacy/
   code:

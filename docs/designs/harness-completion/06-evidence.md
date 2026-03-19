@@ -40,16 +40,18 @@
 - `uv run python .codex/skills/openharness/scripts/openharness.py check-designs`
 - `uv run python .codex/skills/openharness/scripts/openharness.py bootstrap --all`
 - `uv run pytest .codex/skills/openharness/tests/test_openharness.py`
-- `python` script to replace `.codex/skills/*` symlinks with vendored directories copied from the current superpowers source
-- `python` script to remove `docs/superpowers/plans/2026-03-19-harness-docs-root-migration.md`
+- `python` script to replace `.codex/skills/*` symlinks with vendored directories copied from the current external skill source
+- `python` script to remove the wrong-root planning artifact under the legacy docs root
 - `python` script to collapse multiple harness entrypoints into `.codex/skills/openharness/scripts/openharness.py`
 - `mv tests/harness/test_design_harness.py .codex/skills/openharness/tests/test_openharness.py`
-- `apply_patch` to fold the local `using-superpowers` entry-skill contract into `.codex/skills/openharness/SKILL.md`, document the cleanup in `references/skill-hub.md`, and pin the contract in `.codex/skills/openharness/tests/test_openharness.py`
+- `apply_patch` to consolidate the local entry-skill contract into `.codex/skills/openharness/SKILL.md`, document the cleanup in `references/skill-hub.md`, and pin the contract in `.codex/skills/openharness/tests/test_openharness.py`
 - `apply_patch` to update `AGENTS.md` so the repo-level workflow instructions route skill usage through `openharness`, and to extend `.codex/skills/openharness/tests/test_openharness.py` with an `AGENTS.md` contract check
+- `apply_patch` to remove legacy entry-layer names from `.codex/skills/openharness/SKILL.md`, `.codex/skills/openharness/references/skill-hub.md`, and `docs/designs/harness-completion/*`
+- `python` repository-wide scan for the legacy brand token and its former entry-skill alias
 - `uv run python .codex/skills/openharness/scripts/openharness.py check-designs`
 - `uv run pytest .codex/skills/openharness/tests/test_openharness.py`
 
 ## Follow-ups
 - This package now lives under `docs/designs/harness-completion/`; later work should keep the docs-root layout canonical.
 - Mature the historical placeholder packages tracked by `OR-017` one by one.
-- Add explicit harness-level rejection for wrong-root task artifacts such as `docs/superpowers/plans/*.md` so local-skill adaptation is backed by protocol enforcement.
+- Add explicit harness-level rejection for wrong-root task artifacts under deprecated docs roots so local-skill adaptation is backed by protocol enforcement.
