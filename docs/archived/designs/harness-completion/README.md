@@ -4,7 +4,7 @@
 Complete the next stage of the repository harness by moving design packages under `docs/`, archiving legacy standalone notes, formalizing historical tasks as packages, and strengthening enforcement so the harness becomes the default working system instead of just a protocol skeleton.
 
 ## Current Status
-- Status: `landed`
+- Status: `archived`
 - Owner: `codex`
 - Last Updated: `2026-03-19`
 

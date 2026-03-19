@@ -10,6 +10,8 @@
 - Historical package-maturation debt is tracked explicitly outside OR-016.
 
 ## Latest Result
+- 2026-03-19: archived package moved from `docs/designs/harness-completion/` to `docs/archived/designs/harness-completion/` so completed design work no longer occupies the active design root.
+- 2026-03-19: package status changed from `landed` to `archived` after confirming the task is complete and should remain as historical harness evidence instead of an active design package.
 - 2026-03-19: `uv run python .codex/skills/openharness/scripts/openharness.py check-designs` passed after creating this package.
 - 2026-03-19: `uv run python .codex/skills/openharness/scripts/openharness.py bootstrap --all` passed and listed `OR-016` plus `OR-015`.
 - 2026-03-19: `uv run pytest .codex/skills/openharness/tests/test_openharness.py` passed after switching the manifest, scaffolding expectations, and discovery root to `docs/designs/`.

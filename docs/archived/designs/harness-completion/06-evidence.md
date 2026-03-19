@@ -1,13 +1,13 @@
 # Evidence
 
 ## Files
-- `docs/designs/harness-completion/README.md`
-- `docs/designs/harness-completion/STATUS.yaml`
-- `docs/designs/harness-completion/01-requirements.md`
-- `docs/designs/harness-completion/02-overview-design.md`
-- `docs/designs/harness-completion/03-detailed-design.md`
-- `docs/designs/harness-completion/05-verification.md`
-- `docs/designs/harness-completion/06-evidence.md`
+- `docs/archived/designs/harness-completion/README.md`
+- `docs/archived/designs/harness-completion/STATUS.yaml`
+- `docs/archived/designs/harness-completion/01-requirements.md`
+- `docs/archived/designs/harness-completion/02-overview-design.md`
+- `docs/archived/designs/harness-completion/03-detailed-design.md`
+- `docs/archived/designs/harness-completion/05-verification.md`
+- `docs/archived/designs/harness-completion/06-evidence.md`
 - `docs/designs/message-observability/`
 - `docs/designs/architecture-refactor/`
 - `docs/designs/unified-waiting-interactions/`
@@ -46,12 +46,13 @@
 - `mv tests/harness/test_design_harness.py .codex/skills/openharness/tests/test_openharness.py`
 - `apply_patch` to consolidate the local entry-skill contract into `.codex/skills/openharness/SKILL.md`, document the cleanup in `references/skill-hub.md`, and pin the contract in `.codex/skills/openharness/tests/test_openharness.py`
 - `apply_patch` to update `AGENTS.md` so the repo-level workflow instructions route skill usage through `openharness`, and to extend `.codex/skills/openharness/tests/test_openharness.py` with an `AGENTS.md` contract check
-- `apply_patch` to remove legacy entry-layer names from `.codex/skills/openharness/SKILL.md`, `.codex/skills/openharness/references/skill-hub.md`, and `docs/designs/harness-completion/*`
+- `apply_patch` to remove legacy entry-layer names from `.codex/skills/openharness/SKILL.md`, `.codex/skills/openharness/references/skill-hub.md`, and `docs/archived/designs/harness-completion/*`
 - `python` repository-wide scan for the legacy brand token and its former entry-skill alias
+- `apply_patch` to archive `docs/archived/designs/harness-completion/` by setting `STATUS.yaml.status` to `archived` and updating package verification notes
 - `uv run python .codex/skills/openharness/scripts/openharness.py check-designs`
 - `uv run pytest .codex/skills/openharness/tests/test_openharness.py`
 
 ## Follow-ups
-- This package now lives under `docs/designs/harness-completion/`; later work should keep the docs-root layout canonical.
+- This package now lives under `docs/archived/designs/harness-completion/`; later work should keep the docs-root layout canonical.
 - Mature the historical placeholder packages tracked by `OR-017` one by one.
 - Add explicit harness-level rejection for wrong-root task artifacts under deprecated docs roots so local-skill adaptation is backed by protocol enforcement.

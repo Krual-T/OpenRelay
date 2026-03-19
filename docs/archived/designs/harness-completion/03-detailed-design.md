@@ -116,7 +116,7 @@ Expected harness-level behavior after this task:
   - expected starting state: scaffold package and absorb `docs/archived/legacy/or-task-014-log-manager-overall-design.md`
 - `OR-TASK-016`
   - class: `already-packaged`
-  - target package: `docs/designs/harness-completion/`
+  - target package: `docs/archived/designs/harness-completion/`
 - `OR-TASK-017`
   - class: `follow-up-package`
   - target package: `docs/designs/legacy-design-package-maturation/`
