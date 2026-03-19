@@ -122,7 +122,7 @@ def test_build_streaming_card_json_preserves_nbsp_entities_for_indented_output(
                     "state": "completed",
                     "title": "Ran shell command",
                     "mode": "command",
-                    "command": "sed -n '430,435p' src/openrelay/runtime/commands.py",
+                    "command": "sed -n '430,435p' src/openrelay/runtime/command_router.py",
                     "exit_code": 0,
                     "output_preview": "        try:\n            return raw",
                 }
@@ -1030,7 +1030,7 @@ async def test_streaming_session_update_card_json_keeps_nbsp_entities(
                     "state": "completed",
                     "title": "Ran shell command",
                     "mode": "command",
-                    "command": "sed -n '430,435p' src/openrelay/runtime/commands.py",
+                    "command": "sed -n '430,435p' src/openrelay/runtime/command_router.py",
                     "exit_code": 0,
                     "output_preview": "        try:\n            return raw",
                 }
