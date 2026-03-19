@@ -1,12 +1,11 @@
 from __future__ import annotations
 
 from contextlib import asynccontextmanager
-from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
 
-from openrelay.core import AppConfig, BackendConfig, FeishuConfig, IncomingMessage, SessionRecord
+from openrelay.core import SessionRecord
 from openrelay.feishu.types import SentMessageRef
 from openrelay.runtime.message_content import message_summary_text
 from openrelay.runtime.message_application import RuntimeMessageApplicationService
@@ -16,34 +15,18 @@ from openrelay.runtime.replying import ReplyRoute
 from openrelay.runtime.turn import TurnRuntimeContext
 from openrelay.runtime.turn_execution import DEFAULT_IMAGE_PROMPT, RuntimeTurnExecutionService
 from openrelay.storage import StateStore
+from tests.support.app import make_app_config, make_incoming_message, prepare_app_dirs
 
 
-def make_config(tmp_path: Path) -> AppConfig:
-    return AppConfig(
-        cwd=tmp_path,
-        port=3100,
-        webhook_path="/feishu/webhook",
-        data_dir=tmp_path / "data",
-        workspace_root=tmp_path / "workspace",
-        main_workspace_dir=tmp_path / "main",
-        develop_workspace_dir=tmp_path / "develop",
-        max_request_bytes=1024,
-        max_session_messages=20,
-        feishu=FeishuConfig(app_id="app", app_secret="secret", verify_token="verify-token", bot_open_id="ou_bot"),
-        backend=BackendConfig(codex_sessions_dir=tmp_path / "native"),
-    )
+def make_config(tmp_path):
+    return make_app_config(tmp_path)
 
 
-def build_message(*, text: str = "hello", local_image_paths: tuple[str, ...] = ()) -> IncomingMessage:
-    return IncomingMessage(
-        event_id="evt_1",
-        message_id="om_1",
-        chat_id="oc_1",
-        chat_type="p2p",
-        sender_open_id="ou_user",
-        text=text,
+def build_message(*, text: str = "hello", local_image_paths: tuple[str, ...] = ()):
+    return make_incoming_message(
+        text,
+        event_suffix="1",
         local_image_paths=local_image_paths,
-        actionable=True,
     )
 
 
@@ -74,8 +57,7 @@ class _IdleExecutionCoordinator:
 @pytest.mark.asyncio
 async def test_message_application_uses_reply_keyword_contract_for_unauthorized_sender(tmp_path: Path) -> None:
     config = make_config(tmp_path)
-    for path in [config.workspace_root, config.main_workspace_dir, config.develop_workspace_dir]:
-        path.mkdir(parents=True, exist_ok=True)
+    prepare_app_dirs(config, include_data_dir=False)
     store = StateStore(config)
     reply_calls: list[dict[str, object]] = []
 
@@ -125,8 +107,7 @@ async def test_message_application_uses_reply_keyword_contract_for_unauthorized_
 @pytest.mark.asyncio
 async def test_reply_service_routes_command_fallback_through_command_route(tmp_path: Path) -> None:
     config = make_config(tmp_path)
-    for path in [config.workspace_root, config.main_workspace_dir, config.develop_workspace_dir]:
-        path.mkdir(parents=True, exist_ok=True)
+    prepare_app_dirs(config, include_data_dir=False)
     store = StateStore(config)
     sent: list[dict[str, object]] = []
 
