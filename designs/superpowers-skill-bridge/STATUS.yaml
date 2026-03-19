@@ -1,0 +1,55 @@
+id: OR-016
+title: Superpowers Skill Bridge
+status: landed
+summary: Soft-link all installed obra/superpowers skills into the repository so the harness can use them explicitly in-repo.
+owner: codex
+created_at: 2026-03-19
+updated_at: 2026-03-19
+depends_on:
+  - OR-015
+scope:
+  areas:
+    - harness
+    - skills
+    - repo-protocol
+entrypoints:
+  - AGENTS.md
+  - .codex/skills/
+  - designs/superpowers-skill-bridge/README.md
+  - designs/superpowers-skill-bridge/01-requirements.md
+  - designs/superpowers-skill-bridge/02-overview-design.md
+  - designs/superpowers-skill-bridge/03-detailed-design.md
+done_criteria:
+  - All installed superpowers skills are soft-linked into `.codex/skills/`.
+  - AGENTS.md documents the soft-link model and its relationship to design packages.
+  - Harness verification includes an explicit check that key superpowers symlinks exist.
+verification:
+  required_commands:
+    - uv run python scripts/harness/check_designs.py
+    - find .codex/skills -maxdepth 1 -mindepth 1 -type l | sort
+    - uv run pytest tests/harness/test_design_harness.py
+  required_scenarios:
+    - superpowers_skill_symlink_visibility
+    - superpowers_skill_symlink_integrity
+evidence:
+  docs:
+    - designs/superpowers-skill-bridge/04-verification.md
+    - designs/superpowers-skill-bridge/05-evidence.md
+  code:
+    - AGENTS.md
+    - .codex/skills/brainstorming
+    - .codex/skills/dispatching-parallel-agents
+    - .codex/skills/executing-plans
+    - .codex/skills/finishing-a-development-branch
+    - .codex/skills/receiving-code-review
+    - .codex/skills/requesting-code-review
+    - .codex/skills/subagent-driven-development
+    - .codex/skills/systematic-debugging
+    - .codex/skills/test-driven-development
+    - .codex/skills/using-git-worktrees
+    - .codex/skills/using-superpowers
+    - .codex/skills/verification-before-completion
+    - .codex/skills/writing-plans
+    - .codex/skills/writing-skills
+  tests:
+    - tests/harness/test_design_harness.py
