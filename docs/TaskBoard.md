@@ -166,6 +166,23 @@
 - **后续 follow-up**：
   - 若后续需要跨用户共享目录模板，应另开任务，不把团队级目录治理提前塞进当前个人工作区体验里。
 
+### [ ] OR-TASK-014 Log Manager 收敛设计
+- **目标**：在 `OR-TASK-007` 已经落地消息 trace 结构化可观测性的基础上，把当前分散的 `logger` 与 `observability` 收敛成统一记录入口和统一事实来源，为 AI debug 建立系统级 debug ledger 底座。
+- **当前关注**：现有 `observability` 仍主要覆盖消息主链路，`logging` 仍承担大量异常与外部边界诊断职责；两者并行存在，但记录入口、事件分类、入库准则与 fallback 边界尚未正式收敛。
+- **关闭条件**：
+  - 完成总体设计稿与详细设计稿，明确 `Log Manager` 的目标边界、事件模型、sink 策略、与现有 `observability` / `logger` 的关系以及分阶段迁移路径。
+  - 主路径代码完成统一记录入口落地，新增关键运行事实时默认经过 `Log Manager`，而不是继续直接散落写 `logger` 或 recorder。
+  - 至少 runtime 主路径异常、reply 失败、provider / 外部边界关键失败能够稳定进入统一 ledger，并支持结构化查询。
+- **建议产物 / 已完成证据**：
+  - `docs/design/or-task-014-log-manager-overall-design.md`
+  - `docs/design/`
+  - `src/openrelay/observability/`
+  - `src/openrelay/runtime/`
+  - `src/openrelay/backends/`
+  - `src/openrelay/feishu/`
+- **后续 follow-up**：
+  - 若后续需要把 ledger 输出到远端平台或分析型存储，应作为 sink 扩展推进，不要在第一轮设计里提前引入外部平台复杂度。
+
 ## 使用约定
 
 - 新的设计 / 架构 / 体验类任务，应直接新增新的 `OR-TASK-xxx` 条目，不回退到已关闭任务下追加“待完成”。
