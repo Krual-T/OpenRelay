@@ -8,6 +8,7 @@ from .execution import RuntimeExecutionCoordinator
 from .follow_up import MERGED_FOLLOW_UP_INTRO, QueuedFollowUp
 from .help import HelpRenderer
 from .message_application import RuntimeMessageApplicationService
+from .message_content import DEFAULT_IMAGE_PROMPT
 from .message_dispatch import MessageDispatchService
 from .panel_service import RuntimePanelService
 from .reply_service import RuntimeReplyService
@@ -15,7 +16,7 @@ from .replying import ReplyRoute, RuntimeReplyPolicy
 from .restart import DEFAULT_SYSTEMD_SERVICE_UNIT, RuntimeRestartController, get_systemd_service_unit, is_systemd_service_process
 from .rendering import build_activity_summary, render_live_status_markdown, render_live_status_sections
 from .turn import TurnRuntimeContext
-from .turn_execution import DEFAULT_IMAGE_PROMPT, RuntimeTurnExecutionService
+from .turn_execution import RuntimeTurnExecutionService
 from openrelay.presentation import (
     PANEL_COMMANDS,
     PANEL_HOME,

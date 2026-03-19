@@ -9,10 +9,13 @@ from typing import Any
 
 from openrelay.core import ActiveRun, BackendReply, IncomingMessage, SessionRecord, utc_now
 from openrelay.feishu import FeishuStreamingSession, STREAMING_ROLLOVER_NOTICE
-from openrelay.observability import MessageTraceContext
 from openrelay.feishu.renderers.live_turn_renderer import FeishuLiveTurnRenderer
+from openrelay.observability import MessageTraceContext
+from openrelay.presentation.live_turn import LiveTurnPresenter
 
 from .interactions import RunInteractionController
+from .replying import ReplyRoute
+from .turn import TurnRuntimeContext
 
 
 LOGGER = logging.getLogger("openrelay.runtime")
@@ -35,7 +38,13 @@ class TurnRunState:
 
 
 class TurnRunController:
-    def __init__(self, runtime: Any, message: IncomingMessage, execution_key: str, presenter: Any) -> None:
+    def __init__(
+        self,
+        runtime: TurnRuntimeContext,
+        message: IncomingMessage,
+        execution_key: str,
+        presenter: LiveTurnPresenter,
+    ) -> None:
         self.runtime = runtime
         self.message = message
         self.execution_key = execution_key
@@ -117,7 +126,7 @@ class TurnRunController:
             return streaming.message_id()
         return self.message.reply_to_message_id or ("" if self.runtime.is_card_action_message(self.message) else self.message.message_id)
 
-    async def start_streaming_session(self, route: Any | None = None) -> FeishuStreamingSession:
+    async def start_streaming_session(self, route: ReplyRoute | None = None) -> FeishuStreamingSession:
         current_route = route or self.runtime.streaming_route_for_message(self.message)
         session = self.runtime.streaming_session_factory(self.runtime.messenger)
         await session.start(
@@ -145,21 +154,13 @@ class TurnRunController:
 
     async def reply_final(self, text: str) -> None:
         self._stop_spinner_task()
-        if self.state.trace_context is None:
-            await self.runtime.reply_final(self.message, text, self.state.streaming, self.state.live_state)
-            return
-        try:
-            await self.runtime.reply_final(
-                self.message,
-                text,
-                self.state.streaming,
-                self.state.live_state,
-                trace_context=self.state.trace_context,
-            )
-        except TypeError as exc:
-            if "trace_context" not in str(exc):
-                raise
-            await self.runtime.reply_final(self.message, text, self.state.streaming, self.state.live_state)
+        await self.runtime.reply_final(
+            self.message,
+            text,
+            self.state.streaming,
+            self.state.live_state,
+            trace_context=self.state.trace_context,
+        )
 
     async def finalize(self) -> None:
         self._stop_spinner_task()

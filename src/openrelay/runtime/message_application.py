@@ -11,6 +11,7 @@ from openrelay.storage import StateStore
 from .dispatch_models import DispatchDecision
 from .execution import ExecutionInput, RuntimeExecutionCoordinator
 from .follow_up import QueuedFollowUp
+from .message_content import message_summary_text
 from .message_dispatch import MessageDispatchService
 
 NON_BLOCKING_ACTIVE_RUN_COMMANDS = {"/ping", "/status", "/usage", "/help", "/tools", "/restart", "/compact"}
@@ -38,7 +39,7 @@ class RuntimeMessageApplicationService:
                 trace_context,
                 stage="ingress",
                 event_type="ingress.message.received",
-                summary=self._message_summary_text(message) or "[empty message]",
+                summary=message_summary_text(message) or "[empty message]",
                 payload={
                     "actionable": message.actionable,
                     "chat_type": message.chat_type,
@@ -198,7 +199,7 @@ class RuntimeMessageApplicationService:
                 trace_context,
                 stage="queue",
                 event_type="queue.follow_up.dequeued",
-                summary=self._message_summary_text(message) or "[queued input]",
+                summary=message_summary_text(message) or "[queued input]",
             )
         session_key = decision.resolved.session_key
         session = decision.resolved.session
@@ -209,7 +210,7 @@ class RuntimeMessageApplicationService:
         await self.run_backend_turn(message, execution_key, session, trace_context=trace_context)
 
     def _ignore_reason(self, message: IncomingMessage) -> str:
-        if not self._message_summary_text(message):
+        if not message_summary_text(message):
             return "empty message"
         if self.config.feishu.bot_open_id and message.sender_open_id == self.config.feishu.bot_open_id:
             return "self message"
@@ -217,15 +218,6 @@ class RuntimeMessageApplicationService:
             return "duplicate message"
         if not message.actionable:
             return "non actionable message"
-        return ""
-
-    def _message_summary_text(self, message: IncomingMessage) -> str:
-        text = str(message.text or "").strip()
-        if text:
-            return text
-        if message.local_image_paths:
-            count = len(message.local_image_paths)
-            return "[图片]" if count == 1 else f"[图片 x{count}]"
         return ""
 
     def _should_bypass_active_run(self, text: str) -> bool:
@@ -269,7 +261,7 @@ class RuntimeMessageApplicationService:
             summary = decision.command_name or "command"
         elif decision.kind == "turn":
             event_type = "dispatch.turn.accepted"
-            summary = self._message_summary_text(resolved.message) or "turn accepted"
+            summary = message_summary_text(resolved.message) or "turn accepted"
         elif decision.kind == "stop":
             event_type = "dispatch.command.detected"
             summary = decision.command_name or "/stop"

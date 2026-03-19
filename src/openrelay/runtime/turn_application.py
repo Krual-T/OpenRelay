@@ -1,18 +1,27 @@
 from __future__ import annotations
 
 import logging
-from typing import Any
 
-from openrelay.agent_runtime import RuntimeEvent, SessionStartedEvent, TurnInput
-from openrelay.core import BackendReply
+from openrelay.agent_runtime import RuntimeEvent, TurnInput
+from openrelay.core import BackendReply, IncomingMessage
 from openrelay.session import RelaySessionBinding
 
+from .turn import TurnBindingStore, TurnRuntimeContext
+from .turn_run_controller import TurnRunController
+from .turn_runtime_event_bridge import TurnRuntimeEventBridge
 
 LOGGER = logging.getLogger("openrelay.runtime")
 
 
 class TurnApplicationService:
-    def __init__(self, runtime: Any, message: Any, execution_key: str, controller: Any, event_bridge: Any) -> None:
+    def __init__(
+        self,
+        runtime: TurnRuntimeContext,
+        message: IncomingMessage,
+        execution_key: str,
+        controller: TurnRunController,
+        event_bridge: TurnRuntimeEventBridge,
+    ) -> None:
         self.runtime = runtime
         self.message = message
         self.execution_key = execution_key
@@ -24,8 +33,6 @@ class TurnApplicationService:
             await self.controller.prepare(message_summary)
             self.controller.build_interaction_controller()
             self.runtime.execution_coordinator.start_run(self.execution_key, self.controller.activate_run(message_summary))
-            if not self._should_use_agent_runtime():
-                raise RuntimeError(f"Unsupported backend: {self.controller.state.session.backend}")
             reply = await self.run_with_agent_runtime(backend_prompt)
             self.controller.save_reply(reply)
             self.controller.record_event(
@@ -100,7 +107,7 @@ class TurnApplicationService:
             metadata={"usage": usage or {}},
         )
 
-    def _ensure_binding(self, binding_store: Any) -> RelaySessionBinding:
+    def _ensure_binding(self, binding_store: TurnBindingStore) -> RelaySessionBinding:
         session = self.controller.state.session
         existing = binding_store.get(session.session_id)
         if existing is not None:
@@ -117,7 +124,3 @@ class TurnApplicationService:
         )
         binding_store.save(binding)
         return binding
-
-    def _should_use_agent_runtime(self) -> bool:
-        runtime_service = self.runtime.runtime_service
-        return runtime_service is not None and self.controller.state.session.backend in runtime_service.backends

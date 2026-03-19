@@ -42,7 +42,7 @@ from .reply_service import RuntimeReplyService
 from .replying import RuntimeReplyPolicy
 from .restart import RuntimeRestartController
 from .turn import TurnRuntimeContext
-from .turn_execution import DEFAULT_IMAGE_PROMPT, RuntimeTurnExecutionService
+from .turn_execution import RuntimeTurnExecutionService
 
 LOGGER = logging.getLogger("openrelay.runtime")
 

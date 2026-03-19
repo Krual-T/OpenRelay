@@ -1,17 +1,25 @@
 from __future__ import annotations
 
 import logging
-from typing import Any
 
 from openrelay.agent_runtime import ApprovalRequestedEvent, AssistantDeltaEvent, RuntimeEvent, SessionStartedEvent
+from openrelay.presentation.live_turn import LiveTurnPresenter
 from openrelay.session import RelaySessionBinding
+
+from .turn import TurnRuntimeContext
+from .turn_run_controller import TurnRunController
 
 
 LOGGER = logging.getLogger("openrelay.runtime")
 
 
 class TurnRuntimeEventBridge:
-    def __init__(self, runtime: Any, controller: Any, presenter: Any) -> None:
+    def __init__(
+        self,
+        runtime: TurnRuntimeContext,
+        controller: TurnRunController,
+        presenter: LiveTurnPresenter,
+    ) -> None:
         self.runtime = runtime
         self.controller = controller
         self.presenter = presenter
