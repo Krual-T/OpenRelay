@@ -40,9 +40,9 @@ from .panel_service import RuntimePanelService
 from .reply_service import RuntimeReplyService
 from .replying import RuntimeReplyPolicy
 from .restart import RuntimeRestartController
-from .turn import BackendTurnSession, TurnRuntimeContext
+from .turn import TurnRuntimeContext
+from .turn_execution import DEFAULT_IMAGE_PROMPT, RuntimeTurnExecutionService
 
-DEFAULT_IMAGE_PROMPT = "用户发送了图片。请先查看图片内容，再根据图片直接回答用户。"
 LOGGER = logging.getLogger("openrelay.runtime")
 
 
@@ -80,7 +80,13 @@ class RuntimeOrchestrator:
         self.session_mutations = SessionMutationService(config, store, self.session_presentation)
         self.session_scope = SessionScopeResolver(config, store, LOGGER)
         self.reply_policy = RuntimeReplyPolicy(config, self.session_scope)
-        self.reply_service = RuntimeReplyService(messenger, self.session_scope, self.reply_policy, self.live_turn_presenter)
+        self.reply_service = RuntimeReplyService(
+            config=config,
+            messenger=messenger,
+            session_scope=self.session_scope,
+            reply_policy=self.reply_policy,
+            live_turn_presenter=self.live_turn_presenter,
+        )
         self.session_lifecycle = SessionLifecycleResolver(config, store)
         self.message_dispatch = MessageDispatchService(self.session_scope, self.session_lifecycle)
         self.release_command_service = ReleaseCommandService(config, store, self.session_presentation, self.session_mutations)
@@ -138,6 +144,31 @@ class RuntimeOrchestrator:
             ),
             self.agent_runtime,
         )
+        self.turn_runtime_context = TurnRuntimeContext(
+            config=self.config,
+            store=self.store,
+            messenger=self.messenger,
+            typing_manager=self.typing_manager,
+            session_ux=self.session_presentation,
+            streaming_session_factory=self.streaming_session_factory,
+            execution_coordinator=self.execution_coordinator,
+            build_card_action_context=self.reply_policy.build_card_action_context,
+            streaming_route_for_message=self.reply_policy.streaming_route,
+            root_id_for_message=self.reply_policy.root_id_for_message,
+            is_card_action_message=self.reply_policy.is_card_action_message,
+            build_session_key=self.session_scope.build_session_key,
+            remember_outbound_aliases=self.session_scope.remember_outbound_aliases,
+            reply_final=self.reply_service.reply_final,
+            live_turn_presenter=self.live_turn_presenter,
+            binding_store=self.binding_store,
+            runtime_service=self.agent_runtime,
+        )
+        self.turn_execution = RuntimeTurnExecutionService(
+            runtime_context=self.turn_runtime_context,
+            runtime_backends=self.runtime_backends,
+            runtime_service=self.agent_runtime,
+            reply=self.reply_service.reply,
+        )
         self.message_application = RuntimeMessageApplicationService(
             config=config,
             store=store,
@@ -146,7 +177,7 @@ class RuntimeOrchestrator:
             is_allowed_user=self.is_allowed_user,
             reply=self.reply_service.reply,
             handle_command=self._handle_command,
-            run_backend_turn=self._run_backend_turn,
+            run_backend_turn=self.turn_execution.run,
             log_dispatch_resolution=self._log_dispatch_resolution,
         )
         self.restart_controller = RuntimeRestartController(LOGGER)
@@ -168,21 +199,6 @@ class RuntimeOrchestrator:
 
     def is_admin(self, sender_open_id: str) -> bool:
         return bool(self.config.feishu.admin_open_ids) and sender_open_id in self.config.feishu.admin_open_ids
-
-    def _message_summary_text(self, message: IncomingMessage) -> str:
-        text = str(message.text or "").strip()
-        if text:
-            return text
-        if message.local_image_paths:
-            count = len(message.local_image_paths)
-            return "[图片]" if count == 1 else f"[图片 x{count}]"
-        return ""
-
-    def _build_backend_prompt(self, message: IncomingMessage) -> str:
-        text = str(message.text or "").strip()
-        if message.local_image_paths and text in {"", "[图片]"}:
-            return DEFAULT_IMAGE_PROMPT
-        return text
 
     async def dispatch_message(self, message: IncomingMessage) -> None:
         await self.message_application.handle(message)
@@ -207,16 +223,6 @@ class RuntimeOrchestrator:
             message.parent_id,
         )
 
-    async def _run_backend_turn(self, message: IncomingMessage, execution_key: str, session: SessionRecord) -> None:
-        if not self._supports_runtime_backend(session.backend):
-            await self.reply_service.reply(message, f"Unsupported backend: {session.backend}")
-            return
-
-        message_summary = self._message_summary_text(message)
-        backend_prompt = self._build_backend_prompt(message)
-        turn = BackendTurnSession(self._build_turn_runtime_context(), message, execution_key, session)
-        await turn.run(message_summary, backend_prompt)
-
     async def _handle_command(self, message: IncomingMessage, session_key: str, session: SessionRecord) -> bool:
         return await self.command_router.handle(message, session_key, session)
 
@@ -225,27 +231,6 @@ class RuntimeOrchestrator:
 
     async def _cancel_active_run_for_session(self, session: SessionRecord, command_name: str) -> bool:
         return await self.message_application.cancel_active_run_for_session(session, command_name)
-
-    def _build_turn_runtime_context(self) -> TurnRuntimeContext:
-        return TurnRuntimeContext(
-            config=self.config,
-            store=self.store,
-            messenger=self.messenger,
-            typing_manager=self.typing_manager,
-            session_ux=self.session_presentation,
-            streaming_session_factory=self.streaming_session_factory,
-            execution_coordinator=self.execution_coordinator,
-            build_card_action_context=self.reply_policy.build_card_action_context,
-            streaming_route_for_message=self.reply_policy.streaming_route,
-            root_id_for_message=self.reply_policy.root_id_for_message,
-            is_card_action_message=self.reply_policy.is_card_action_message,
-            build_session_key=self.session_scope.build_session_key,
-            remember_outbound_aliases=self.session_scope.remember_outbound_aliases,
-            reply_final=self.reply_service.reply_final,
-            live_turn_presenter=self.live_turn_presenter,
-            binding_store=self.binding_store,
-            runtime_service=self.agent_runtime,
-        )
 
     def _build_builtin_runtime_backends(self) -> dict[str, object]:
         return {
@@ -265,20 +250,6 @@ class RuntimeOrchestrator:
 
     def available_backend_names(self) -> list[str]:
         return sorted(set(self.runtime_backends))
-
-    def _supports_runtime_backend(self, backend: str) -> bool:
-        return self.agent_runtime is not None and backend in self.runtime_backends
-
-    async def _send_text_reply(self, message: IncomingMessage, text: str, route: ReplyRoute) -> None:
-        sent_messages = await self.messenger.send_text(
-            message.chat_id,
-            text,
-            reply_to_message_id=route.reply_to_message_id,
-            root_id=route.root_id,
-            force_new_message=route.force_new_message,
-        )
-        session_key = self.session_scope.build_session_key(message)
-        self.session_scope.remember_outbound_aliases(message, session_key, [sent_message.alias_ids() for sent_message in sent_messages])
 
     def _schedule_restart(self) -> None:
         self.restart_controller.schedule_restart()
