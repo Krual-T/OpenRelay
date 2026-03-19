@@ -151,7 +151,8 @@ cp .env.example .env
 ```env
 PORT=3000
 DATA_DIR=./data
-WORKSPACE_DIR=~/Projects
+WORKSPACE_DIR=~
+WORKSPACE_DEFAULT_DIR=~/Projects
 MAIN_WORKSPACE_DIR=~/Projects
 DEVELOP_WORKSPACE_DIR=~/Projects
 

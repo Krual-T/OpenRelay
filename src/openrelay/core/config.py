@@ -64,6 +64,7 @@ class AppConfig:
     max_session_messages: int
     feishu: FeishuConfig
     backend: BackendConfig
+    workspace_default_dir: Path | None = None
     directory_shortcuts: tuple[DirectoryShortcut, ...] = ()
 
 
@@ -219,7 +220,8 @@ def load_config(cwd: str | Path | None = None) -> AppConfig:
     base = Path(cwd or os.getcwd()).resolve()
     load_env_file(base)
 
-    workspace_root = resolve_env_path(base, "WORKSPACE_ROOT", "WORKSPACE_DIR", default="~/Projects")
+    workspace_root = resolve_env_path(base, "WORKSPACE_ROOT", "WORKSPACE_DIR", default="~")
+    workspace_default_dir = resolve_env_path(base, "WORKSPACE_DEFAULT_DIR", default="~/Projects")
     main_workspace_dir = resolve_env_path(base, "MAIN_WORKSPACE_DIR", "STABLE_WORKSPACE_DIR", default=str(workspace_root))
     develop_workspace_dir = resolve_env_path(base, "DEVELOP_WORKSPACE_DIR", default=str(workspace_root))
     data_dir = resolve_env_path(base, "DATA_DIR", default="./data")
@@ -266,5 +268,6 @@ def load_config(cwd: str | Path | None = None) -> AppConfig:
             codex_sqlite_home=resolve_env_path(base, "CODEX_SQLITE_HOME", default=str(data_dir / "codex-sqlite")),
             codex_request_timeout_seconds=read_optional_float("CODEX_REQUEST_TIMEOUT_SECONDS", default=None),
         ),
+        workspace_default_dir=workspace_default_dir,
         directory_shortcuts=read_directory_shortcuts("DIRECTORY_SHORTCUTS"),
     )
