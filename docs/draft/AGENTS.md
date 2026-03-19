@@ -87,7 +87,7 @@ AI 默认先判断当前请求是否已经足够清晰。
 
 ### 4.2 设计任务板与任务状态更新
 
-命中以下任一情况时，先读取 `docs/design/task-board-protocol.md`：
+命中以下任一情况时，先读取 `docs/task-board-protocol.md`：
 
 - 当前任务对应 `docs/design/open-questions.md` 中的明确任务条目
 - 本轮改动完成后，需要判断任务是否可以关闭
@@ -117,7 +117,7 @@ repo 特有信息默认按下面三层外挂，而不是直接堆回 `AGENTS.md`
 ## 7. 当前外挂索引
 
 - `docs/draft/ai-specification-gate.md`：需求澄清、阶段判断、进入实现前的最低条件
-- `docs/design/task-board-protocol.md`：设计任务的关闭条件、证据回写、自勾选规则
+- `docs/task-board-protocol.md`：设计任务的关闭条件、证据回写、自勾选规则
 
 如果后续新增 repo 特有文档，也应优先继续沿用“主入口最小化、信息按需外挂”的结构，而不是重新回到一个超长的总规文件。
 
