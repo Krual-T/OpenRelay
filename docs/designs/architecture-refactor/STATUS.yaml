@@ -1,0 +1,51 @@
+id: OR-009
+title: Architecture Refactor
+status: landed
+summary: Formalize the landed architecture refactor design as a harness package.
+owner: codex
+created_at: 2026-03-19
+updated_at: 2026-03-19
+depends_on: []
+scope:
+  areas:
+  - architecture
+  - runtime
+  - presentation
+entrypoints:
+- docs/designs/architecture-refactor/README.md
+- docs/designs/architecture-refactor/STATUS.yaml
+- docs/designs/architecture-refactor/01-requirements.md
+- docs/designs/architecture-refactor/02-overview-design.md
+- docs/designs/architecture-refactor/03-detailed-design.md
+- docs/designs/architecture-refactor/04-implementation-plan.md
+done_criteria:
+- A formal design package exists for the landed architecture refactor work.
+- The overall and detailed design for OR-009 are represented inside the package.
+- The execution blueprint is referenced as supporting evidence.
+verification:
+  required_commands:
+  - uv run pytest
+  - uv run pytest tests/runtime/test_runtime_refactor_boundaries.py tests/runtime/test_message_observability.py
+    tests/runtime/test_turn.py tests/runtime/e2e/test_diff_trace.py tests/runtime/e2e/test_plan_status_trace.py
+  required_scenarios:
+  - runtime_refactor_boundaries
+  - end_to_end_turn_rendering
+evidence:
+  docs:
+  - docs/designs/architecture-refactor/README.md
+  - docs/designs/architecture-refactor/01-requirements.md
+  - docs/designs/architecture-refactor/02-overview-design.md
+  - docs/designs/architecture-refactor/03-detailed-design.md
+  - docs/designs/architecture-refactor/04-implementation-plan.md
+  - docs/designs/architecture-refactor/05-verification.md
+  - docs/designs/architecture-refactor/06-evidence.md
+  - docs/archived/legacy/or-task-009-architecture-refactor-overall-design.md
+  - docs/archived/legacy/or-task-009-architecture-refactor-detailed-design.md
+  - docs/archived/legacy/or-task-009-end-to-end-refactor-blueprint.md
+  code:
+  - src/openrelay/runtime/orchestrator.py
+  - src/openrelay/runtime/message_application.py
+  - src/openrelay/runtime/turn_execution.py
+  - src/openrelay/presentation/live_turn_view_builder.py
+  tests:
+  - tests/runtime/test_runtime_refactor_boundaries.py

@@ -1,0 +1,17 @@
+# Evidence
+
+## Files
+- `docs/designs/current-session-control-surface/README.md`
+- `docs/designs/current-session-control-surface/STATUS.yaml`
+- `docs/designs/current-session-control-surface/01-requirements.md`
+- `docs/designs/current-session-control-surface/02-overview-design.md`
+- `docs/designs/current-session-control-surface/03-detailed-design.md`
+- `docs/designs/current-session-control-surface/05-verification.md`
+- `docs/designs/current-session-control-surface/06-evidence.md`
+
+## Commands
+- `uv run python .codex/skills/openharness/scripts/openharness.py new-design current-session-control-surface OR-011 "Current Session Control Surface" --owner codex --summary "Consolidate the current-session status and control entrypoint."`
+
+## Follow-ups
+- Replace this package's placeholder detailed design with implementation-grade file-level design before coding starts.
+- Migrate task-board references to point at this package as the canonical task fact source.

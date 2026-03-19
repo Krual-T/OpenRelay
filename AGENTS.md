@@ -8,52 +8,56 @@
 
 1. `AGENTS.md`
    - 仓库地图、默认协作协议、结构约束、验证要求。
-2. `.harness/manifest.yaml`
+2. `.codex/skills/openharness/references/manifest.yaml`
    - harness 的机器可读入口；声明 design package 布局、状态流和 artifact 根目录。
-3. `designs/<task>/`
+3. `docs/designs/<task>/`
    - 设计任务的唯一事实来源；每个任务是一个独立 design package。
 4. `docs/architecture.md`
    - 当前系统结构说明。
 5. `.project-memory/`
    - 已验证的项目事实、决策和可复用 workflow。
-6. `docs/TaskBoard.md`
-   - 过渡期索引视图；若与 design package 冲突，以 `designs/<task>/` 为准。
+6. `docs/archived/legacy/`
+   - 历史材料归档区；仅作为 legacy evidence，不再作为当前任务事实源。
 
 ### 设计任务包协议
 
-每个设计任务应放在 `designs/<task>/`，并固定包含：
+每个设计任务应放在 `docs/designs/<task>/`，并固定包含：
 
 - `README.md`：任务入口页和阅读导航。
 - `STATUS.yaml`：机器可读状态源。
 - `01-requirements.md`：需求、目标、非目标、完成定义。
 - `02-overview-design.md`：总体设计、边界、主数据流/状态流。
 - `03-detailed-design.md`：详细设计、文件级落点、迁移策略。
-- `04-verification.md`：验证方案与结果。
-- `05-evidence.md`：落地证据、命令、剩余 follow-up。
+- `04-implementation-plan.md`：执行分解、阶段顺序、提交与验证闸口。
+- `05-verification.md`：验证方案与结果。
+- `06-evidence.md`：落地证据、命令、剩余 follow-up。
 
 默认阅读顺序：
 
 1. `AGENTS.md`
-2. `.harness/manifest.yaml`
-3. `designs/<task>/README.md`
-4. `designs/<task>/STATUS.yaml`
-5. `designs/<task>/01-requirements.md`
-6. `designs/<task>/02-overview-design.md`
-7. `designs/<task>/03-detailed-design.md`
-8. `designs/<task>/04-verification.md`
-9. `designs/<task>/05-evidence.md`
+2. `.codex/skills/openharness/references/manifest.yaml`
+3. `docs/designs/<task>/README.md`
+4. `docs/designs/<task>/STATUS.yaml`
+5. `docs/designs/<task>/01-requirements.md`
+6. `docs/designs/<task>/02-overview-design.md`
+7. `docs/designs/<task>/03-detailed-design.md`
+8. `docs/designs/<task>/04-implementation-plan.md`
+9. `docs/designs/<task>/05-verification.md`
+10. `docs/designs/<task>/06-evidence.md`
 
 ## 2. 默认工作流
 
 ### 进入仓库后
 
 - 先读 `AGENTS.md`，建立仓库地图。
-- 再读 `.harness/manifest.yaml`，确认 harness 协议。
-- 运行 `uv run python scripts/harness/bootstrap.py` 查看当前 active design packages。
+- 先把 `openharness` 视为本仓库的默认入口技能；任何可能涉及仓库协议、design package、验证流或技能路由的工作，都先从它开始判断该走哪个 skill。
+- 再读 `.codex/skills/openharness/references/manifest.yaml`，确认 harness 协议。
+- 运行 `uv run python .codex/skills/openharness/scripts/openharness.py bootstrap` 查看当前 active design packages。
 - 只在 design package 足够清晰时开始实现；若任务边界缺失，先补设计包而不是直接改代码。
 
 ### 执行任务时
 
+- 先经过 `openharness` 做 skill routing，再进入 `brainstorming`、`systematic-debugging`、`writing-plans` 或直接实现；不要再引入并行的 `using-superpowers` 入口层。
 - 需求、总体设计、详细设计分层书写，不要混在一个随手增长的长文档里。
 - 改动前先确定主路径、状态流和验证方式。
 - 复杂改动先整理结构，再实现局部。
@@ -61,9 +65,8 @@
 
 ### 完成任务时
 
-- 先更新 `04-verification.md` 和 `05-evidence.md`。
+- 先更新 `05-verification.md` 和 `06-evidence.md`；若本轮需要显式执行拆解，再更新 `04-implementation-plan.md`。
 - 再更新 `STATUS.yaml` 中的 `status`、`updated_at`、证据字段。
-- 如存在 `docs/TaskBoard.md` 对应索引，可同步更新；但它不是唯一真相源。
 - 每次完成一轮可独立成立的改动后，应做一次聚焦提交。
 
 ## 3. 工程风格
@@ -94,9 +97,9 @@
 ## 4. 文档与验证协议
 
 - 影响使用方式、配置方式、架构分层的改动，应同步更新对应 design package。
-- 需求变化先写 `01-requirements.md`；总体设计变化写 `02-overview-design.md`；实现落点变化写 `03-detailed-design.md`。
+- 需求变化先写 `01-requirements.md`；总体设计变化写 `02-overview-design.md`；实现落点变化写 `03-detailed-design.md`；需要阶段化执行方案时写 `04-implementation-plan.md`。
 - 完成前至少运行：
-  - `uv run python scripts/harness/check_designs.py`
+  - `uv run python .codex/skills/openharness/scripts/openharness.py check-designs`
   - 当前 design package 在 `STATUS.yaml.verification.required_commands` 中声明的命令
 - 若本轮只是补设计，仍应保证 design package 协议完整。
 

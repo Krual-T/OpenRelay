@@ -1,0 +1,11 @@
+# Verification
+
+## Required Commands
+- `uv run python .codex/skills/openharness/scripts/openharness.py check-designs`
+
+## Expected Outcomes
+- The active task now exists as a formal harness package.
+- Future implementation work can use this package as the task entrypoint.
+
+## Latest Result
+- 2026-03-19: package scaffolded from historical task notes and promoted to a formal harness package.
