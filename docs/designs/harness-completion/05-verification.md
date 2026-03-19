@@ -26,4 +26,5 @@
 - 2026-03-19: `uv run python .codex/skills/openharness/scripts/openharness.py check-designs` and `uv run python .codex/skills/openharness/scripts/openharness.py bootstrap --all` also passed after the single-CLI refactor.
 - 2026-03-19: `uv run python .codex/skills/openharness/scripts/openharness.py check-designs` passed after folding the local `using-superpowers` entry-skill contract into `.codex/skills/openharness/SKILL.md` and `.codex/skills/openharness/references/skill-hub.md`.
 - 2026-03-19: `uv run pytest .codex/skills/openharness/tests/test_openharness.py` passed with 13 tests after adding explicit assertions that `openharness` is the repository entry skill and that `skill-hub.md` forbids a parallel local `using-superpowers` layer.
-- 2026-03-19: `uv run pytest .codex/skills/openharness/tests/test_openharness.py` should continue to pass after updating `AGENTS.md` to route repository skill usage through `openharness` first.
+- 2026-03-19: `uv run python .codex/skills/openharness/scripts/openharness.py check-designs` passed after updating `AGENTS.md` so the repo-level workflow instructions route skill usage through `openharness` first.
+- 2026-03-19: `uv run pytest .codex/skills/openharness/tests/test_openharness.py` passed with 14 tests after adding an `AGENTS.md` contract check for repo-level skill routing through `openharness`.
