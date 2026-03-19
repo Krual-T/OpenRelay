@@ -57,7 +57,7 @@
 
 ### 执行任务时
 
-- 先经过 `openharness` 做 skill routing，再进入 `brainstorming`、`systematic-debugging`、`writing-plans` 或直接实现；不要再引入并行的 `using-superpowers` 入口层。
+- 先经过 `openharness` 做 skill routing，再进入 `brainstorming`、`systematic-debugging`、`writing-plans` 或直接实现；
 - 需求、总体设计、详细设计分层书写，不要混在一个随手增长的长文档里。
 - 改动前先确定主路径、状态流和验证方式。
 - 复杂改动先整理结构，再实现局部。
