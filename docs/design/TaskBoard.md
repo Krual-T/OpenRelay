@@ -34,7 +34,7 @@
   - **目标**：把工作区切换从 `/cwd`、`/cd` 的命令式输入收敛成面向飞书用户的工作区目录选择卡，在单一根目录内支持逐级浏览、返回、搜索和分页。
   - **完成情况**：正式设计稿已补齐；`/workspace` 已成为主入口；工作区卡已支持 `~` 根别名、默认 `~/Projects`、逐级浏览、返回上一级、回到根目录、搜索、隐藏目录显式开关、分页和选择当前目录；`/cwd`、`/cd` 已从 README、帮助文案和主面板入口中退出用户主路径。
   - **落地证据**：
-    - `docs/design/or-task-008-workspace-picker-design.md`
+    - `docs/archived/or-task-008-workspace-picker-design.md`
     - `README.md`
     - `src/openrelay/session/workspace.py`
     - `src/openrelay/presentation/panel.py`
@@ -53,7 +53,7 @@
   - **完成情况**：UX 视角调研稿已完成；飞书 transcript card 的首轮 Codex 风格富文本渲染已进入主路径，包括命令/输出高亮、git diff 红绿标签与彩色文本、Rich spans 命令高亮链路、shell-aware 命令换行、命令中字面换行的树前缀保真、正文内联代码自定义颜色渲染，以及 `turn/diff/updated` 直接消费协议 `diff` 正文的兜底展示；后续未完成部分已拆为独立体验任务，不再继续挂在调研任务里。
   - **落地证据**：
     - `docs/archived/or-task-006-feishu-vs-codex-tui-gap-analysis.md`
-    - `docs/design/or-task-006-rich-command-highlighting-design.md`
+    - `docs/archived/or-task-006-rich-command-highlighting-design.md`
     - `src/openrelay/feishu/highlight.py`
     - `src/openrelay/feishu/reply_card.py`
     - `tests/test_feishu_streaming.py`

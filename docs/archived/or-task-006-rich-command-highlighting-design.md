@@ -1,5 +1,7 @@
 # OR-TASK-006 Rich-Based Feishu Command Highlighting Design
 
+> 归档说明：该实现设计对应的 transcript 富文本高亮能力已落地；本文档仅保留为已完成实现的历史设计证据。
+
 ## Background
 
 当前飞书 transcript card 的命令高亮已经有首轮主题映射，但命令换行仍然有一个结构性问题：
