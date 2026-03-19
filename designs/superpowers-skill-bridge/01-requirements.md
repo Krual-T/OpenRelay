@@ -1,7 +1,7 @@
 # Requirements
 
 ## Goal
-让 `openrelay` 仓库把已经安装在本机的 `obra/superpowers` skills 显式暴露为仓库内 `.codex/skills/` 的软链接，从而让 harness、AGENTS map 和后续协作者都能直接看到并使用这些 workflow skills。
+让 `openrelay` 仓库把已经安装在本机的 `obra/superpowers` skills 以仓库内可见的软链接形式固定下来，避免这层约定只存在于环境里而不落在仓库结构中。
 
 ## Problem Statement
 仅仅知道“本机装了 superpowers”还不够，因为这仍然是隐式依赖：

@@ -19,13 +19,6 @@
 6. `docs/TaskBoard.md`
    - 过渡期索引视图；若与 design package 冲突，以 `designs/<task>/` 为准。
 
-### 外部 workflow skill 软链接
-
-- 本仓库把已安装的 `obra/superpowers` skills 直接软链接到 `.codex/skills/`。
-- 当前软链接源目录是 `/home/Shaokun.Tang/.codex/superpowers/skills/`。
-- 这些 symlink 只负责把通用 workflow skills 显式带进仓库；任务事实源仍然是 `designs/<task>/`。
-- 仓库私有 skills 与外部 soft-linked skills 可以并存；如同名，以仓库内明确约定为准。
-
 ### 设计任务包协议
 
 每个设计任务应放在 `designs/<task>/`，并固定包含：
@@ -57,7 +50,6 @@
 - 先读 `AGENTS.md`，建立仓库地图。
 - 再读 `.harness/manifest.yaml`，确认 harness 协议。
 - 运行 `uv run python scripts/harness/bootstrap.py` 查看当前 active design packages。
-- 若任务需要 superpowers workflow，直接使用 `.codex/skills/` 下已经 soft-linked 进来的 skills。
 - 只在 design package 足够清晰时开始实现；若任务边界缺失，先补设计包而不是直接改代码。
 
 ### 执行任务时

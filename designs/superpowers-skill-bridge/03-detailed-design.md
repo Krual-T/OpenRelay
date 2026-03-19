@@ -1,8 +1,6 @@
 # Detailed Design
 
 ## Files Added Or Changed
-- `AGENTS.md`
-  - 增加 superpowers soft-link 说明。
 - `.codex/skills/<skill-name>`
   - 为每个已安装 superpowers skill 建立软链接。
 - `tests/harness/test_design_harness.py`

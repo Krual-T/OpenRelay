@@ -1,7 +1,6 @@
 # Evidence
 
 ## Files
-- `AGENTS.md`
 - `.codex/skills/brainstorming`
 - `.codex/skills/dispatching-parallel-agents`
 - `.codex/skills/executing-plans`
