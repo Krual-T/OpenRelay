@@ -1,41 +1,17 @@
 from pathlib import Path
 
-from openrelay.core import AppConfig, BackendConfig, FeishuConfig, IncomingMessage
+from openrelay.core import IncomingMessage
 from openrelay.storage import StateStore
-
-
-def make_config(tmp_path: Path) -> AppConfig:
-    return AppConfig(
-        cwd=tmp_path,
-        port=3100,
-        webhook_path="/feishu/webhook",
-        data_dir=tmp_path / "data",
-        workspace_root=tmp_path / "workspace",
-        main_workspace_dir=tmp_path / "main",
-        develop_workspace_dir=tmp_path / "develop",
-        max_request_bytes=1024,
-        max_session_messages=3,
-        feishu=FeishuConfig(app_id="app", app_secret="secret", verify_token="verify-token", bot_open_id="ou_bot"),
-        backend=BackendConfig(codex_sessions_dir=tmp_path / "native"),
-    )
+from tests.support.app import make_app_config, make_incoming_message, prepare_app_dirs
 
 
 def test_message_event_store_supports_trace_session_and_message_queries(tmp_path: Path) -> None:
-    config = make_config(tmp_path)
-    for path in [config.workspace_root, config.main_workspace_dir, config.develop_workspace_dir]:
-        path.mkdir(parents=True, exist_ok=True)
+    config = make_app_config(tmp_path, max_session_messages=3)
+    prepare_app_dirs(config, include_data_dir=False)
     store = StateStore(config)
     try:
         message, context = store.trace_recorder.bind_message(
-            IncomingMessage(
-                event_id="evt_1",
-                message_id="om_1",
-                chat_id="oc_1",
-                chat_type="p2p",
-                sender_open_id="ou_1",
-                text="hello",
-                actionable=True,
-            )
+            make_incoming_message("hello", event_suffix="1", sender_open_id="ou_1")
         )
         context = store.trace_recorder.enrich_context(
             context,

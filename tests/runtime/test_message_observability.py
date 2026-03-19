@@ -6,41 +6,18 @@ from types import SimpleNamespace
 
 import pytest
 
-from openrelay.core import AppConfig, BackendConfig, FeishuConfig, IncomingMessage, SessionRecord
+from openrelay.core import IncomingMessage, SessionRecord
 from openrelay.feishu.types import SentMessageRef
 from openrelay.runtime.dispatch_models import DispatchDecision, ResolvedMessageContext
 from openrelay.runtime.message_application import RuntimeMessageApplicationService
 from openrelay.runtime.reply_service import RuntimeReplyService
 from openrelay.runtime.replying import RuntimeReplyPolicy
 from openrelay.storage import StateStore
-
-
-def make_config(tmp_path: Path) -> AppConfig:
-    return AppConfig(
-        cwd=tmp_path,
-        port=3100,
-        webhook_path="/feishu/webhook",
-        data_dir=tmp_path / "data",
-        workspace_root=tmp_path / "workspace",
-        main_workspace_dir=tmp_path / "main",
-        develop_workspace_dir=tmp_path / "develop",
-        max_request_bytes=1024,
-        max_session_messages=20,
-        feishu=FeishuConfig(app_id="app", app_secret="secret", verify_token="verify-token", bot_open_id="ou_bot"),
-        backend=BackendConfig(codex_sessions_dir=tmp_path / "native"),
-    )
+from tests.support.app import make_app_config, make_incoming_message, prepare_app_dirs
 
 
 def build_message() -> IncomingMessage:
-    return IncomingMessage(
-        event_id="evt_1",
-        message_id="om_1",
-        chat_id="oc_1",
-        chat_type="p2p",
-        sender_open_id="ou_user",
-        text="hello",
-        actionable=True,
-    )
+    return make_incoming_message("hello", event_suffix="1")
 
 
 class _FakeExecutionCoordinator:
@@ -69,9 +46,8 @@ class _FakeExecutionCoordinator:
 
 @pytest.mark.asyncio
 async def test_message_application_records_ingress_and_session_events(tmp_path: Path) -> None:
-    config = make_config(tmp_path)
-    for path in [config.workspace_root, config.main_workspace_dir, config.develop_workspace_dir]:
-        path.mkdir(parents=True, exist_ok=True)
+    config = make_app_config(tmp_path)
+    prepare_app_dirs(config, include_data_dir=False)
     store = StateStore(config)
     try:
         message = build_message()
@@ -130,9 +106,8 @@ class _FakeMessenger:
 
 @pytest.mark.asyncio
 async def test_reply_service_records_reply_sent_event(tmp_path: Path) -> None:
-    config = make_config(tmp_path)
-    for path in [config.workspace_root, config.main_workspace_dir, config.develop_workspace_dir]:
-        path.mkdir(parents=True, exist_ok=True)
+    config = make_app_config(tmp_path)
+    prepare_app_dirs(config, include_data_dir=False)
     store = StateStore(config)
     try:
         session_scope = SimpleNamespace(
