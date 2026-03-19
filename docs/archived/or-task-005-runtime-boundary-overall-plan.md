@@ -1,5 +1,7 @@
 # OR-TASK-005 Runtime Boundary Refactor Overall Plan
 
+> 归档说明：本任务的后续实施已由 `OR-TASK-009` 吸收；本文档仅保留为历史计划与问题收敛证据。
+
 更新时间：2026-03-18
 
 ## 这份文档回答什么
@@ -12,7 +14,7 @@
 4. 先做什么，后做什么。
 5. 哪些事情这轮明确不做。
 
-如果要继续看现状证据、问题定位和代码级观察，回到 `docs/design/or-task-005-runtime-boundary-refactor-design.md`。
+如果要继续看现状证据、问题定位和代码级观察，回到 `docs/archived/or-task-005-runtime-boundary-refactor-design.md`。
 
 ## 一页看懂
 
@@ -247,7 +249,7 @@ flowchart TD
 
 两份文档分工如下：
 
-- `or-task-005-runtime-boundary-refactor-design.md`
+- `docs/archived/or-task-005-runtime-boundary-refactor-design.md`
   - 负责记录现状、证据、问题和详细重构方向。
-- `or-task-005-runtime-boundary-overall-plan.md`
+- `docs/archived/or-task-005-runtime-boundary-overall-plan.md`
   - 负责作为进入实现前的总纲，回答范围、边界、阶段和非目标。

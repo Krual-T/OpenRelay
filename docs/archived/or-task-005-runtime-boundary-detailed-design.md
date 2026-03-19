@@ -1,5 +1,7 @@
 # OR-TASK-005 Runtime Boundary Refactor Detailed Design
 
+> 归档说明：本文档描述的后续实施路径已被 `OR-TASK-009` 吸收；保留在归档目录中，作为历史实现蓝图参考。
+
 更新时间：2026-03-18
 
 ## 文档目标
@@ -15,11 +17,11 @@
 
 它和另外两份文档的关系如下：
 
-- `or-task-005-runtime-boundary-refactor-design.md`
+- `docs/archived/or-task-005-runtime-boundary-refactor-design.md`
   - 负责问题勘察与重构方向。
-- `or-task-005-runtime-boundary-overall-plan.md`
+- `docs/archived/or-task-005-runtime-boundary-overall-plan.md`
   - 负责范围、阶段和非目标。
-- `or-task-005-runtime-boundary-detailed-design.md`
+- `docs/archived/or-task-005-runtime-boundary-detailed-design.md`
   - 负责具体实现设计。
 
 ## 一页总览

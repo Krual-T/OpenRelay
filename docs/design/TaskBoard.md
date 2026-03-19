@@ -52,7 +52,7 @@
   - **目标**：从飞书用户体验而不是 TUI 命令面对齐出发，判断哪些 Codex 能力值得迁移、哪些能力应明确不纳入飞书场景，并先收敛 transcript 主路径里最直接影响可读性的富文本渲染问题。
   - **完成情况**：UX 视角调研稿已完成；飞书 transcript card 的首轮 Codex 风格富文本渲染已进入主路径，包括命令/输出高亮、git diff 红绿标签与彩色文本、Rich spans 命令高亮链路、shell-aware 命令换行、命令中字面换行的树前缀保真、正文内联代码自定义颜色渲染，以及 `turn/diff/updated` 直接消费协议 `diff` 正文的兜底展示；后续未完成部分已拆为独立体验任务，不再继续挂在调研任务里。
   - **落地证据**：
-    - `docs/design/or-task-006-feishu-vs-codex-tui-gap-analysis.md`
+    - `docs/archived/or-task-006-feishu-vs-codex-tui-gap-analysis.md`
     - `docs/design/or-task-006-rich-command-highlighting-design.md`
     - `src/openrelay/feishu/highlight.py`
     - `src/openrelay/feishu/reply_card.py`
@@ -67,9 +67,9 @@
   - **目标**：基于当时的实际代码结构而非既有文档，识别 runtime、session、storage、presentation 之间已经发生的职责漂移，并形成后续重构的正式设计稿。
   - **完成情况**：问题勘察稿、实施总纲和详细设计稿已完成；其后续实施内容已由 `OR-TASK-009` 吸收并落地，因此本任务作为“设计与问题收敛入口”关闭，不再保留为活跃执行任务。
   - **落地证据**：
-    - `docs/design/or-task-005-runtime-boundary-refactor-design.md`
-    - `docs/design/or-task-005-runtime-boundary-overall-plan.md`
-    - `docs/design/or-task-005-runtime-boundary-detailed-design.md`
+    - `docs/archived/or-task-005-runtime-boundary-refactor-design.md`
+    - `docs/archived/or-task-005-runtime-boundary-overall-plan.md`
+    - `docs/archived/or-task-005-runtime-boundary-detailed-design.md`
     - `docs/design/or-task-009-architecture-refactor-overall-design.md`
     - `docs/design/or-task-009-architecture-refactor-detailed-design.md`
     - `docs/design/or-task-009-end-to-end-refactor-blueprint.md`
