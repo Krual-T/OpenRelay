@@ -42,6 +42,7 @@
     - `src/openrelay/session/defaults.py`
     - `src/openrelay/runtime/message_dispatch.py`
     - `src/openrelay/runtime/message_application.py`
+    - `src/openrelay/runtime/message_content.py`
     - `src/openrelay/runtime/command_router.py`
     - `src/openrelay/runtime/turn_application.py`
     - `src/openrelay/runtime/turn_run_controller.py`
@@ -52,8 +53,10 @@
     - `src/openrelay/presentation/live_turn_view_builder.py`
     - `src/openrelay/feishu/renderers/live_turn_renderer.py`
     - `src/openrelay/runtime/orchestrator.py`
+    - `tests/runtime/test_runtime_refactor_boundaries.py`
   - **验证证据**：
     - `uv run pytest`
+    - `uv run pytest tests/runtime/test_runtime_refactor_boundaries.py tests/runtime/test_message_observability.py tests/runtime/test_turn.py tests/runtime/e2e/test_diff_trace.py tests/runtime/e2e/test_plan_status_trace.py`
 
 - [x] OR-TASK-008 工作区目录选择卡收敛
   - **目标**：把工作区切换从 `/cwd`、`/cd` 的命令式输入收敛成面向飞书用户的工作区目录选择卡，在单一根目录内支持逐级浏览、返回、搜索和分页。
