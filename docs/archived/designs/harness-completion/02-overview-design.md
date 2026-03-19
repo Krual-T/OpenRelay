@@ -17,7 +17,7 @@ The completed harness converges into four layers:
    - explains where live facts live and what the default workflow is
 2. `docs/designs/<task>/` as task fact source
    - each active or long-lived design task becomes a package with fixed documents
-3. `.codex/skills/openharness/references/manifest.yaml` plus harness scripts as enforcement entrypoint
+3. `.agents/skills/openharness/using-openharness/references/manifest.yaml` plus harness scripts as enforcement entrypoint
    - discovers packages, validates consistency, and runs verification commands
 4. `docs/archived/legacy/` as historical archive
    - keeps superseded standalone notes only as legacy evidence
@@ -25,8 +25,8 @@ The completed harness converges into four layers:
 ## Key Flows
 1. Repository entry
    - agent reads `AGENTS.md`
-   - agent reads `.codex/skills/openharness/references/manifest.yaml`
-   - agent runs `uv run python .codex/skills/openharness/scripts/openharness.py bootstrap`
+   - agent reads `.agents/skills/openharness/using-openharness/references/manifest.yaml`
+   - agent runs `.agents/skills/openharness/using-openharness/scripts/openharness.py bootstrap`
    - active packages are discovered from `docs/designs/`
 
 2. Legacy note handling

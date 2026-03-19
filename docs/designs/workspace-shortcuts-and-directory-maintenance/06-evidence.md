@@ -10,7 +10,7 @@
 - `docs/designs/workspace-shortcuts-and-directory-maintenance/06-evidence.md`
 
 ## Commands
-- `uv run python .codex/skills/openharness/scripts/openharness.py new-design workspace-shortcuts-and-directory-maintenance OR-013 "Workspace Shortcuts And Directory Maintenance" --owner codex --summary "Reduce repeated workspace navigation with high-frequency shortcuts and maintenance flows."`
+- `.agents/skills/openharness/using-openharness/scripts/openharness.py new-design workspace-shortcuts-and-directory-maintenance OR-013 "Workspace Shortcuts And Directory Maintenance" --owner codex --summary "Reduce repeated workspace navigation with high-frequency shortcuts and maintenance flows."`
 
 ## Follow-ups
 - Replace this package's placeholder detailed design with implementation-grade file-level design before coding starts.

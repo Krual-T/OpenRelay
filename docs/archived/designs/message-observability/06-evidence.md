@@ -12,7 +12,7 @@
 - `docs/archived/legacy/or-task-007-message-observability-detailed-design.md`
 
 ## Commands
-- `uv run python .codex/skills/openharness/scripts/openharness.py new-design message-observability OR-007 "Message Observability" --owner codex --summary "Formalize the landed message observability design as a harness package."`
+- `.agents/skills/openharness/using-openharness/scripts/openharness.py new-design message-observability OR-007 "Message Observability" --owner codex --summary "Formalize the landed message observability design as a harness package."`
 
 ## Follow-ups
 - When legacy `docs/archived/legacy/` files are fully retired, replace them with archival pointers to this package.

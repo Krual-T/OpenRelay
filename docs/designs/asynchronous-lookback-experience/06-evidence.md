@@ -10,7 +10,7 @@
 - `docs/designs/asynchronous-lookback-experience/06-evidence.md`
 
 ## Commands
-- `uv run python .codex/skills/openharness/scripts/openharness.py new-design asynchronous-lookback-experience OR-012 "Asynchronous Lookback Experience" --owner codex --summary "Make asynchronous return-to-thread review a first-class Feishu experience."`
+- `.agents/skills/openharness/using-openharness/scripts/openharness.py new-design asynchronous-lookback-experience OR-012 "Asynchronous Lookback Experience" --owner codex --summary "Make asynchronous return-to-thread review a first-class Feishu experience."`
 
 ## Follow-ups
 - Replace this package's placeholder detailed design with implementation-grade file-level design before coding starts.

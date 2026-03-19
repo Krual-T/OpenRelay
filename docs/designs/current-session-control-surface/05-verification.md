@@ -1,7 +1,7 @@
 # Verification
 
 ## Required Commands
-- `uv run python .codex/skills/openharness/scripts/openharness.py check-designs`
+- `.agents/skills/openharness/using-openharness/scripts/openharness.py check-designs`
 
 ## Expected Outcomes
 - The active task now exists as a formal harness package.

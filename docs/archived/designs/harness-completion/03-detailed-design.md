@@ -5,24 +5,24 @@
   - update repository map so design packages live under `docs/designs/`
   - describe migration expectations for legacy `docs/archived/legacy/` content and task-board usage
   - declare `openharness` as the repository-default entry skill so root workflow guidance matches the local skill contract
-- `.codex/skills/openharness/references/manifest.yaml`
+- `.agents/skills/openharness/using-openharness/references/manifest.yaml`
   - change `designs_root` to `docs/designs`
   - keep or refine status flow and artifact roots to match the new structure
-- `.codex/skills/openharness/references/templates/*`
+- `.agents/skills/openharness/using-openharness/references/templates/*`
   - update scaffolded paths from `designs/<task>/...` to `docs/designs/<task>/...`
-- `.codex/skills/openharness/scripts/openharness.py`
+- `.agents/skills/openharness/using-openharness/scripts/openharness.py`
   - consolidate package discovery, validation, scaffolding, and verification into a single harness CLI
   - `bootstrap` continues package discovery from the new root
   - `check-designs` expands validation surface beyond file presence
   - `verify` keeps protocol check first, then runs package verification with clearer migration-era reporting
   - `new-design` keeps scaffolding logic inside the skill rather than under the `openrelay` product package
-- `.codex/skills/openharness/SKILL.md`
+- `.agents/skills/openharness/using-openharness/SKILL.md`
   - own the repository entry-skill duties directly inside the harness skill
   - declare that `openharness` is the only repository entry root for skill checking and routing
-- `.codex/skills/openharness/references/skill-hub.md`
+- `.agents/skills/openharness/using-openharness/references/skill-hub.md`
   - document that entry-skill behavior now belongs to `openharness`
   - treat duplicated entry layers as protocol drift rather than a supported alias
-- `.codex/skills/openharness/tests/test_openharness.py`
+- `.agents/skills/openharness/using-openharness/tests/test_openharness.py`
   - verify the harness as skill-owned infrastructure instead of product-runtime test surface
   - assert that the repository entry-skill contract is owned by `openharness` rather than a separate parallel layer
   - assert that `AGENTS.md` routes repository skill usage through `openharness`
@@ -48,7 +48,7 @@ Expected harness-level behavior after this task:
   - other migration-era consistency failures deemed necessary
 - `check-designs` becomes the single protocol gate
 - `verify` remains the execution entrypoint for package-declared verification commands
-- harness runtime code and its tests live under `.codex/skills/openharness/`, not under `src/openrelay/` or `tests/`
+- harness runtime code and its tests live under the harness skill root (`.agents/skills/openharness/using-openharness/SKILL.md`, `scripts/`, `references/`, `tests/`), not under `src/openrelay/` or `tests/`
 - `openharness` becomes the repository entry skill for workflow routing, so skill selection starts there before any response or clarifying question
 
 ## Error Handling

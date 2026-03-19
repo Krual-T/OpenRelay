@@ -10,7 +10,7 @@
 - `docs/designs/current-session-control-surface/06-evidence.md`
 
 ## Commands
-- `uv run python .codex/skills/openharness/scripts/openharness.py new-design current-session-control-surface OR-011 "Current Session Control Surface" --owner codex --summary "Consolidate the current-session status and control entrypoint."`
+- `.agents/skills/openharness/using-openharness/scripts/openharness.py new-design current-session-control-surface OR-011 "Current Session Control Surface" --owner codex --summary "Consolidate the current-session status and control entrypoint."`
 
 ## Follow-ups
 - Replace this package's placeholder detailed design with implementation-grade file-level design before coding starts.

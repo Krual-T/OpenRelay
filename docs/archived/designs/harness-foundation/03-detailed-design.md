@@ -3,14 +3,14 @@
 ## Files Added Or Changed
 - `AGENTS.md`
   - 重写为 repository map，声明 `docs/designs/` 是设计任务事实源，legacy 文档降级为历史证据。
-- `.codex/skills/openharness/references/manifest.yaml`
+- `.agents/skills/openharness/using-openharness/references/manifest.yaml`
   - 声明 designs root、必需文件、默认状态流与 artifact 根目录。
-- `.codex/skills/openharness/scripts/openharness.py`
+- `.agents/skills/openharness/using-openharness/scripts/openharness.py`
   - 作为单一 harness CLI，承载 manifest 加载、design package 发现、协议校验、脚手架生成与 verify 子命令。
   - 子命令包括 `bootstrap`、`check-designs`、`new-design`、`verify`。
-- `.codex/skills/openharness/SKILL.md`
+- `.agents/skills/openharness/using-openharness/SKILL.md`
   - 说明 agent 如何使用这套 harness。
-- `.codex/skills/openharness/tests/test_openharness.py`
+- `.agents/skills/openharness/using-openharness/tests/test_openharness.py`
   - 对 manifest 加载、design discovery、design validation 建立最小回归保护。
   - 同时保证 harness 的实现、入口脚本、测试与 references 全部由 `openharness` skill 自持。
 

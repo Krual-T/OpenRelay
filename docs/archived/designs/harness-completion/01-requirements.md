@@ -26,6 +26,6 @@ This meant the repository had a harness schema, but not yet a complete harness w
 - Do not finish the implementation-grade detailed design for every active package in this task.
 
 ## Constraints
-- Keep the repository workflow centered on `AGENTS.md`, `.codex/skills/openharness/references/manifest.yaml`, and package-local documents.
+- Keep the repository workflow centered on `AGENTS.md`, `.agents/skills/openharness/using-openharness/references/manifest.yaml`, and package-local documents.
 - Preserve historical material under `docs/archived/legacy/`, but never treat it as the current source of truth.
 - Any stronger enforcement must remain simple enough to run through `uv run ...` inside this repository.

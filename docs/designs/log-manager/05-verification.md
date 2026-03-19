@@ -1,7 +1,7 @@
 # Verification
 
 ## Required Commands
-- `uv run python .codex/skills/openharness/scripts/openharness.py check-designs`
+- `.agents/skills/openharness/using-openharness/scripts/openharness.py check-designs`
 
 ## Expected Outcomes
 - OR-014 is now represented as a formal design package.

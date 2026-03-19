@@ -11,7 +11,7 @@
 - `docs/archived/legacy/or-task-014-log-manager-overall-design.md`
 
 ## Commands
-- `uv run python .codex/skills/openharness/scripts/openharness.py new-design log-manager OR-014 "Log Manager" --owner codex --summary "Unify logger and observability into a structured system debug ledger entrypoint."`
+- `.agents/skills/openharness/using-openharness/scripts/openharness.py new-design log-manager OR-014 "Log Manager" --owner codex --summary "Unify logger and observability into a structured system debug ledger entrypoint."`
 
 ## Follow-ups
 - Write the real package-local detailed design before implementation begins.

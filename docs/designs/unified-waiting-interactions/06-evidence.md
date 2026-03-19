@@ -10,7 +10,7 @@
 - `docs/designs/unified-waiting-interactions/06-evidence.md`
 
 ## Commands
-- `uv run python .codex/skills/openharness/scripts/openharness.py new-design unified-waiting-interactions OR-010 "Unified Waiting Interactions" --owner codex --summary "Unify waiting-for-user states into one Feishu interaction model."`
+- `.agents/skills/openharness/using-openharness/scripts/openharness.py new-design unified-waiting-interactions OR-010 "Unified Waiting Interactions" --owner codex --summary "Unify waiting-for-user states into one Feishu interaction model."`
 
 ## Follow-ups
 - Replace this package's placeholder detailed design with implementation-grade file-level design before coding starts.

@@ -24,7 +24,7 @@ done_criteria:
 - '`/shortcut` 的增删改至少有一条不依赖纯命令记忆的卡片化维护路径。'
 verification:
   required_commands:
-  - uv run python .codex/skills/openharness/scripts/openharness.py check-designs
+  - .agents/skills/openharness/using-openharness/scripts/openharness.py check-designs
   required_scenarios:
   - package_scaffold_review
 evidence:
