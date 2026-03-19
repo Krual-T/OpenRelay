@@ -1,6 +1,6 @@
 id: OR-009
 title: Architecture Refactor
-status: landed
+status: archived
 summary: Formalize the landed architecture refactor design as a harness package.
 owner: codex
 created_at: 2026-03-19
@@ -12,12 +12,12 @@ scope:
   - runtime
   - presentation
 entrypoints:
-- docs/designs/architecture-refactor/README.md
-- docs/designs/architecture-refactor/STATUS.yaml
-- docs/designs/architecture-refactor/01-requirements.md
-- docs/designs/architecture-refactor/02-overview-design.md
-- docs/designs/architecture-refactor/03-detailed-design.md
-- docs/designs/architecture-refactor/04-implementation-plan.md
+- docs/archived/designs/architecture-refactor/README.md
+- docs/archived/designs/architecture-refactor/STATUS.yaml
+- docs/archived/designs/architecture-refactor/01-requirements.md
+- docs/archived/designs/architecture-refactor/02-overview-design.md
+- docs/archived/designs/architecture-refactor/03-detailed-design.md
+- docs/archived/designs/architecture-refactor/04-implementation-plan.md
 done_criteria:
 - A formal design package exists for the landed architecture refactor work.
 - The overall and detailed design for OR-009 are represented inside the package.
@@ -32,13 +32,13 @@ verification:
   - end_to_end_turn_rendering
 evidence:
   docs:
-  - docs/designs/architecture-refactor/README.md
-  - docs/designs/architecture-refactor/01-requirements.md
-  - docs/designs/architecture-refactor/02-overview-design.md
-  - docs/designs/architecture-refactor/03-detailed-design.md
-  - docs/designs/architecture-refactor/04-implementation-plan.md
-  - docs/designs/architecture-refactor/05-verification.md
-  - docs/designs/architecture-refactor/06-evidence.md
+  - docs/archived/designs/architecture-refactor/README.md
+  - docs/archived/designs/architecture-refactor/01-requirements.md
+  - docs/archived/designs/architecture-refactor/02-overview-design.md
+  - docs/archived/designs/architecture-refactor/03-detailed-design.md
+  - docs/archived/designs/architecture-refactor/04-implementation-plan.md
+  - docs/archived/designs/architecture-refactor/05-verification.md
+  - docs/archived/designs/architecture-refactor/06-evidence.md
   - docs/archived/legacy/or-task-009-architecture-refactor-overall-design.md
   - docs/archived/legacy/or-task-009-architecture-refactor-detailed-design.md
   - docs/archived/legacy/or-task-009-end-to-end-refactor-blueprint.md

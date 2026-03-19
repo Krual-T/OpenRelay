@@ -9,14 +9,16 @@
 1. `AGENTS.md`
    - 仓库地图、默认协作协议、结构约束、验证要求。
 2. `.codex/skills/openharness/references/manifest.yaml`
-   - harness 的机器可读入口；声明 design package 布局、状态流和 artifact 根目录。
+   - harness 的机器可读入口；声明 active / archived design package 布局、状态流和 artifact 根目录。
 3. `docs/designs/<task>/`
    - 设计任务的唯一事实来源；每个任务是一个独立 design package。
-4. `docs/architecture.md`
+4. `docs/archived/designs/<task>/`
+   - 已完成 design package 的归档区；保留历史事实与验证证据，但不再属于 active package 集合。
+5. `docs/architecture.md`
    - 当前系统结构说明。
-5. `.project-memory/`
+6. `.project-memory/`
    - 已验证的项目事实、决策和可复用 workflow。
-6. `docs/archived/legacy/`
+7. `docs/archived/legacy/`
    - 历史材料归档区；仅作为 legacy evidence，不再作为当前任务事实源。
 
 ### 设计任务包协议
@@ -67,6 +69,8 @@
 
 - 先更新 `05-verification.md` 和 `06-evidence.md`；若本轮需要显式执行拆解，再更新 `04-implementation-plan.md`。
 - 再更新 `STATUS.yaml` 中的 `status`、`updated_at`、证据字段。
+- 当 design package 已完成并不再属于 active work 时，应将 `STATUS.yaml.status` 设为 `archived`，并把整个包从 `docs/designs/<task>/` 移动到 `docs/archived/designs/<task>/`。
+- 归档后必须同步修正该 package 内部引用，以及仓库内指向该 package 的证据或 memory 引用。
 - 每次完成一轮可独立成立的改动后，应做一次聚焦提交。
 
 ## 3. 工程风格

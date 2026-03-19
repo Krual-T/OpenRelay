@@ -4,7 +4,7 @@
 Formalize the landed message observability design as a harness package.
 
 ## Current Status
-- Status: `landed`
+- Status: `archived`
 - Owner: `codex`
 - Last Updated: `2026-03-19`
 

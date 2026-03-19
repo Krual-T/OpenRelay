@@ -13,7 +13,7 @@
 - `.codex/skills/openharness/references/templates/design-package.06-evidence.md`
 - `.codex/skills/openharness/SKILL.md`
 - `.codex/skills/openharness/scripts/openharness.py`
-- `docs/designs/harness-foundation/*`
+- `docs/archived/designs/harness-foundation/*`
 - `.codex/skills/openharness/tests/test_openharness.py`
 
 ## Commands

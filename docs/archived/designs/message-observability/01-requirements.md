@@ -7,7 +7,7 @@ Preserve the landed message observability work as a first-class harness package 
 `OR-TASK-007` landed before the repository fully adopted design packages, so its historical standalone design notes still live under `docs/archived/legacy/`. That leaves a split between the actual task facts and the harness package system.
 
 ## Required Outcomes
-1. Package `OR-007` under `docs/designs/message-observability/`.
+1. Package `OR-007` under `docs/archived/designs/message-observability/`.
 2. Keep the landed overall design in `02-overview-design.md`.
 3. Keep the landed detailed design in `03-detailed-design.md`.
 4. Record the landed verification commands and implementation evidence in package-local files.

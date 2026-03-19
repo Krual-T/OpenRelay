@@ -58,7 +58,7 @@ Expected harness-level behavior after this task:
 - If a future cleanup tries to reintroduce a separate repo entry skill, harness tests should fail so the split-brain workflow does not silently return.
 
 ## Migration Notes
-- Migrate the current `designs/harness-foundation/` package into `docs/designs/harness-foundation/`.
+- Migrate the current `designs/harness-foundation/` package into `docs/archived/designs/harness-foundation/`.
 - This package was initially scaffolded under the old root and then migrated with the docs-root move; future packages should be created directly under `docs/designs/`.
 - Use the following migration classes:
   - `migrate-existing-design`: existing design docs become or are absorbed by a package
@@ -70,23 +70,23 @@ Expected harness-level behavior after this task:
 ### Existing `docs/archived/legacy/` assets
 - `docs/archived/legacy/or-task-007-message-observability-design.md`
   - class: `migrate-existing-design`
-  - target package: `docs/designs/message-observability/`
+  - target package: `docs/archived/designs/message-observability/`
   - package role: `02-overview-design.md`
 - `docs/archived/legacy/or-task-007-message-observability-detailed-design.md`
   - class: `migrate-existing-design`
-  - target package: `docs/designs/message-observability/`
+  - target package: `docs/archived/designs/message-observability/`
   - package role: `03-detailed-design.md`
 - `docs/archived/legacy/or-task-009-architecture-refactor-overall-design.md`
   - class: `migrate-existing-design`
-  - target package: `docs/designs/architecture-refactor/`
+  - target package: `docs/archived/designs/architecture-refactor/`
   - package role: `02-overview-design.md`
 - `docs/archived/legacy/or-task-009-architecture-refactor-detailed-design.md`
   - class: `migrate-existing-design`
-  - target package: `docs/designs/architecture-refactor/`
+  - target package: `docs/archived/designs/architecture-refactor/`
   - package role: `03-detailed-design.md`
 - `docs/archived/legacy/or-task-009-end-to-end-refactor-blueprint.md`
   - class: `migrate-existing-design`
-  - target package: `docs/designs/architecture-refactor/`
+  - target package: `docs/archived/designs/architecture-refactor/`
   - package role: supporting execution blueprint referenced from `03-detailed-design.md` or `06-evidence.md`
 - `docs/archived/legacy/or-task-014-log-manager-overall-design.md`
   - class: `migrate-existing-design`

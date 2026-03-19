@@ -7,7 +7,7 @@ Preserve the landed OR-009 architecture-refactor work as a first-class harness p
 The architecture refactor is one of the repository's most important landed design threads, but its historical standalone notes still live under `docs/archived/legacy/` rather than only inside a design package.
 
 ## Required Outcomes
-1. Package `OR-009` under `docs/designs/architecture-refactor/`.
+1. Package `OR-009` under `docs/archived/designs/architecture-refactor/`.
 2. Keep the landed overall design in `02-overview-design.md`.
 3. Keep the landed detailed design in `03-detailed-design.md`.
 4. Reference the execution blueprint, tests, and implementation evidence from package-local verification/evidence files.

@@ -8,8 +8,8 @@
 - `docs/archived/designs/harness-completion/03-detailed-design.md`
 - `docs/archived/designs/harness-completion/05-verification.md`
 - `docs/archived/designs/harness-completion/06-evidence.md`
-- `docs/designs/message-observability/`
-- `docs/designs/architecture-refactor/`
+- `docs/archived/designs/message-observability/`
+- `docs/archived/designs/architecture-refactor/`
 - `docs/designs/unified-waiting-interactions/`
 - `docs/designs/current-session-control-surface/`
 - `docs/designs/asynchronous-lookback-experience/`

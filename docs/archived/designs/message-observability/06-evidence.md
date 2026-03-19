@@ -1,13 +1,13 @@
 # Evidence
 
 ## Files
-- `docs/designs/message-observability/README.md`
-- `docs/designs/message-observability/STATUS.yaml`
-- `docs/designs/message-observability/01-requirements.md`
-- `docs/designs/message-observability/02-overview-design.md`
-- `docs/designs/message-observability/03-detailed-design.md`
-- `docs/designs/message-observability/05-verification.md`
-- `docs/designs/message-observability/06-evidence.md`
+- `docs/archived/designs/message-observability/README.md`
+- `docs/archived/designs/message-observability/STATUS.yaml`
+- `docs/archived/designs/message-observability/01-requirements.md`
+- `docs/archived/designs/message-observability/02-overview-design.md`
+- `docs/archived/designs/message-observability/03-detailed-design.md`
+- `docs/archived/designs/message-observability/05-verification.md`
+- `docs/archived/designs/message-observability/06-evidence.md`
 - `docs/archived/legacy/or-task-007-message-observability-design.md`
 - `docs/archived/legacy/or-task-007-message-observability-detailed-design.md`
 

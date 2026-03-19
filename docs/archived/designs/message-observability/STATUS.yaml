@@ -1,6 +1,6 @@
 id: OR-007
 title: Message Observability
-status: landed
+status: archived
 summary: Formalize the landed message observability design as a harness package.
 owner: codex
 created_at: 2026-03-19
@@ -12,12 +12,12 @@ scope:
   - runtime
   - storage
 entrypoints:
-- docs/designs/message-observability/README.md
-- docs/designs/message-observability/STATUS.yaml
-- docs/designs/message-observability/01-requirements.md
-- docs/designs/message-observability/02-overview-design.md
-- docs/designs/message-observability/03-detailed-design.md
-- docs/designs/message-observability/04-implementation-plan.md
+- docs/archived/designs/message-observability/README.md
+- docs/archived/designs/message-observability/STATUS.yaml
+- docs/archived/designs/message-observability/01-requirements.md
+- docs/archived/designs/message-observability/02-overview-design.md
+- docs/archived/designs/message-observability/03-detailed-design.md
+- docs/archived/designs/message-observability/04-implementation-plan.md
 done_criteria:
 - A formal design package exists for message observability.
 - The landed overall and detailed observability designs are represented inside the
@@ -32,13 +32,13 @@ verification:
   - reply_lifecycle_trace
 evidence:
   docs:
-  - docs/designs/message-observability/README.md
-  - docs/designs/message-observability/01-requirements.md
-  - docs/designs/message-observability/02-overview-design.md
-  - docs/designs/message-observability/03-detailed-design.md
-  - docs/designs/message-observability/04-implementation-plan.md
-  - docs/designs/message-observability/05-verification.md
-  - docs/designs/message-observability/06-evidence.md
+  - docs/archived/designs/message-observability/README.md
+  - docs/archived/designs/message-observability/01-requirements.md
+  - docs/archived/designs/message-observability/02-overview-design.md
+  - docs/archived/designs/message-observability/03-detailed-design.md
+  - docs/archived/designs/message-observability/04-implementation-plan.md
+  - docs/archived/designs/message-observability/05-verification.md
+  - docs/archived/designs/message-observability/06-evidence.md
   - docs/archived/legacy/or-task-007-message-observability-design.md
   - docs/archived/legacy/or-task-007-message-observability-detailed-design.md
   code:

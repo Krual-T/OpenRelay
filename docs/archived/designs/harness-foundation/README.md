@@ -1,10 +1,10 @@
-# OR-009 Architecture Refactor
+# OR-015 Harness Foundation
 
 ## Summary
-Formalize the landed architecture refactor design as a harness package.
+把仓库协作协议从“任务板驱动”收敛成“AGENTS.md 作为地图 + docs/designs/<task>/ 作为任务包 + harness 脚本作为执行入口”的统一 agent-first 工作流。
 
 ## Current Status
-- Status: `landed`
+- Status: `archived`
 - Owner: `codex`
 - Last Updated: `2026-03-19`
 

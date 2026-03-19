@@ -1,6 +1,6 @@
 id: OR-015
 title: Harness Foundation
-status: landed
+status: archived
 summary: Establish the reusable harness protocol based on AGENTS.md as map and docs/designs/<task>/
   as task packages.
 owner: codex
@@ -13,12 +13,12 @@ scope:
   - docs
   - repo-protocol
 entrypoints:
-- docs/designs/harness-foundation/README.md
-- docs/designs/harness-foundation/STATUS.yaml
-- docs/designs/harness-foundation/01-requirements.md
-- docs/designs/harness-foundation/02-overview-design.md
-- docs/designs/harness-foundation/03-detailed-design.md
-- docs/designs/harness-foundation/04-implementation-plan.md
+- docs/archived/designs/harness-foundation/README.md
+- docs/archived/designs/harness-foundation/STATUS.yaml
+- docs/archived/designs/harness-foundation/01-requirements.md
+- docs/archived/designs/harness-foundation/02-overview-design.md
+- docs/archived/designs/harness-foundation/03-detailed-design.md
+- docs/archived/designs/harness-foundation/04-implementation-plan.md
 done_criteria:
 - Repository map protocol is documented in AGENTS.md.
 - Harness manifest and design-package layout are landed in-repo.
@@ -33,13 +33,13 @@ verification:
   - design_package_validation
 evidence:
   docs:
-  - docs/designs/harness-foundation/README.md
-  - docs/designs/harness-foundation/01-requirements.md
-  - docs/designs/harness-foundation/02-overview-design.md
-  - docs/designs/harness-foundation/03-detailed-design.md
-  - docs/designs/harness-foundation/04-implementation-plan.md
-  - docs/designs/harness-foundation/05-verification.md
-  - docs/designs/harness-foundation/06-evidence.md
+  - docs/archived/designs/harness-foundation/README.md
+  - docs/archived/designs/harness-foundation/01-requirements.md
+  - docs/archived/designs/harness-foundation/02-overview-design.md
+  - docs/archived/designs/harness-foundation/03-detailed-design.md
+  - docs/archived/designs/harness-foundation/04-implementation-plan.md
+  - docs/archived/designs/harness-foundation/05-verification.md
+  - docs/archived/designs/harness-foundation/06-evidence.md
   code:
   - AGENTS.md
   - .codex/skills/openharness/references/manifest.yaml
