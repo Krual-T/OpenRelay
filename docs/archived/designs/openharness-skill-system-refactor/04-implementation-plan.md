@@ -66,7 +66,7 @@ git commit -m "Vendor OpenHarness assets into openrelay"
 - Create: `.agents/skills/openharness/closing-design-package/SKILL.md`
 - Modify: `.agents/skills/openharness/verification-before-completion/SKILL.md`
 - Modify: `.agents/skills/openharness/project-memory/SKILL.md`
-- Modify: `docs/designs/openharness-skill-system-refactor/03-detailed-design.md`
+- Modify: `docs/archived/designs/openharness-skill-system-refactor/03-detailed-design.md`
 - Test: `uv run pytest .agents/skills/openharness/using-openharness/tests/test_openharness.py -q -k "skill or entry"`
 
 - [ ] **Step 1: Vendor the dependent skill docs that OR-019 now treats as OpenHarness-native**
@@ -104,7 +104,7 @@ Expected: PASS for skill-text assertions after updating or replacing the stale e
 - [ ] **Step 5: Commit the skill-boundary rewrite**
 
 ```bash
-git add .agents/skills/openharness docs/designs/openharness-skill-system-refactor/03-detailed-design.md
+git add .agents/skills/openharness docs/archived/designs/openharness-skill-system-refactor/03-detailed-design.md
 git commit -m "Refactor OpenHarness skill boundaries"
 ```
 
@@ -165,10 +165,10 @@ git commit -m "Add OpenHarness completion checker"
 ### Task 4: Update Package Evidence, Project Memory, And Final Verification
 
 **Files:**
-- Modify: `docs/designs/openharness-skill-system-refactor/04-implementation-plan.md`
-- Modify: `docs/designs/openharness-skill-system-refactor/05-verification.md`
-- Modify: `docs/designs/openharness-skill-system-refactor/06-evidence.md`
-- Modify: `docs/designs/openharness-skill-system-refactor/STATUS.yaml`
+- Modify: `docs/archived/designs/openharness-skill-system-refactor/04-implementation-plan.md`
+- Modify: `docs/archived/designs/openharness-skill-system-refactor/05-verification.md`
+- Modify: `docs/archived/designs/openharness-skill-system-refactor/06-evidence.md`
+- Modify: `docs/archived/designs/openharness-skill-system-refactor/STATUS.yaml`
 - Create or Modify: `.project-memory/facts/openharness_completion_contract.yaml`
 - Test: `uv run .agents/skills/openharness/using-openharness/scripts/openharness.py check-designs --repo .`
 - Test: `uv run .agents/skills/openharness/using-openharness/scripts/openharness.py verify OR-019 --repo .`
@@ -200,7 +200,7 @@ Expected: PASS only after `05-verification.md`, `06-evidence.md`, and `STATUS.ya
 - [ ] **Step 5: Commit the verified implementation state**
 
 ```bash
-git add docs/designs/openharness-skill-system-refactor .project-memory .agents/skills/openharness
+git add docs/archived/designs/openharness-skill-system-refactor .project-memory .agents/skills/openharness
 git commit -m "Implement OpenHarness protocol-first skill system"
 ```
 

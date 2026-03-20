@@ -1,6 +1,6 @@
 id: OR-019
 title: OpenHarness Skill System Refactor
-status: verifying
+status: archived
 summary: Refactor OpenHarness into a protocol-first, skill-driven harness with workflow routing, completion gates, and research intake rules.
 owner: codex
 created_at: 2026-03-19
@@ -13,12 +13,12 @@ scope:
     - repo-protocol
     - verification
 entrypoints:
-  - docs/designs/openharness-skill-system-refactor/README.md
-  - docs/designs/openharness-skill-system-refactor/STATUS.yaml
-  - docs/designs/openharness-skill-system-refactor/01-requirements.md
-  - docs/designs/openharness-skill-system-refactor/02-overview-design.md
-  - docs/designs/openharness-skill-system-refactor/03-detailed-design.md
-  - docs/designs/openharness-skill-system-refactor/04-implementation-plan.md
+  - docs/archived/designs/openharness-skill-system-refactor/README.md
+  - docs/archived/designs/openharness-skill-system-refactor/STATUS.yaml
+  - docs/archived/designs/openharness-skill-system-refactor/01-requirements.md
+  - docs/archived/designs/openharness-skill-system-refactor/02-overview-design.md
+  - docs/archived/designs/openharness-skill-system-refactor/03-detailed-design.md
+  - docs/archived/designs/openharness-skill-system-refactor/04-implementation-plan.md
 done_criteria:
   - AGENTS.md is treated as a repo-local map, while the reusable harness protocol lives in OpenHarness skills and CLI contracts.
   - using-openharness becomes an entry skill that routes into workflow skills and completion gates instead of re-describing the whole repository workflow as a self-referential checklist.
@@ -32,14 +32,14 @@ verification:
   required_scenarios: []
 evidence:
   docs:
-    - docs/designs/openharness-skill-system-refactor/README.md
-    - docs/designs/openharness-skill-system-refactor/STATUS.yaml
-    - docs/designs/openharness-skill-system-refactor/01-requirements.md
-    - docs/designs/openharness-skill-system-refactor/02-overview-design.md
-    - docs/designs/openharness-skill-system-refactor/03-detailed-design.md
-    - docs/designs/openharness-skill-system-refactor/04-implementation-plan.md
-    - docs/designs/openharness-skill-system-refactor/05-verification.md
-    - docs/designs/openharness-skill-system-refactor/06-evidence.md
+    - docs/archived/designs/openharness-skill-system-refactor/README.md
+    - docs/archived/designs/openharness-skill-system-refactor/STATUS.yaml
+    - docs/archived/designs/openharness-skill-system-refactor/01-requirements.md
+    - docs/archived/designs/openharness-skill-system-refactor/02-overview-design.md
+    - docs/archived/designs/openharness-skill-system-refactor/03-detailed-design.md
+    - docs/archived/designs/openharness-skill-system-refactor/04-implementation-plan.md
+    - docs/archived/designs/openharness-skill-system-refactor/05-verification.md
+    - docs/archived/designs/openharness-skill-system-refactor/06-evidence.md
   code:
     - .gitignore
     - .agents/skills/openharness/using-openharness/SKILL.md

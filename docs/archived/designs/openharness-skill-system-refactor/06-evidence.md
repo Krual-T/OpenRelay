@@ -11,10 +11,10 @@
 - `.agents/skills/openharness/closing-design-package/SKILL.md`
 - `.agents/skills/openharness/verification-before-completion/SKILL.md`
 - `.agents/skills/openharness/project-memory/SKILL.md`
-- `docs/designs/openharness-skill-system-refactor/04-implementation-plan.md`
-- `docs/designs/openharness-skill-system-refactor/05-verification.md`
-- `docs/designs/openharness-skill-system-refactor/06-evidence.md`
-- `docs/designs/openharness-skill-system-refactor/STATUS.yaml`
+- `docs/archived/designs/openharness-skill-system-refactor/04-implementation-plan.md`
+- `docs/archived/designs/openharness-skill-system-refactor/05-verification.md`
+- `docs/archived/designs/openharness-skill-system-refactor/06-evidence.md`
+- `docs/archived/designs/openharness-skill-system-refactor/STATUS.yaml`
 - `.project-memory/facts/openharness_completion_contract.yaml`
 
 ## Commands
@@ -23,7 +23,9 @@
 - `uv run .agents/skills/openharness/using-openharness/scripts/openharness.py check-designs --repo .`
 - `uv run .agents/skills/openharness/using-openharness/scripts/openharness.py verify OR-019 --repo .`
 - `uv run .agents/skills/openharness/using-openharness/scripts/openharness.py check-completion OR-019 --repo .`
+- `uv run .agents/skills/openharness/using-openharness/scripts/openharness.py bootstrap --repo .`
+- `uv run .agents/skills/openharness/using-openharness/scripts/openharness.py bootstrap --all --repo .`
 
 ## Follow-ups
-- Decide whether the generic root-level copies of completion skills should be kept or replaced by thin forwarders now that OpenHarness-native versions exist.
+- Root-level duplicate `verification-before-completion` was removed; keep only the OpenHarness namespaced version for completion gates.
 - Consider adding command-output capture fields to `STATUS.yaml` if completion evidence should become more machine-readable.

@@ -3,12 +3,12 @@ kind: fact
 title: OpenHarness completion claims require checker-backed package evidence
 scope:
   repo: openrelay
-  branch: feat/openharness-skill-refactor
+  branch: main
 status: reviewed
 created_at: '2026-03-20T00:00:00Z'
 updated_at: '2026-03-20T00:00:00Z'
 confidence: 0.91
-last_verified_commit: ee9b674
+last_verified_commit: edcf021
 intent_aliases:
 - openharness completion contract
 - 什么时候才能说任务完成
@@ -23,7 +23,7 @@ applies_to:
 - .agents/skills/openharness/using-openharness/scripts/openharness.py
 statement: In OpenHarness-governed work, completion claims are valid only after required verification commands pass, `05-verification.md` and `06-evidence.md` are updated, `STATUS.yaml` is current, and `check-completion` passes.
 evidence:
-- path: docs/designs/openharness-skill-system-refactor/03-detailed-design.md
+- path: docs/archived/designs/openharness-skill-system-refactor/03-detailed-design.md
   kind: file
 - path: .agents/skills/openharness/using-openharness/SKILL.md
   kind: file

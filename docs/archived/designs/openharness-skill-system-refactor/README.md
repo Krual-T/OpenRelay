@@ -4,9 +4,9 @@
 Refactor OpenHarness from a monolithic repository walkthrough into a protocol-first harness that routes workflow skills, enforces completion gates, and absorbs external research only after it is written back into repository artifacts.
 
 ## Current Status
-- Status: `detailed_ready`
+- Status: `archived`
 - Owner: `codex`
-- Last Updated: `2026-03-19`
+- Last Updated: `2026-03-20`
 
 ## Read This First
 - `STATUS.yaml`

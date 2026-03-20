@@ -16,3 +16,4 @@
 - `2026-03-20`: repo-local harness tests passed with `20 passed`.
 - `2026-03-20`: `verify OR-019` passed and re-ran the package-required commands successfully.
 - `2026-03-20`: `check-completion OR-019` passed.
+- `2026-03-20`: package archived under `docs/archived/designs/openharness-skill-system-refactor/`, `check-designs` re-passed, and default `bootstrap` no longer lists OR-019 as active.
