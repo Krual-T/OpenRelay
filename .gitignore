@@ -12,3 +12,5 @@ __pycache__/
 data/
 
 .worktrees/
+.agents/skills/**/__pycache__/
+.agents/skills/**/*.pyc
