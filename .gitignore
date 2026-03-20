@@ -4,13 +4,9 @@ __pycache__/
 *.pyc
 .env
 .project-memory/*
-!.project-memory/aliases.yaml
 !.project-memory/facts/
-!.project-memory/facts/*.yaml
-!.project-memory/decisions/
-!.project-memory/decisions/*.yaml
-!.project-memory/workflows/
-!.project-memory/workflows/*.yaml
+.project-memory/facts/*
+!.project-memory/facts/openharness_completion_contract.yaml
 .agents/*
 !.agents/skills/
 !.agents/skills/**
