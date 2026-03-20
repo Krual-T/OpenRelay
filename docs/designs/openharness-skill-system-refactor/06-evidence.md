@@ -1,17 +1,29 @@
 # Evidence
 
 ## Files
-- `docs/designs/openharness-skill-system-refactor/README.md`
-- `docs/designs/openharness-skill-system-refactor/STATUS.yaml`
-- `docs/designs/openharness-skill-system-refactor/01-requirements.md`
-- `docs/designs/openharness-skill-system-refactor/02-overview-design.md`
-- `docs/designs/openharness-skill-system-refactor/03-detailed-design.md`
+- `.gitignore`
+- `.agents/skills/openharness/using-openharness/SKILL.md`
+- `.agents/skills/openharness/using-openharness/references/skill-hub.md`
+- `.agents/skills/openharness/using-openharness/references/manifest.yaml`
+- `.agents/skills/openharness/using-openharness/scripts/openharness.py`
+- `.agents/skills/openharness/using-openharness/tests/test_openharness.py`
+- `.agents/skills/openharness/researching-solutions/SKILL.md`
+- `.agents/skills/openharness/closing-design-package/SKILL.md`
+- `.agents/skills/openharness/verification-before-completion/SKILL.md`
+- `.agents/skills/openharness/project-memory/SKILL.md`
+- `docs/designs/openharness-skill-system-refactor/04-implementation-plan.md`
 - `docs/designs/openharness-skill-system-refactor/05-verification.md`
 - `docs/designs/openharness-skill-system-refactor/06-evidence.md`
+- `docs/designs/openharness-skill-system-refactor/STATUS.yaml`
+- `.project-memory/facts/openharness_completion_contract.yaml`
 
 ## Commands
-- `uv run .agents/skills/openharness/using-openharness/scripts/openharness.py new-design openharness-skill-system-refactor OR-019 "OpenHarness Skill System Refactor" --owner codex --summary "Refactor OpenHarness into a protocol-first, skill-driven harness with workflow routing, completion gates, and research intake rules." --repo .`
+- `uv run --extra dev pytest -q`
+- `uv run --extra dev pytest .agents/skills/openharness/using-openharness/tests/test_openharness.py -q`
+- `uv run .agents/skills/openharness/using-openharness/scripts/openharness.py check-designs --repo .`
+- `uv run .agents/skills/openharness/using-openharness/scripts/openharness.py verify OR-019 --repo .`
+- `uv run .agents/skills/openharness/using-openharness/scripts/openharness.py check-completion OR-019 --repo .`
 
 ## Follow-ups
-- Write `04-implementation-plan.md` for OR-019 before touching harness behavior.
-- Implement completion-checker support and the new routing and skill boundaries.
+- Decide whether the generic root-level copies of completion skills should be kept or replaced by thin forwarders now that OpenHarness-native versions exist.
+- Consider adding command-output capture fields to `STATUS.yaml` if completion evidence should become more machine-readable.

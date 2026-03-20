@@ -1,10 +1,10 @@
 id: OR-019
 title: OpenHarness Skill System Refactor
-status: detailed_ready
+status: verifying
 summary: Refactor OpenHarness into a protocol-first, skill-driven harness with workflow routing, completion gates, and research intake rules.
 owner: codex
 created_at: 2026-03-19
-updated_at: 2026-03-19
+updated_at: 2026-03-20
 depends_on: []
 scope:
   areas:
@@ -28,6 +28,7 @@ done_criteria:
 verification:
   required_commands:
     - uv run .agents/skills/openharness/using-openharness/scripts/openharness.py check-designs --repo .
+    - uv run --extra dev pytest .agents/skills/openharness/using-openharness/tests/test_openharness.py -q
   required_scenarios: []
 evidence:
   docs:
@@ -40,6 +41,13 @@ evidence:
     - docs/designs/openharness-skill-system-refactor/05-verification.md
     - docs/designs/openharness-skill-system-refactor/06-evidence.md
   code:
+    - .gitignore
     - .agents/skills/openharness/using-openharness/SKILL.md
+    - .agents/skills/openharness/using-openharness/references/skill-hub.md
     - .agents/skills/openharness/using-openharness/scripts/openharness.py
-  tests: []
+    - .agents/skills/openharness/researching-solutions/SKILL.md
+    - .agents/skills/openharness/closing-design-package/SKILL.md
+    - .agents/skills/openharness/verification-before-completion/SKILL.md
+    - .agents/skills/openharness/project-memory/SKILL.md
+  tests:
+    - .agents/skills/openharness/using-openharness/tests/test_openharness.py
