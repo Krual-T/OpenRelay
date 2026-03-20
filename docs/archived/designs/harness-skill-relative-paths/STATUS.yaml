@@ -40,6 +40,6 @@ evidence:
   - docs/archived/designs/harness-skill-relative-paths/06-evidence.md
   code:
   - AGENTS.md
-  - ../openharness/skills/using-openharness/SKILL.md
-  - ../openharness/skills/using-openharness/scripts/openharness.py
+  - .agents/skills/openharness/using-openharness/SKILL.md
+  - .agents/skills/openharness/using-openharness/scripts/openharness.py
   tests: []
