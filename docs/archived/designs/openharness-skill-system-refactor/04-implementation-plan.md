@@ -62,7 +62,7 @@ git commit -m "Vendor OpenHarness assets into openrelay"
 
 **Files:**
 - Modify: `.agents/skills/openharness/using-openharness/SKILL.md`
-- Create: `.agents/skills/openharness/researching-solutions/SKILL.md`
+- Create: `.agents/skills/researching-solutions/SKILL.md`
 - Create: `.agents/skills/openharness/closing-design-package/SKILL.md`
 - Modify: `.agents/skills/openharness/verification-before-completion/SKILL.md`
 - Modify: `.agents/skills/openharness/project-memory/SKILL.md`

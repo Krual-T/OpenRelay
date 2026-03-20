@@ -1,0 +1,48 @@
+id: OR-020
+title: Repo-Local Workflow Skill Vendoring
+status: archived
+summary: Vendor generic workflow skills into openrelay while keeping OpenHarness-native and routed-skill boundaries explicit.
+owner: codex
+created_at: 2026-03-20
+updated_at: 2026-03-20
+depends_on:
+  - OR-019
+scope:
+  areas:
+    - harness
+    - skills
+    - repo-protocol
+entrypoints:
+  - docs/archived/designs/repo-local-workflow-skill-vendoring/README.md
+  - docs/archived/designs/repo-local-workflow-skill-vendoring/STATUS.yaml
+  - docs/archived/designs/repo-local-workflow-skill-vendoring/01-requirements.md
+  - docs/archived/designs/repo-local-workflow-skill-vendoring/02-overview-design.md
+  - docs/archived/designs/repo-local-workflow-skill-vendoring/03-detailed-design.md
+  - docs/archived/designs/repo-local-workflow-skill-vendoring/04-implementation-plan.md
+done_criteria:
+  - Repo-local copies of generic workflow skills needed by OpenHarness are committed under `.agents/skills/`.
+  - "`researching-solutions` is treated as a routed generic workflow skill instead of an OpenHarness-native skill."
+  - OpenHarness hub and tests reflect the repo-local routed workflow skill set.
+verification:
+  required_commands:
+    - uv run .agents/skills/openharness/using-openharness/scripts/openharness.py check-designs --repo .
+    - uv run --extra dev pytest .agents/skills/openharness/using-openharness/tests/test_openharness.py -q
+  required_scenarios: []
+evidence:
+  docs:
+    - docs/archived/designs/repo-local-workflow-skill-vendoring/README.md
+    - docs/archived/designs/repo-local-workflow-skill-vendoring/STATUS.yaml
+    - docs/archived/designs/repo-local-workflow-skill-vendoring/01-requirements.md
+    - docs/archived/designs/repo-local-workflow-skill-vendoring/02-overview-design.md
+    - docs/archived/designs/repo-local-workflow-skill-vendoring/03-detailed-design.md
+    - docs/archived/designs/repo-local-workflow-skill-vendoring/04-implementation-plan.md
+    - docs/archived/designs/repo-local-workflow-skill-vendoring/05-verification.md
+    - docs/archived/designs/repo-local-workflow-skill-vendoring/06-evidence.md
+  code:
+    - .agents/skills/brainstorming/SKILL.md
+    - .agents/skills/researching-solutions/SKILL.md
+    - .agents/skills/openharness/using-openharness/references/skill-hub.md
+    - .agents/skills/openharness/using-openharness/tests/test_openharness.py
+    - docs/archived/designs/openharness-skill-system-refactor/STATUS.yaml
+  tests:
+    - .agents/skills/openharness/using-openharness/tests/test_openharness.py

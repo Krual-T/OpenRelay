@@ -11,7 +11,7 @@
   - tighten the hard gate so completion claims require checker-backed evidence
 - `.agents/skills/openharness/project-memory/SKILL.md`
   - clarify when research conclusions or reusable process knowledge must be persisted
-- `.agents/skills/openharness/researching-solutions/SKILL.md`
+- `.agents/skills/researching-solutions/SKILL.md`
   - new workflow skill for external solution research and repository write-back
 - `.agents/skills/openharness/closing-design-package/SKILL.md`
   - new completion skill for evidence, status updates, and archive decisions

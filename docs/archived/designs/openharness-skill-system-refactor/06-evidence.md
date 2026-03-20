@@ -7,7 +7,7 @@
 - `.agents/skills/openharness/using-openharness/references/manifest.yaml`
 - `.agents/skills/openharness/using-openharness/scripts/openharness.py`
 - `.agents/skills/openharness/using-openharness/tests/test_openharness.py`
-- `.agents/skills/openharness/researching-solutions/SKILL.md`
+- `.agents/skills/researching-solutions/SKILL.md`
 - `.agents/skills/openharness/closing-design-package/SKILL.md`
 - `.agents/skills/openharness/verification-before-completion/SKILL.md`
 - `.agents/skills/openharness/project-memory/SKILL.md`
