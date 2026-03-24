@@ -7,9 +7,7 @@ __pycache__/
 !.project-memory/facts/
 .project-memory/facts/*
 !.project-memory/facts/openharness_completion_contract.yaml
-.agents/*
-!.agents/skills/
-!.agents/skills/**
+.agents/
 .harness/
 .openharness/
 data/
