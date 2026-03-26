@@ -1,0 +1,45 @@
+id: OR-018
+title: Harness Skill Relative Paths
+status: archived
+summary: Remove hardcoded harness installation paths and environment-specific wrapper commands from the repository protocol.
+owner: codex
+created_at: 2026-03-19
+updated_at: 2026-03-19
+depends_on:
+- OR-016
+scope:
+  areas:
+  - harness
+  - docs
+  - cleanup
+entrypoints:
+- docs/archived/legacy/task-packages/harness-skill-relative-paths/README.md
+- docs/archived/legacy/task-packages/harness-skill-relative-paths/STATUS.yaml
+- docs/archived/legacy/task-packages/harness-skill-relative-paths/01-requirements.md
+- docs/archived/legacy/task-packages/harness-skill-relative-paths/02-overview-design.md
+- docs/archived/legacy/task-packages/harness-skill-relative-paths/03-detailed-design.md
+- docs/archived/legacy/task-packages/harness-skill-relative-paths/04-implementation-plan.md
+done_criteria:
+- "`using-openharness` no longer documents or resolves `.codex/skills/openharness/...` paths."
+- "Repository protocol files use `.agents/skills/openharness/using-openharness/...` for runnable harness entrypoints."
+- "Active and archived harness-facing docs no longer mention `uv run python ...openharness.py`."
+verification:
+  required_commands:
+  - .agents/skills/openharness/using-openharness/scripts/openharness.py check-tasks --repo .
+  - '! rg -n "\.codex/skills/openharness|uv run python .*openharness\.py" AGENTS.md docs .project-memory -S -g ''!docs/archived/legacy/task-packages/harness-skill-relative-paths/**'''
+  required_scenarios:
+  - harness_path_protocol_cleanup
+evidence:
+  docs:
+  - docs/archived/legacy/task-packages/harness-skill-relative-paths/README.md
+  - docs/archived/legacy/task-packages/harness-skill-relative-paths/01-requirements.md
+  - docs/archived/legacy/task-packages/harness-skill-relative-paths/02-overview-design.md
+  - docs/archived/legacy/task-packages/harness-skill-relative-paths/03-detailed-design.md
+  - docs/archived/legacy/task-packages/harness-skill-relative-paths/04-implementation-plan.md
+  - docs/archived/legacy/task-packages/harness-skill-relative-paths/05-verification.md
+  - docs/archived/legacy/task-packages/harness-skill-relative-paths/06-evidence.md
+  code:
+  - AGENTS.md
+  - .agents/skills/openharness/using-openharness/SKILL.md
+  - .agents/skills/openharness/using-openharness/scripts/openharness.py
+  tests: []
