@@ -1,0 +1,46 @@
+id: OR-010
+title: Unified Waiting Interactions
+status: proposed
+summary: Unify waiting-for-user states into one Feishu interaction model.
+owner: codex
+created_at: 2026-03-19
+updated_at: 2026-03-26
+depends_on: []
+scope:
+  areas:
+  - design
+  - product
+entrypoints:
+- docs/task-packages/unified-waiting-interactions/README.md
+- docs/task-packages/unified-waiting-interactions/STATUS.yaml
+- docs/task-packages/unified-waiting-interactions/01-requirements.md
+- docs/task-packages/unified-waiting-interactions/02-overview-design.md
+- docs/task-packages/unified-waiting-interactions/03-detailed-design.md
+- docs/task-packages/unified-waiting-interactions/04-implementation-plan.md
+done_criteria:
+- 完成正式设计稿，明确等待态分类、统一卡片语义、输入/选择/确认控件边界和不做项。
+- 主路径代码能把至少 terminal interaction、user input、MCP elicitation 三类事件收敛到统一回复入口。
+- 用户提交后能收到稳定的“已发送/继续处理中”反馈，并且线程内能识别当前等待态是否已结束。
+verification:
+  required_commands:
+  - .agents/skills/openharness/using-openharness/scripts/openharness.py check-tasks
+  required_scenarios:
+  - package_scaffold_review
+evidence:
+  docs:
+  - docs/task-packages/unified-waiting-interactions/README.md
+  - docs/task-packages/unified-waiting-interactions/01-requirements.md
+  - docs/task-packages/unified-waiting-interactions/02-overview-design.md
+  - docs/task-packages/unified-waiting-interactions/03-detailed-design.md
+  - docs/task-packages/unified-waiting-interactions/04-implementation-plan.md
+  - docs/task-packages/unified-waiting-interactions/05-verification.md
+  - docs/task-packages/unified-waiting-interactions/06-evidence.md
+  code: []
+  code:
+  - src/openrelay/presentation/live_turn_view_builder.py
+  - src/openrelay/feishu/reply_card.py
+  - src/openrelay/feishu/renderers/live_turn_renderer.py
+  tests:
+  - tests/feishu/test_streaming_content.py
+  - tests/presentation/test_live_turn_presenter.py
+  - tests/feishu/test_reply_card.py

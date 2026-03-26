@@ -1,0 +1,62 @@
+id: OR-016
+title: Harness Completion And Design Migration
+status: archived
+summary: Historical record of the completed harness migration that moved design packages
+  under docs, archived legacy design notes, and strengthened enforcement.
+owner: codex
+created_at: 2026-03-19
+updated_at: 2026-03-19
+depends_on:
+- OR-015
+scope:
+  areas:
+  - harness
+  - docs
+  - repo-protocol
+  - task-migration
+entrypoints:
+- docs/archived/task-packages/harness-completion/README.md
+- docs/archived/task-packages/harness-completion/STATUS.yaml
+- docs/archived/task-packages/harness-completion/01-requirements.md
+- docs/archived/task-packages/harness-completion/02-overview-design.md
+- docs/archived/task-packages/harness-completion/03-detailed-design.md
+- docs/archived/task-packages/harness-completion/04-implementation-plan.md
+done_criteria:
+- The harness design-package root is moved from `designs/` to `docs/task-packages/`, and
+  repository entrypoints point to the new location consistently.
+- Legacy standalone design notes are archived under `docs/archived/legacy/`, and current
+  task facts live under `docs/task-packages/`.
+- Historical active-task descriptions are absorbed into formal design packages or
+  explicitly tracked by a follow-up package.
+- Harness validation detects more than file presence, including status-flow validation
+  and referenced-path validation.
+- Repository docs define a single default workflow centered on design packages rather
+  than task-board or standalone design files.
+- Follow-up protocol for replay/artifact/task-env integration is documented, even
+  if the full runtime is deferred.
+verification:
+  required_commands:
+  - .agents/skills/openharness/using-openharness/scripts/openharness.py check-tasks
+  - .agents/skills/openharness/using-openharness/scripts/openharness.py bootstrap --all
+  - pytest .agents/skills/openharness/using-openharness/tests/test_openharness.py
+  required_scenarios:
+  - docs_design_root_migration_plan
+  - legacy_design_asset_migration_plan
+  - harness_enforcement_gap_review
+evidence:
+  docs:
+  - docs/archived/task-packages/harness-completion/README.md
+  - docs/archived/task-packages/harness-completion/01-requirements.md
+  - docs/archived/task-packages/harness-completion/02-overview-design.md
+  - docs/archived/task-packages/harness-completion/03-detailed-design.md
+  - docs/archived/task-packages/harness-completion/04-implementation-plan.md
+  - docs/archived/task-packages/harness-completion/05-verification.md
+  - docs/archived/task-packages/harness-completion/06-evidence.md
+  - .agents/skills/openharness/using-openharness/SKILL.md
+  - .agents/skills/openharness/using-openharness/references/skill-hub.md
+  - docs/task-packages/legacy-design-package-maturation/
+  - docs/archived/legacy/
+  code:
+  - .agents/skills/openharness/using-openharness/scripts/openharness.py
+  tests:
+  - .agents/skills/openharness/using-openharness/tests/test_openharness.py

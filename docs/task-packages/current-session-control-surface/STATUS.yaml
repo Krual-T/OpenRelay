@@ -1,0 +1,39 @@
+id: OR-011
+title: Current Session Control Surface
+status: proposed
+summary: Consolidate the current-session status and control entrypoint.
+owner: codex
+created_at: 2026-03-19
+updated_at: 2026-03-19
+depends_on: []
+scope:
+  areas:
+  - design
+  - product
+entrypoints:
+- docs/task-packages/current-session-control-surface/README.md
+- docs/task-packages/current-session-control-surface/STATUS.yaml
+- docs/task-packages/current-session-control-surface/01-requirements.md
+- docs/task-packages/current-session-control-surface/02-overview-design.md
+- docs/task-packages/current-session-control-surface/03-detailed-design.md
+- docs/task-packages/current-session-control-surface/04-implementation-plan.md
+done_criteria:
+- 完成正式设计稿，明确当前会话状态模型、控制入口位置、高频动作集合和低频动作下沉策略。
+- 代码主路径里至少提供停止、查看状态、继续等待态、压缩上下文四类高频动作的集中入口。
+- 飞书端可稳定区分运行中、等待用户、已完成、失败、已停止等核心状态。
+verification:
+  required_commands:
+  - .agents/skills/openharness/using-openharness/scripts/openharness.py check-tasks
+  required_scenarios:
+  - package_scaffold_review
+evidence:
+  docs:
+  - docs/task-packages/current-session-control-surface/README.md
+  - docs/task-packages/current-session-control-surface/01-requirements.md
+  - docs/task-packages/current-session-control-surface/02-overview-design.md
+  - docs/task-packages/current-session-control-surface/03-detailed-design.md
+  - docs/task-packages/current-session-control-surface/04-implementation-plan.md
+  - docs/task-packages/current-session-control-surface/05-verification.md
+  - docs/task-packages/current-session-control-surface/06-evidence.md
+  code: []
+  tests: []

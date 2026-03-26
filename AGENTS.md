@@ -7,23 +7,23 @@
 ### 事实来源优先级
 
 1. `AGENTS.md`
-   - 仓库地图、默认协作协议、结构约束、验证要求。
+    - 仓库地图、默认协作协议、结构约束、验证要求。
 2. `.agents/skills/openharness/using-openharness/references/manifest.yaml`
-   - harness 的机器可读入口；声明 active / archived design package 布局、状态流和 artifact 根目录。
-3. `docs/designs/<task>/`
-   - 设计任务的唯一事实来源；每个任务是一个独立 design package。
-4. `docs/archived/designs/<task>/`
-   - 已完成 design package 的归档区；保留历史事实与验证证据，但不再属于 active package 集合。
+    - harness 的机器可读入口；声明 active / archived design package 布局、状态流和 artifact 根目录。
+3. `docs/task-packages/<task>/`
+    - 设计任务的唯一事实来源；每个任务是一个独立 design package。
+4. `docs/archived/task-packages/<task>/`
+    - 已完成 design package 的归档区；保留历史事实与验证证据，但不再属于 active package 集合。
 5. `docs/architecture.md`
-   - 当前系统结构说明。
+    - 当前系统结构说明。
 6. `.project-memory/`
-   - 已验证的项目事实、决策和可复用 workflow。
+    - 已验证的项目事实、决策和可复用 workflow。
 7. `docs/archived/legacy/`
-   - 历史材料归档区；仅作为 legacy evidence，不再作为当前任务事实源。
+    - 历史材料归档区；仅作为 legacy evidence，不再作为当前任务事实源。
 
 ### 设计任务包协议
 
-每个设计任务应放在 `docs/designs/<task>/`，并固定包含：
+每个设计任务应放在 `docs/task-packages/<task>/`，并固定包含：
 
 - `README.md`：任务入口页和阅读导航。
 - `STATUS.yaml`：机器可读状态源。
@@ -38,14 +38,14 @@
 
 1. `AGENTS.md`
 2. `.agents/skills/openharness/using-openharness/references/manifest.yaml`
-3. `docs/designs/<task>/README.md`
-4. `docs/designs/<task>/STATUS.yaml`
-5. `docs/designs/<task>/01-requirements.md`
-6. `docs/designs/<task>/02-overview-design.md`
-7. `docs/designs/<task>/03-detailed-design.md`
-8. `docs/designs/<task>/04-implementation-plan.md`
-9. `docs/designs/<task>/05-verification.md`
-10. `docs/designs/<task>/06-evidence.md`
+3. `docs/task-packages/<task>/README.md`
+4. `docs/task-packages/<task>/STATUS.yaml`
+5. `docs/task-packages/<task>/01-requirements.md`
+6. `docs/task-packages/<task>/02-overview-design.md`
+7. `docs/task-packages/<task>/03-detailed-design.md`
+8. `docs/task-packages/<task>/04-implementation-plan.md`
+9. `docs/task-packages/<task>/05-verification.md`
+10. `docs/task-packages/<task>/06-evidence.md`
 
 ## 2. 默认工作流
 
@@ -69,7 +69,7 @@
 
 - 先更新 `05-verification.md` 和 `06-evidence.md`；若本轮需要显式执行拆解，再更新 `04-implementation-plan.md`。
 - 再更新 `STATUS.yaml` 中的 `status`、`updated_at`、证据字段。
-- 当 design package 已完成并不再属于 active work 时，应将 `STATUS.yaml.status` 设为 `archived`，并把整个包从 `docs/designs/<task>/` 移动到 `docs/archived/designs/<task>/`。
+- 当 design package 已完成并不再属于 active work 时，应将 `STATUS.yaml.status` 设为 `archived`，并把整个包从 `docs/task-packages/<task>/` 移动到 `docs/archived/task-packages/<task>/`。
 - 归档后必须同步修正该 package 内部引用，以及仓库内指向该 package 的证据或 memory 引用。
 - 每次完成一轮可独立成立的改动后，应做一次聚焦提交。
 
@@ -103,13 +103,13 @@
 - 影响使用方式、配置方式、架构分层的改动，应同步更新对应 design package。
 - 需求变化先写 `01-requirements.md`；总体设计变化写 `02-overview-design.md`；实现落点变化写 `03-detailed-design.md`；需要阶段化执行方案时写 `04-implementation-plan.md`。
 - 完成前至少运行：
-  - `.agents/skills/openharness/using-openharness/scripts/openharness.py check-designs`
-  - 当前 design package 在 `STATUS.yaml.verification.required_commands` 中声明的命令
+    - `uv run .agents/skills/openharness/using-openharness/scripts/openharness.py check-tasks`
+    - 当前 design package 在 `STATUS.yaml.verification.required_commands` 中声明的命令
 - 若本轮只是补设计，仍应保证 design package 协议完整。
 
 ## 5. Python / uv 约定
 
-- 仓库内 Python 相关命令统一使用 `uv run ...`。
+- Python 相关命令统一使用 `uv run ...`。
 - 工作流脚本依赖应写入 `pyproject.toml`，不要依赖会话里的临时安装。
 - 只有明确的一次性临时场景才使用 `uv run --with ...`。
 
