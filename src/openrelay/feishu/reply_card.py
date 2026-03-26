@@ -10,10 +10,8 @@ from .common import summarize_text_entities
 from .highlight import render_command_chunks, render_output_block
 
 STREAMING_ELEMENT_ID = "streaming_content"
-LOADING_ELEMENT_ID = "loading_icon"
 DEFAULT_THINKING_TEXT = "Executing"
 PROCESS_LOG_PANEL_TITLE = "Execution Log"
-LOADING_ICON_IMAGE_KEY = "img_v3_02vb_496bec09-4b43-4773-ad6b-0cdd103cd2bg"
 REASONING_PREFIX = "Reasoning:\n"
 LOGGER = logging.getLogger("openrelay.feishu.reply_card")
 INLINE_CODE_COLOR = "blue"
@@ -543,13 +541,17 @@ def _history_item_tone(item: dict[str, Any]) -> str:
     return "neutral"
 
 
+def _spinner_dots(spinner_frame: int) -> str:
+    frames = ("● • •", "• ● •", "• • ●")
+    return frames[abs(int(spinner_frame or 0)) % len(frames)]
+
+
 def _history_item_bullet(item: dict[str, Any], spinner_frame: int) -> str:
     if str(item.get("type") or "").strip() == "plan":
         return "🟣"
     tone = _history_item_tone(item)
     if tone == "running":
-        frames = ("⚪", "◯", "⚪", "◯")
-        return frames[abs(int(spinner_frame or 0)) % len(frames)]
+        return _spinner_dots(spinner_frame)
     if tone == "cancelled":
         return "🟡"
     if tone == "exploration":
@@ -566,6 +568,10 @@ def _history_item_bullet(item: dict[str, Any], spinner_frame: int) -> str:
             return "🟢"
         return "•"
     return "•"
+
+
+def _history_item_loading_suffix(item: dict[str, Any]) -> str:
+    return ""
 
 
 def _render_history_item(item: dict[str, Any], spinner_frame: int) -> list[str]:
@@ -590,7 +596,7 @@ def _render_history_item(item: dict[str, Any], spinner_frame: int) -> list[str]:
         return []
 
     bullet = _history_item_bullet(item, spinner_frame)
-    lines = [f"{bullet} **{title}**"]
+    lines = [f"{bullet} **{title}**{_history_item_loading_suffix(item)}"]
     detail_entries: list[list[str]] = []
 
     if item_type == "command":
@@ -632,6 +638,15 @@ def _render_history_item(item: dict[str, Any], spinner_frame: int) -> list[str]:
         detail_entries.extend([[line] for line in _split_detail_lines(reasoning_text)])
         _append_plain_entries(lines, detail_entries)
         return lines
+
+    if item_type == "commentary":
+        commentary_text = str(item.get("text") or item.get("detail") or "").strip()
+        if not commentary_text:
+            return []
+        rendered_commentary = optimize_markdown_style(commentary_text).strip()
+        if not rendered_commentary:
+            return []
+        return ["---", "", f"• {rendered_commentary}"]
 
     if item_type == "file_change":
         detail_entries.extend([[line] for line in _describe_file_changes(item)])
@@ -694,11 +709,13 @@ def _render_history_items(items: list[dict[str, Any]], spinner_frame: int) -> st
     return "\n\n".join(blocks).strip()
 
 
-def _streaming_history_bullet(item: dict[str, Any]) -> str:
+def _streaming_history_bullet(item: dict[str, Any], spinner_frame: int) -> str:
     item_type = str(item.get("type") or "").strip()
     state = str(item.get("state") or "").strip().lower()
     if item_type == "plan":
         return "🟣"
+    if state == "running":
+        return _spinner_dots(spinner_frame)
     if item_type == "web_search":
         return "🔵"
     if item_type == "command":
@@ -715,7 +732,7 @@ def _streaming_history_bullet(item: dict[str, Any]) -> str:
     return "•"
 
 
-def _render_streaming_history_item(item: dict[str, Any]) -> list[str]:
+def _render_streaming_history_item(item: dict[str, Any], spinner_frame: int) -> list[str]:
     item_type = str(item.get("type") or "").strip()
     if not item_type:
         return []
@@ -734,7 +751,7 @@ def _render_streaming_history_item(item: dict[str, Any]) -> list[str]:
     if not title:
         return []
 
-    lines = [f"{_streaming_history_bullet(item)} {title}"]
+    lines = [f"{_streaming_history_bullet(item, spinner_frame)} {title}{_history_item_loading_suffix(item)}"]
     detail_entries: list[list[str]] = []
 
     if item_type == "command":
@@ -783,6 +800,15 @@ def _render_streaming_history_item(item: dict[str, Any]) -> list[str]:
         _append_plain_entries(lines, detail_entries)
         return lines
 
+    if item_type == "commentary":
+        commentary_text = str(item.get("text") or item.get("detail") or "").strip()
+        if not commentary_text:
+            return []
+        rendered_commentary = optimize_markdown_style(commentary_text).strip()
+        if not rendered_commentary:
+            return []
+        return ["---", "", f"• {rendered_commentary}"]
+
     if item_type == "file_change":
         detail_entries.extend([[line] for line in _describe_file_changes(item)])
         detail_entries.extend(_build_output_entries(item.get("detail"), command="git diff"))
@@ -822,14 +848,14 @@ def _render_streaming_history_item(item: dict[str, Any]) -> list[str]:
     return lines
 
 
-def _render_streaming_history_items(items: list[dict[str, Any]]) -> str:
+def _render_streaming_history_items(items: list[dict[str, Any]], spinner_frame: int) -> str:
     blocks: list[str] = []
     for item in items[-12:]:
         if not isinstance(item, dict):
             continue
         if not _should_render_history_item(item):
             continue
-        lines = _render_streaming_history_item(item)
+        lines = _render_streaming_history_item(item, spinner_frame)
         if lines:
             blocks.append(_join_markdown_lines(lines))
     return "\n\n".join(blocks).strip()
@@ -932,6 +958,16 @@ def render_transcript_markdown(
     return _build_basic_process_panel_text(state)
 
 
+def render_commentary_markdown(text: object) -> str:
+    commentary_text = str(text or "").strip()
+    if not commentary_text:
+        return ""
+    rendered_commentary = optimize_markdown_style(commentary_text).strip()
+    if not rendered_commentary:
+        return ""
+    return f"---\n\n• {rendered_commentary}"
+
+
 def _build_streaming_markdown_element(content: str = "") -> dict[str, Any]:
     return {
         "tag": "markdown",
@@ -940,19 +976,6 @@ def _build_streaming_markdown_element(content: str = "") -> dict[str, Any]:
         "text_size": "normal_v2",
         "margin": "0px 0px 0px 0px",
         "element_id": STREAMING_ELEMENT_ID,
-    }
-
-
-def _build_streaming_loading_element() -> dict[str, Any]:
-    return {
-        "tag": "markdown",
-        "content": " ",
-        "icon": {
-            "tag": "custom_icon",
-            "img_key": LOADING_ICON_IMAGE_KEY,
-            "size": "16px 16px",
-        },
-        "element_id": LOADING_ELEMENT_ID,
     }
 
 
@@ -1006,19 +1029,14 @@ def build_streaming_card_signature(
         else live_state.get("history_items")
     )
     history_items = history_items if isinstance(history_items, list) else []
-    return ("plain", _render_streaming_history_items(history_items))
+    return ("plain", _render_streaming_history_items(history_items, int(live_state.get("spinner_frame") or 0)))
 
 
 def build_thinking_card_json() -> dict[str, Any]:
     return {
         "schema": "2.0",
         "config": {"streaming_mode": True},
-        "body": {
-            "elements": [
-                _build_streaming_markdown_element(),
-                _build_streaming_loading_element(),
-            ]
-        },
+        "body": {"elements": [_build_streaming_markdown_element()]},
     }
 
 
@@ -1053,7 +1071,9 @@ def build_streaming_content(live_state: dict[str, Any] | None = None) -> str:
         else live_state.get("history_items")
     )
     history_items = history_items if isinstance(history_items, list) else []
-    rendered_history = _render_streaming_history_items(history_items)
+    rendered_history = _render_streaming_history_items(
+        history_items, int(live_state.get("spinner_frame") or 0)
+    )
     partial_text = str(live_state.get("partial_text") or "").strip()
     partial_reasoning, partial_answer = split_reasoning_text(partial_text)
     answer_text = optimize_markdown_style(partial_answer).strip()

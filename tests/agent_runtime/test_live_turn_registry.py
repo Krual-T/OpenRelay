@@ -2,6 +2,7 @@ from openrelay.agent_runtime import (
     ApprovalRequest,
     ApprovalRequestedEvent,
     ApprovalResolvedEvent,
+    AssistantCompletedEvent,
     AssistantDeltaEvent,
     LiveTurnRegistry,
     PlanStep,
@@ -201,3 +202,64 @@ def test_live_turn_registry_ignores_unknown_event_and_merges_terminal_state() ->
 
     assert state.status == "failed"
     assert state.error_message == "boom"
+
+
+def test_live_turn_registry_separates_commentary_phase_from_assistant_text() -> None:
+    registry = LiveTurnRegistry()
+    registry.apply(TurnStartedEvent(backend="codex", session_id="s3", turn_id="t3", event_type="turn.started"))
+    registry.apply(
+        AssistantDeltaEvent(
+            backend="codex",
+            session_id="s3",
+            turn_id="t3",
+            event_type="assistant.delta",
+            delta="当前阶段是仓库入口和事实定位。",
+            provider_payload={"phase": "commentary"},
+        )
+    )
+    state = registry.apply(
+        AssistantDeltaEvent(
+            backend="codex",
+            session_id="s3",
+            turn_id="t3",
+            event_type="assistant.delta",
+            delta="最终答复第一段。",
+            provider_payload={"phase": "final"},
+        )
+    )
+
+    assert len(state.commentary) == 1
+    assert state.commentary[0].text == "当前阶段是仓库入口和事实定位。"
+    assert state.commentary[0].status == "running"
+    assert state.assistant_text == "最终答复第一段。"
+
+
+def test_live_turn_registry_accumulates_completed_commentary_messages() -> None:
+    registry = LiveTurnRegistry()
+    registry.apply(TurnStartedEvent(backend="codex", session_id="s4", turn_id="t4", event_type="turn.started"))
+    registry.apply(
+        AssistantCompletedEvent(
+            backend="codex",
+            session_id="s4",
+            turn_id="t4",
+            event_type="assistant.completed",
+            text="我先走 using-openharness。",
+            provider_payload={"phase": "commentary"},
+        )
+    )
+    state = registry.apply(
+        AssistantCompletedEvent(
+            backend="codex",
+            session_id="s4",
+            turn_id="t4",
+            event_type="assistant.completed",
+            text="我再补仓库里的 app-server 落点。",
+            provider_payload={"phase": "commentary"},
+        )
+    )
+
+    assert tuple(item.text for item in state.commentary) == (
+        "我先走 using-openharness。",
+        "我再补仓库里的 app-server 落点。",
+    )
+    assert all(item.status == "completed" for item in state.commentary)

@@ -5,7 +5,7 @@ import logging
 from dataclasses import replace
 from typing import Any, Callable
 
-from openrelay.agent_runtime import ApprovalDecision, ApprovalRequest, LiveTurnViewModel, ToolState
+from openrelay.agent_runtime import ApprovalDecision, ApprovalRequest, CommentaryRecord, LiveTurnViewModel, ToolState
 from openrelay.core import SessionRecord, utc_now
 from openrelay.feishu.reply_card import clean_reasoning_prefix, optimize_markdown_style, render_transcript_markdown as legacy_render_transcript_markdown, split_reasoning_text
 from openrelay.feishu.common import summarize_text_entities
@@ -67,7 +67,10 @@ class LiveTurnViewBuilder:
     ) -> TurnViewSnapshot:
         previous_dict = self._legacy_snapshot(previous)
         heading, status = self.build_status_heading(state)
-        history_items = self._history_items(state, previous_dict)
+        history_items = self._history_items(
+            state,
+            previous_dict,
+        )
         transcript_items = self._merge_transcript_items(history_items, previous_dict)
         plan_history_items = tuple(item for item in transcript_items if item.item_type == "plan")
         snapshot = TurnViewSnapshot(
@@ -246,7 +249,11 @@ class LiveTurnViewBuilder:
             started_at=str(snapshot.get("started_at") or ""),
         )
 
-    def _history_items(self, state: LiveTurnViewModel, previous: dict[str, Any] | None = None) -> tuple[TurnHistoryItem, ...]:
+    def _history_items(
+        self,
+        state: LiveTurnViewModel,
+        previous: dict[str, Any] | None = None,
+    ) -> tuple[TurnHistoryItem, ...]:
         items: list[dict[str, Any]] = []
         if state.reasoning_text:
             items.append(
@@ -257,6 +264,10 @@ class LiveTurnViewBuilder:
                     "text": state.reasoning_text,
                 }
             )
+        for commentary in state.commentary:
+            commentary_item = self._commentary_history_item(commentary)
+            if commentary_item is not None:
+                items.append(commentary_item)
         for tool in state.tools:
             item = self._tool_history_item(tool, state)
             if item is not None:
@@ -394,6 +405,9 @@ class LiveTurnViewBuilder:
             return (item_type, str(item.get("interaction_id") or "").strip())
         if item_type == "reasoning":
             return (item_type, "current")
+        if item_type == "commentary":
+            commentary_id = str(item.get("commentary_id") or "").strip()
+            return (item_type, commentary_id or "current")
         detail = str(item.get("detail") or "").strip()
         title = str(item.get("title") or "").strip()
         if not title and not detail:
@@ -474,6 +488,18 @@ class LiveTurnViewBuilder:
                 "agents": tool.provider_payload.get("agentsStates") if isinstance(tool.provider_payload.get("agentsStates"), dict) else {},
             }
         return None
+
+    def _commentary_history_item(self, commentary: CommentaryRecord) -> dict[str, Any] | None:
+        text = str(commentary.text or "").strip()
+        if not text:
+            return None
+        return {
+            "type": "commentary",
+            "state": commentary.status,
+            "title": "进展",
+            "commentary_id": commentary.item_id,
+            "text": text,
+        }
 
     def _active_tool(self, state: LiveTurnViewModel) -> ToolState | None:
         for tool in reversed(state.tools):

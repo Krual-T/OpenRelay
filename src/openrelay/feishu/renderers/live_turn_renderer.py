@@ -6,7 +6,13 @@ from openrelay.agent_runtime import LiveTurnViewModel
 from openrelay.presentation.live_turn_view_builder import LiveTurnViewBuilder
 from openrelay.presentation.models import TurnViewSnapshot
 
-from openrelay.feishu.reply_card import build_complete_card, build_streaming_card_json, build_streaming_content, build_streaming_card_signature, render_transcript_markdown
+from openrelay.feishu.reply_card import (
+    build_complete_card,
+    build_streaming_card_json,
+    build_streaming_content,
+    build_streaming_card_signature,
+    render_transcript_markdown,
+)
 
 
 class FeishuLiveTurnRenderer:

@@ -226,6 +226,63 @@ def test_codex_mapper_maps_terminal_turn_outcomes() -> None:
     assert failed == ()
 
 
+def test_codex_mapper_excludes_commentary_from_turn_completed_final_text() -> None:
+    mapper = CodexProtocolMapper(session_id="relay-1", native_session_id="thread_1", turn_id="turn_1")
+    state = CodexTurnState()
+
+    mapper.map_notification(
+        "item/agentMessage/delta",
+        {
+            "threadId": "thread_1",
+            "turnId": "turn_1",
+            "itemId": "msg_commentary",
+            "delta": "当前阶段是仓库入口和事实定位。",
+            "phase": "commentary",
+        },
+        state,
+    )
+    mapper.map_notification(
+        "item/completed",
+        {
+            "threadId": "thread_1",
+            "turnId": "turn_1",
+            "item": {
+                "id": "msg_commentary",
+                "type": "agentMessage",
+                "text": "当前阶段是仓库入口和事实定位。",
+                "phase": "commentary",
+            },
+        },
+        state,
+    )
+    mapper.map_notification(
+        "item/completed",
+        {
+            "threadId": "thread_1",
+            "turnId": "turn_1",
+            "item": {
+                "id": "msg_final",
+                "type": "agentMessage",
+                "text": "最终答复。",
+                "phase": "final",
+            },
+        },
+        state,
+    )
+    completed = mapper.map_notification(
+        "turn/completed",
+        {
+            "threadId": "thread_1",
+            "turnId": "turn_1",
+            "turn": {"status": "completed"},
+        },
+        state,
+    )
+
+    assert len(completed) == 1 and isinstance(completed[0], TurnCompletedEvent)
+    assert completed[0].final_text == "最终答复。"
+
+
 def test_codex_mapper_maps_structured_plan_update() -> None:
     mapper = CodexProtocolMapper(session_id="relay-1", native_session_id="thread_1", turn_id="turn_1")
     state = CodexTurnState()
@@ -351,6 +408,77 @@ def test_codex_mapper_maps_assistant_completed_event() -> None:
 
     assert len(events) == 1 and isinstance(events[0], AssistantCompletedEvent)
     assert events[0].text == "final answer"
+
+
+def test_codex_mapper_preserves_commentary_phase_on_agent_messages() -> None:
+    mapper = CodexProtocolMapper(session_id="relay-1", native_session_id="thread_1", turn_id="turn_1")
+    state = CodexTurnState()
+
+    delta_events = mapper.map_notification(
+        "item/agentMessage/delta",
+        {
+            "threadId": "thread_1",
+            "turnId": "turn_1",
+            "itemId": "msg_1",
+            "delta": "当前阶段是仓库入口和事实定位。",
+            "phase": "commentary",
+        },
+        state,
+    )
+    completed_events = mapper.map_notification(
+        "item/completed",
+        {
+            "threadId": "thread_1",
+            "turnId": "turn_1",
+            "item": {
+                "id": "msg_1",
+                "type": "agentMessage",
+                "text": "当前阶段是仓库入口和事实定位。",
+                "phase": "commentary",
+            },
+        },
+        state,
+    )
+
+    assert len(delta_events) == 1 and isinstance(delta_events[0], AssistantDeltaEvent)
+    assert delta_events[0].provider_payload["phase"] == "commentary"
+    assert len(completed_events) == 1 and isinstance(completed_events[0], AssistantCompletedEvent)
+    assert completed_events[0].provider_payload["phase"] == "commentary"
+
+
+def test_codex_mapper_recovers_commentary_phase_from_started_item_when_delta_omits_it() -> None:
+    mapper = CodexProtocolMapper(session_id="relay-1", native_session_id="thread_1", turn_id="turn_1")
+    state = CodexTurnState()
+
+    started_events = mapper.map_notification(
+        "item/started",
+        {
+            "threadId": "thread_1",
+            "turnId": "turn_1",
+            "item": {
+                "id": "msg_1",
+                "type": "agentMessage",
+                "text": "",
+                "phase": "commentary",
+            },
+        },
+        state,
+    )
+    delta_events = mapper.map_notification(
+        "item/agentMessage/delta",
+        {
+            "threadId": "thread_1",
+            "turnId": "turn_1",
+            "itemId": "msg_1",
+            "delta": "当前阶段是仓库入口和事实定位。",
+        },
+        state,
+    )
+
+    assert started_events == ()
+    assert len(delta_events) == 1 and isinstance(delta_events[0], AssistantDeltaEvent)
+    assert delta_events[0].provider_payload["phase"] == "commentary"
+    assert state.final_text == ""
 
 
 def test_codex_mapper_falls_back_for_unexpected_backend_event() -> None:

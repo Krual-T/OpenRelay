@@ -18,8 +18,7 @@ def test_build_streaming_card_json_uses_single_streaming_element() -> None:
     assert "summary" not in card["config"]
     assert card["body"]["elements"][0]["element_id"] == STREAMING_ELEMENT_ID
     assert card["body"]["elements"][0]["content"] == ""
-    assert card["body"]["elements"][1]["element_id"] == "loading_icon"
-    assert card["body"]["elements"][1]["icon"]["img_key"].startswith("img_")
+    assert len(card["body"]["elements"]) == 1
 
 
 def test_build_streaming_card_json_keeps_single_streaming_element_when_answer_starts() -> None:
@@ -46,7 +45,31 @@ def test_build_streaming_card_json_keeps_single_streaming_element_when_answer_st
     assert card["body"]["elements"][0]["element_id"] == STREAMING_ELEMENT_ID
     assert "🔵 Explored" in card["body"]["elements"][0]["content"]
     assert "#### Answer\n找到结果。" in card["body"]["elements"][0]["content"]
-    assert card["body"]["elements"][1]["element_id"] == "loading_icon"
+    assert len(card["body"]["elements"]) == 1
+
+
+def test_build_streaming_card_json_renders_running_loading_dots() -> None:
+    card = build_streaming_card_json(
+        {
+            "history_items": [
+                {
+                    "type": "web_search",
+                    "state": "running",
+                    "title": "Searching web",
+                    "search_id": "search_1",
+                    "query": "feishu markdown loading icon",
+                    "queries": ["feishu markdown loading icon"],
+                }
+            ],
+            "spinner_frame": 1,
+        }
+    )
+
+    content = str(card["body"]["elements"][0]["content"])
+
+    assert len(card["body"]["elements"]) == 1
+    assert "Searching" in content
+    assert "• ● •" in content
 
 
 def test_build_streaming_card_json_preserves_nbsp_entities_for_indented_output(
@@ -91,7 +114,7 @@ def test_build_streaming_content_prefers_partial_text_then_reasoning() -> None:
             "started_at": "2026-03-11T00:00:00+00:00",
         }
     )
-    assert "• Thinking" in reasoning_content
+    assert "● • • Thinking" in reasoning_content
     assert "先看代码" in reasoning_content
     assert build_streaming_content({}) == ""
 
@@ -205,6 +228,37 @@ def test_build_streaming_content_keeps_history_summary_separate_from_partial_ans
 
     assert content.startswith("---\n\n上一段总结")
     assert content.endswith("---\n\n#### Final Answer\n新的正文")
+
+
+def test_build_streaming_content_renders_commentary_inline_during_streaming() -> None:
+    content = build_streaming_content(
+        {
+            "history_items": [
+                {
+                    "type": "web_search",
+                    "state": "running",
+                    "title": "Searching web",
+                    "search_id": "search_1",
+                    "query": "openharness skill",
+                    "queries": ["openharness skill"],
+                },
+                {
+                    "type": "commentary",
+                    "state": "running",
+                    "title": "进展",
+                    "commentary_id": "c1",
+                    "text": "我用 using-openharness 做了最小入口检查。",
+                },
+            ]
+        }
+    )
+
+    assert "Searching" in content
+    assert "---" in content
+    assert "• 我用 using-openharness 做了最小入口检查。" in content
+    assert "进展" not in content
+    assert content.index("Searching") < content.index("• 我用 using-openharness 做了最小入口检查。")
+
 
 
 def test_build_streaming_content_marks_failed_command_with_red_dot() -> None:

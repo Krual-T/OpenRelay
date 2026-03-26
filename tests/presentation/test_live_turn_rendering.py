@@ -31,7 +31,7 @@ def test_render_live_status_markdown_contains_header_details_and_body() -> None:
         }
     )
     assert "`Running`" in markdown
-    assert "⚪ ◯ ◯" in markdown
+    assert "● • •" in markdown
     assert "**Running command**" in markdown
     assert "Current: running `ls -la`" in markdown
     assert "partial reply" in markdown

@@ -14,6 +14,7 @@ ToolStatus: TypeAlias = Literal["pending", "running", "completed", "failed", "de
 TurnStatus: TypeAlias = Literal["idle", "running", "completed", "failed", "interrupted"]
 MessageRole: TypeAlias = Literal["user", "assistant", "system"]
 PlanStepStatus: TypeAlias = Literal["pending", "in_progress", "completed"]
+CommentaryStatus: TypeAlias = Literal["running", "completed"]
 
 
 @dataclass(slots=True, frozen=True)
@@ -124,6 +125,14 @@ class TerminalInteraction:
     created_at: str = field(default_factory=utc_now)
 
 
+@dataclass(slots=True, frozen=True)
+class CommentaryRecord:
+    item_id: str
+    text: str
+    status: CommentaryStatus
+    created_at: str = field(default_factory=utc_now)
+
+
 @dataclass(slots=True)
 class LiveTurnViewModel:
     backend: BackendKind
@@ -132,6 +141,7 @@ class LiveTurnViewModel:
     turn_id: str
     status: TurnStatus = "idle"
     assistant_text: str = ""
+    commentary: tuple[CommentaryRecord, ...] = ()
     reasoning_text: str = ""
     plan_steps: tuple[PlanStep, ...] = ()
     tools: tuple[ToolState, ...] = ()

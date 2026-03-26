@@ -45,6 +45,7 @@ class _ReasoningItemState:
 @dataclass(slots=True)
 class CodexTurnState:
     agent_text_by_id: dict[str, str] = field(default_factory=dict)
+    agent_phase_by_id: dict[str, str] = field(default_factory=dict)
     command_output_by_id: dict[str, str] = field(default_factory=dict)
     file_change_output_by_id: dict[str, str] = field(default_factory=dict)
     reasoning_by_id: dict[str, _ReasoningItemState] = field(default_factory=dict)

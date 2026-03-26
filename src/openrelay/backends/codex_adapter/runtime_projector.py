@@ -43,6 +43,8 @@ class CodexRuntimeEventProjector:
             "semantic_name": event.semantic_name,
             "classification": event.policy,
         }
+        if event.item_id:
+            provider_payload["item_id"] = event.item_id
         if event.semantic_name == "session.started":
             return (
                 SessionStartedEvent(

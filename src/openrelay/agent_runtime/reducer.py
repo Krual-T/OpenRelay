@@ -28,7 +28,7 @@ from .events import (
     TurnStartedEvent,
     UsageUpdatedEvent,
 )
-from .models import BackendEventRecord, LiveTurnViewModel, TerminalInteraction, ToolState
+from .models import BackendEventRecord, CommentaryRecord, LiveTurnViewModel, TerminalInteraction, ToolState
 
 
 class LiveTurnReducer:
@@ -44,10 +44,26 @@ class LiveTurnReducer:
                 self.state.status = "running"
                 if turn_id:
                     self.state.turn_id = turn_id
+                self.state.commentary = ()
                 self.state.error_message = ""
+            case AssistantDeltaEvent(delta=delta) if str(event.provider_payload.get("phase") or "").strip() == "commentary":
+                self.state.status = "running"
+                self._upsert_commentary(
+                    item_id=str(event.provider_payload.get("item_id") or ""),
+                    delta=delta,
+                    status="running",
+                    created_at=event.created_at,
+                )
             case AssistantDeltaEvent(delta=delta):
                 self.state.status = "running"
                 self.state.assistant_text = f"{self.state.assistant_text}{delta}"
+            case AssistantCompletedEvent(text=text) if str(event.provider_payload.get("phase") or "").strip() == "commentary":
+                self._upsert_commentary(
+                    item_id=str(event.provider_payload.get("item_id") or ""),
+                    text=text,
+                    status="completed",
+                    created_at=event.created_at,
+                )
             case AssistantCompletedEvent(text=text):
                 self.state.assistant_text = text or self.state.assistant_text
             case ReasoningDeltaEvent(text=text):
@@ -155,6 +171,45 @@ class LiveTurnReducer:
                 return
         interactions.append(interaction)
         self.state.terminal_interactions = tuple(interactions)
+
+    def _upsert_commentary(
+        self,
+        *,
+        item_id: str,
+        status: str,
+        created_at: str,
+        text: str = "",
+        delta: str = "",
+    ) -> None:
+        commentary = list(self.state.commentary)
+        target_index: int | None = None
+        if item_id:
+            for index, existing in enumerate(commentary):
+                if existing.item_id == item_id:
+                    target_index = index
+                    break
+        if target_index is None:
+            combined_text = text or delta
+            if not combined_text:
+                return
+            commentary.append(
+                CommentaryRecord(
+                    item_id=item_id or f"commentary_{len(commentary)}",
+                    text=combined_text,
+                    status="completed" if status == "completed" else "running",
+                    created_at=created_at,
+                )
+            )
+            self.state.commentary = tuple(commentary)
+            return
+        existing = commentary[target_index]
+        merged_text = text or f"{existing.text}{delta}"
+        commentary[target_index] = replace(
+            existing,
+            text=merged_text,
+            status="completed" if status == "completed" else existing.status,
+        )
+        self.state.commentary = tuple(commentary)
 
 
 class LiveTurnRegistry:

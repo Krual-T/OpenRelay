@@ -162,7 +162,9 @@ class CodexSemanticMapper:
         delta = self._delta(envelope.params)
         text = f"{state.agent_text_by_id.get(envelope.item_id, '')}{delta}"
         state.agent_text_by_id[envelope.item_id] = text
-        state.final_text = text or state.final_text
+        phase = self._message_phase(envelope.params, state=state, item_id=envelope.item_id)
+        if phase != "commentary":
+            state.final_text = text or state.final_text
         return CodexSemanticEvent(
             semantic_name="assistant.delta",
             policy=descriptor.policy,
@@ -173,6 +175,7 @@ class CodexSemanticMapper:
             item_id=envelope.item_id,
             dedupe_key=f"assistant.delta:{envelope.thread_id}:{envelope.turn_id}:{envelope.item_id}:{delta}",
             text=delta,
+            payload={"phase": phase} if phase else {},
         )
 
     def _map_reasoning(
@@ -377,6 +380,11 @@ class CodexSemanticMapper:
             return ()
         if item_type == "userMessage":
             return ()
+        if item_type == "agentMessage":
+            phase = str(item.get("phase") or "").strip()
+            if item_id and phase:
+                state.agent_phase_by_id[item_id] = phase
+            return ()
         if item_type in {"agentMessage", "plan"}:
             return ()
         tool = self._to_tool_state(item, status="running", state=state)
@@ -409,7 +417,11 @@ class CodexSemanticMapper:
             text = str(item.get("text") or state.agent_text_by_id.get(item_id, "")).strip()
             if not text:
                 return ()
-            state.final_text = text
+            phase = str(item.get("phase") or "").strip()
+            if item_id and phase:
+                state.agent_phase_by_id[item_id] = phase
+            if phase != "commentary":
+                state.final_text = text
             return (
                 CodexSemanticEvent(
                     semantic_name="assistant.completed",
@@ -421,6 +433,7 @@ class CodexSemanticMapper:
                     item_id=item_id,
                     dedupe_key=f"assistant.completed:{envelope.thread_id}:{envelope.turn_id}:{item_id}:{text}",
                     text=text,
+                    payload={"phase": phase} if phase else {},
                 ),
             )
         if item_type == "reasoning":
@@ -678,6 +691,18 @@ class CodexSemanticMapper:
 
     def _delta(self, params: dict[str, Any]) -> str:
         return str(params.get("delta") or "")
+
+    def _message_phase(self, params: dict[str, Any], *, state: Any | None = None, item_id: str = "") -> str:
+        direct_phase = str(params.get("phase") or "").strip()
+        if direct_phase:
+            return direct_phase
+        item = self._extract_event_item(params)
+        item_phase = str(item.get("phase") or "").strip()
+        if item_phase:
+            return item_phase
+        if state is not None and item_id:
+            return str(getattr(state, "agent_phase_by_id", {}).get(item_id, "") or "").strip()
+        return ""
 
     def _int_field(self, params: dict[str, Any], primary: str, alias: str) -> int:
         _ = alias
