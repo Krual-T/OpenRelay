@@ -30,6 +30,11 @@
 
 ## Latest Round
 - 2026-03-26:
+  - 将 running 态三点 spinner 的文案顺序从前置改为后置；现在 streaming card、initial waiting fallback、connection fallback、final transcript 都统一显示为“状态在前，spinner 在后”。
+  - 静态图标语义不变；只调整会动的三点 spinner，`🟣 Plan`、`🟢 Ran shell command` 等仍保持图标前置，避免把 running 态排版规则扩散到全部历史项。
+  - 定向验证：`uv run pytest tests/feishu/test_streaming_content.py tests/feishu/test_reply_card.py tests/presentation/test_live_turn_presenter.py`
+  - 仓库验证：`uv run .agents/skills/openharness/using-openharness/scripts/openharness.py check-tasks`
+- 2026-03-26:
   - commentary transcript 的分段前缀从 markdown 分隔线 `---` 改为显式换行 `<br>`，并保留 `•` 列表样式，避免 Feishu 在 commentary 后面紧接 command block 时把两段视觉上粘成一段。
   - 新增与更新测试覆盖 streaming content、reply transcript 和 final process panel，确认 commentary 渲染为 `<br>• 文本`，且不再依赖 `---` 分段。
   - 定向验证：`uv run pytest tests/feishu/test_streaming_content.py tests/feishu/test_reply_card.py tests/presentation/test_live_turn_presenter.py`

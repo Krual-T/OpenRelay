@@ -60,8 +60,7 @@ def test_render_transcript_markdown_uses_spinner_dots_without_loading_icon() -> 
         include_summary=False,
     )
 
-    assert "• • ●" in content
-    assert "Running command" in content
+    assert "**Running command** • • ●" in content
     assert "img_v3_" not in content
 
 

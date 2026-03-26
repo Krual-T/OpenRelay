@@ -546,6 +546,17 @@ def _spinner_dots(spinner_frame: int) -> str:
     return frames[abs(int(spinner_frame or 0)) % len(frames)]
 
 
+def _render_history_heading(title: str, bullet: str, *, running: bool, bold: bool = False) -> str:
+    text = f"**{title}**" if bold else title
+    if running:
+        return f"{text} {bullet}"
+    return f"{bullet} {text}"
+
+
+def _is_spinner_bullet(bullet: str) -> bool:
+    return bullet in {"● • •", "• ● •", "• • ●"}
+
+
 def _history_item_bullet(item: dict[str, Any], spinner_frame: int) -> str:
     if str(item.get("type") or "").strip() == "plan":
         return "🟣"
@@ -596,7 +607,9 @@ def _render_history_item(item: dict[str, Any], spinner_frame: int) -> list[str]:
         return []
 
     bullet = _history_item_bullet(item, spinner_frame)
-    lines = [f"{bullet} **{title}**{_history_item_loading_suffix(item)}"]
+    lines = [
+        f"{_render_history_heading(title, bullet, running=_is_spinner_bullet(bullet), bold=True)}{_history_item_loading_suffix(item)}"
+    ]
     detail_entries: list[list[str]] = []
 
     if item_type == "command":
@@ -751,7 +764,10 @@ def _render_streaming_history_item(item: dict[str, Any], spinner_frame: int) -> 
     if not title:
         return []
 
-    lines = [f"{_streaming_history_bullet(item, spinner_frame)} {title}{_history_item_loading_suffix(item)}"]
+    bullet = _streaming_history_bullet(item, spinner_frame)
+    lines = [
+        f"{_render_history_heading(title, bullet, running=_is_spinner_bullet(bullet))}{_history_item_loading_suffix(item)}"
+    ]
     detail_entries: list[list[str]] = []
 
     if item_type == "command":
@@ -1110,7 +1126,7 @@ def build_streaming_content(live_state: dict[str, Any] | None = None) -> str:
     if not content:
         waiting_title = _streaming_waiting_title(live_state, history_items)
         if waiting_title:
-            content = f"{_spinner_dots(int(live_state.get('spinner_frame') or 0))} {waiting_title}"
+            content = f"{waiting_title} {_spinner_dots(int(live_state.get('spinner_frame') or 0))}"
     summary = summarize_text_entities(content)
     if any(
         isinstance(item, dict) and item.get("type") == "plan" for item in history_items

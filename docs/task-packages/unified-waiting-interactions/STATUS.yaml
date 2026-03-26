@@ -42,5 +42,5 @@ evidence:
   - src/openrelay/feishu/renderers/live_turn_renderer.py
   tests:
   - tests/feishu/test_streaming_content.py
-  - tests/presentation/test_live_turn_presenter.py
   - tests/feishu/test_reply_card.py
+  - tests/presentation/test_live_turn_presenter.py

@@ -68,8 +68,7 @@ def test_build_streaming_card_json_renders_running_loading_dots() -> None:
     content = str(card["body"]["elements"][0]["content"])
 
     assert len(card["body"]["elements"]) == 1
-    assert "Searching" in content
-    assert "• ● •" in content
+    assert "Searching • ● •" in content
 
 
 def test_build_streaming_card_json_preserves_nbsp_entities_for_indented_output(
@@ -114,7 +113,7 @@ def test_build_streaming_content_prefers_partial_text_then_reasoning() -> None:
             "started_at": "2026-03-11T00:00:00+00:00",
         }
     )
-    assert "● • • Thinking" in reasoning_content
+    assert "Thinking ● • •" in reasoning_content
     assert "先看代码" in reasoning_content
     assert build_streaming_content({}) == ""
 
@@ -128,7 +127,7 @@ def test_build_streaming_content_renders_spinner_during_initial_waiting_state() 
         }
     )
 
-    assert content == "● • • Generating reply"
+    assert content == "Generating reply ● • •"
 
 
 def test_build_streaming_content_uses_connection_status_when_only_hidden_status_items_exist() -> None:
@@ -145,7 +144,7 @@ def test_build_streaming_content_uses_connection_status_when_only_hidden_status_
         }
     )
 
-    assert content == "• ● • Starting Codex"
+    assert content == "Starting Codex • ● •"
 
 
 def test_build_streaming_content_returns_answer_only_after_answer_starts() -> None:

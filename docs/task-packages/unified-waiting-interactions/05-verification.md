@@ -11,6 +11,7 @@
 
 ## Latest Result
 - 2026-03-19: package scaffolded from historical task notes and promoted to a formal harness package.
+- 2026-03-26: running 态 spinner 顺序从前置改为后置；streaming transcript、初始 waiting fallback、连接状态 fallback、final transcript 已统一为“状态在前，三点在后”，定向验证通过。
 - 2026-03-26: commentary 分段从 `---` 切换为 `<br>• 文本`；验证覆盖 streaming transcript、reply transcript 和 final process panel，确认 commentary 与后续 command block 在同一卡片里保持显式断行。
 - 2026-03-26: commentary waiting behavior adjusted so commentary 与 `Searching` / `Ran` 一样进入线性 transcript 主线；streaming 阶段实时追加，final reply 保留完整 transcript。同轮验证覆盖 streaming content、final card transcript 和 reply card rendering。
 - 2026-03-26: commentary 渲染调整落地时，仓库协议仍残留 `docs/designs` / `check-designs` 表述，后续已统一迁回 `docs/task-packages` / `check-tasks`。

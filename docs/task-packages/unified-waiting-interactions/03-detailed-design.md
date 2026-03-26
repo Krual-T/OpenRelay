@@ -37,6 +37,14 @@
 - `tests/feishu/test_streaming_content.py`
   - 覆盖初始 waiting snapshot 和仅有 `Starting Codex` 状态项这两类空白入口，确保连接阶段 spinner 过渡稳定存在。
 
+## Spinner Ordering
+- `src/openrelay/feishu/reply_card.py`
+  - 仅对 running 态的三点 spinner 调整标题拼接顺序：从 `● • • Searching` 改为 `Searching ● • •`。
+  - 静态状态图标如 `🟣 Plan`、`🟢 Ran shell command` 继续保留前置，不与 spinner 排版规则混用。
+  - waiting fallback 也与 running transcript 对齐，统一为 `Generating reply ● • •`、`Starting Codex • ● •` 这类“状态在前、spinner 在后”的顺序。
+- `tests/feishu/test_streaming_content.py` / `tests/feishu/test_reply_card.py`
+  - 覆盖 streaming transcript、初始 waiting fallback、连接状态 fallback，以及 final transcript 中 running command 的新顺序，防止后续回退。
+
 ## Verification Notes
 - waiting/streaming 阶段：
   - commentary 应与 `Searching` / `Ran` 一样出现在 streaming card 中，并按 transcript 顺序线性追加。
