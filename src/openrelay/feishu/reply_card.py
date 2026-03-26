@@ -861,6 +861,26 @@ def _render_streaming_history_items(items: list[dict[str, Any]], spinner_frame: 
     return "\n\n".join(blocks).strip()
 
 
+def _streaming_waiting_title(
+    live_state: dict[str, Any], history_items: list[dict[str, Any]]
+) -> str:
+    for item in reversed(history_items):
+        if not isinstance(item, dict):
+            continue
+        if str(item.get("type") or "").strip() != "status":
+            continue
+        title = _normalize_history_title(item)
+        if title:
+            return title
+    heading = normalize_inline(live_state.get("heading"))
+    status = normalize_inline(live_state.get("status"))
+    if heading:
+        return heading
+    if status:
+        return status
+    return ""
+
+
 def _build_basic_process_panel_text(state: dict[str, Any]) -> str:
     lines: list[str] = []
     heading = str(state.get("heading") or "").strip()
@@ -1087,6 +1107,10 @@ def build_streaming_content(live_state: dict[str, Any] | None = None) -> str:
     if answer_text:
         blocks.append(f"---\n\n{answer_text}")
     content = "\n\n".join(block for block in blocks if block).strip()
+    if not content:
+        waiting_title = _streaming_waiting_title(live_state, history_items)
+        if waiting_title:
+            content = f"{_spinner_dots(int(live_state.get('spinner_frame') or 0))} {waiting_title}"
     summary = summarize_text_entities(content)
     if any(
         isinstance(item, dict) and item.get("type") == "plan" for item in history_items
