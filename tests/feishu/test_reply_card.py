@@ -63,3 +63,22 @@ def test_render_transcript_markdown_uses_spinner_dots_without_loading_icon() -> 
     assert "• • ●" in content
     assert "Running command" in content
     assert "img_v3_" not in content
+
+
+def test_render_transcript_markdown_renders_commentary_with_br_prefix() -> None:
+    content = render_transcript_markdown(
+        {
+            "history_items": [
+                {
+                    "type": "commentary",
+                    "state": "running",
+                    "title": "进展",
+                    "commentary_id": "c1",
+                    "text": "我补看一下后面的 helper。",
+                }
+            ]
+        },
+        include_summary=False,
+    )
+
+    assert content == "<br>• 我补看一下后面的 helper。"

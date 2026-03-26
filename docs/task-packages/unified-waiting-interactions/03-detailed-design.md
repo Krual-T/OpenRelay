@@ -25,7 +25,7 @@
   - transcript merge 按 `commentary_id` 保留多条 commentary，避免只剩最后一条。
 - `src/openrelay/feishu/reply_card.py`
   - streaming transcript 直接渲染 `commentary` item，使其和 `Searching` / `Ran` 一样按线性 transcript 实时追加。
-  - commentary 不再显示固定标签，而是渲染为分割线 `---` 加正文的分段。
+  - commentary 不再显示固定标签，而是渲染为显式换行前缀 `<br>• 文本`，避免 Feishu 对 `---` 分隔线与后续 command block 连续排版时出现视觉上“没换行”的粘连。
 - `src/openrelay/feishu/renderers/live_turn_renderer.py`
   - final card 直接复用 transcript 渲染结果；commentary 已经在 transcript 主线里，不再需要独立补拼。
 

@@ -283,10 +283,10 @@ def test_build_streaming_content_renders_commentary_inline_during_streaming() ->
     )
 
     assert "Searching" in content
-    assert "---" in content
-    assert "• 我用 using-openharness 做了最小入口检查。" in content
+    assert "<br>• 我用 using-openharness 做了最小入口检查。" in content
     assert "进展" not in content
-    assert content.index("Searching") < content.index("• 我用 using-openharness 做了最小入口检查。")
+    assert "---" not in content
+    assert content.index("Searching") < content.index("<br>• 我用 using-openharness 做了最小入口检查。")
 
 
 

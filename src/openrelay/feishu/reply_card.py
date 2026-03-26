@@ -646,7 +646,7 @@ def _render_history_item(item: dict[str, Any], spinner_frame: int) -> list[str]:
         rendered_commentary = optimize_markdown_style(commentary_text).strip()
         if not rendered_commentary:
             return []
-        return ["---", "", f"• {rendered_commentary}"]
+        return [f"<br>• {rendered_commentary}"]
 
     if item_type == "file_change":
         detail_entries.extend([[line] for line in _describe_file_changes(item)])
@@ -807,7 +807,7 @@ def _render_streaming_history_item(item: dict[str, Any], spinner_frame: int) -> 
         rendered_commentary = optimize_markdown_style(commentary_text).strip()
         if not rendered_commentary:
             return []
-        return ["---", "", f"• {rendered_commentary}"]
+        return [f"<br>• {rendered_commentary}"]
 
     if item_type == "file_change":
         detail_entries.extend([[line] for line in _describe_file_changes(item)])

@@ -274,8 +274,7 @@ def test_live_turn_presenter_builds_final_card_with_commentary_as_static_transcr
 
     assert panel["tag"] == "collapsible_panel"
     assert "Ran" in panel["elements"][0]["content"]
-    assert "---" in panel["elements"][0]["content"]
-    assert "• 先按仓库协议把上下文跑一遍。" in panel["elements"][0]["content"]
+    assert "<br>• 先按仓库协议把上下文跑一遍。" in panel["elements"][0]["content"]
     assert "进展" not in panel["elements"][0]["content"]
     assert "Update" not in panel["elements"][0]["content"]
     assert "•••" not in panel["elements"][0]["content"]
@@ -301,13 +300,13 @@ def test_live_turn_presenter_builds_final_card_with_multiple_commentary_items() 
     card = presenter.build_final_card(state)
     panel_content = card["body"]["elements"][0]["elements"][0]["content"]
 
-    assert panel_content.count("---") >= 3
+    assert panel_content.count("<br>• ") == 3
     assert "进展" not in panel_content
-    assert "• 我先走 using-openharness，再查事实来源。" in panel_content
-    assert "• 入口流程确认了。现在做概念和仓库对照调研。" in panel_content
-    assert "• 结论已经够了，我补一下精确文件位置。" in panel_content
-    assert panel_content.index("• 我先走 using-openharness，再查事实来源。") < panel_content.index("• 入口流程确认了。现在做概念和仓库对照调研。")
-    assert panel_content.index("• 入口流程确认了。现在做概念和仓库对照调研。") < panel_content.index("• 结论已经够了，我补一下精确文件位置。")
+    assert "<br>• 我先走 using-openharness，再查事实来源。" in panel_content
+    assert "<br>• 入口流程确认了。现在做概念和仓库对照调研。" in panel_content
+    assert "<br>• 结论已经够了，我补一下精确文件位置。" in panel_content
+    assert panel_content.index("<br>• 我先走 using-openharness，再查事实来源。") < panel_content.index("<br>• 入口流程确认了。现在做概念和仓库对照调研。")
+    assert panel_content.index("<br>• 入口流程确认了。现在做概念和仓库对照调研。") < panel_content.index("<br>• 结论已经够了，我补一下精确文件位置。")
 
 
 def test_live_turn_presenter_uses_latest_turn_diff_when_file_change_detail_is_empty() -> None:

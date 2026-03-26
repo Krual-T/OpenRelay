@@ -25,9 +25,15 @@
 - `uv run pytest tests/agent_runtime/test_live_turn_registry.py tests/presentation/test_live_turn_presenter.py tests/feishu/test_streaming_content.py tests/feishu/test_reply_card.py`
 - `uv run pytest tests/presentation/test_live_turn_presenter.py tests/agent_runtime/test_live_turn_registry.py tests/feishu/test_streaming_content.py tests/feishu/test_reply_card.py tests/backends/codex_adapter/test_mapper.py`
 - `uv run pytest tests/feishu/test_streaming_content.py tests/feishu/test_streaming_session.py tests/feishu/test_reply_card.py tests/presentation/test_live_turn_rendering.py`
+- `uv run pytest tests/feishu/test_streaming_content.py tests/feishu/test_reply_card.py tests/presentation/test_live_turn_presenter.py`
 - `uv run .agents/skills/openharness/using-openharness/scripts/openharness.py check-tasks`
 
 ## Latest Round
+- 2026-03-26:
+  - commentary transcript 的分段前缀从 markdown 分隔线 `---` 改为显式换行 `<br>`，并保留 `•` 列表样式，避免 Feishu 在 commentary 后面紧接 command block 时把两段视觉上粘成一段。
+  - 新增与更新测试覆盖 streaming content、reply transcript 和 final process panel，确认 commentary 渲染为 `<br>• 文本`，且不再依赖 `---` 分段。
+  - 定向验证：`uv run pytest tests/feishu/test_streaming_content.py tests/feishu/test_reply_card.py tests/presentation/test_live_turn_presenter.py`
+  - `uv run .agents/skills/openharness/using-openharness/scripts/openharness.py check-tasks` 仍失败；失败原因与本次改动无关，仍是多个 archived task package 的 placeholder 内容和失效引用未清理。
 - 2026-03-26:
   - 修复首条飞书消息在连接阶段的空白展示：当 streaming transcript 还没有 history / reasoning / answer 时，`build_streaming_content()` 现在会回退到连接标题并渲染三点 spinner。
   - 连接类 `status` 项仍然不会进入常规 transcript 主线，但如果当前只有 `Starting Codex` 这类状态，会被用作 waiting fallback 文案，避免过渡期完全空白。
