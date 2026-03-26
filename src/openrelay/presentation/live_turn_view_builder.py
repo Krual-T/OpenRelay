@@ -491,7 +491,7 @@ class LiveTurnViewBuilder:
 
     def _commentary_history_item(self, commentary: CommentaryRecord) -> dict[str, Any] | None:
         text = str(commentary.text or "").strip()
-        if not text:
+        if not text or commentary.status != "completed":
             return None
         return {
             "type": "commentary",

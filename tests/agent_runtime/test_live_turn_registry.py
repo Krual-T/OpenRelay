@@ -228,9 +228,7 @@ def test_live_turn_registry_separates_commentary_phase_from_assistant_text() -> 
         )
     )
 
-    assert len(state.commentary) == 1
-    assert state.commentary[0].text == "当前阶段是仓库入口和事实定位。"
-    assert state.commentary[0].status == "running"
+    assert state.commentary == ()
     assert state.assistant_text == "最终答复第一段。"
 
 
@@ -263,3 +261,36 @@ def test_live_turn_registry_accumulates_completed_commentary_messages() -> None:
         "我再补仓库里的 app-server 落点。",
     )
     assert all(item.status == "completed" for item in state.commentary)
+
+
+def test_live_turn_registry_records_commentary_only_after_completion() -> None:
+    registry = LiveTurnRegistry()
+    registry.apply(TurnStartedEvent(backend="codex", session_id="s5", turn_id="t5", event_type="turn.started"))
+    registry.apply(
+        AssistantDeltaEvent(
+            backend="codex",
+            session_id="s5",
+            turn_id="t5",
+            event_type="assistant.delta",
+            delta="我先按仓库协议读 AGENTS.md。",
+            provider_payload={"phase": "commentary"},
+        )
+    )
+
+    intermediate = registry.read("s5", "t5")
+    assert intermediate is not None
+    assert intermediate.commentary == ()
+
+    state = registry.apply(
+        AssistantCompletedEvent(
+            backend="codex",
+            session_id="s5",
+            turn_id="t5",
+            event_type="assistant.completed",
+            text="我先按仓库协议读 AGENTS.md。",
+            provider_payload={"phase": "commentary"},
+        )
+    )
+
+    assert tuple(item.text for item in state.commentary) == ("我先按仓库协议读 AGENTS.md。",)
+    assert state.commentary[0].status == "completed"

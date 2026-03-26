@@ -653,6 +653,8 @@ def _render_history_item(item: dict[str, Any], spinner_frame: int) -> list[str]:
         return lines
 
     if item_type == "commentary":
+        if str(item.get("state") or "").strip() != "completed":
+            return []
         commentary_text = str(item.get("text") or item.get("detail") or "").strip()
         if not commentary_text:
             return []
@@ -817,6 +819,8 @@ def _render_streaming_history_item(item: dict[str, Any], spinner_frame: int) -> 
         return lines
 
     if item_type == "commentary":
+        if str(item.get("state") or "").strip() != "completed":
+            return []
         commentary_text = str(item.get("text") or item.get("detail") or "").strip()
         if not commentary_text:
             return []

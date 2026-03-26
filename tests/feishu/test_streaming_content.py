@@ -258,7 +258,7 @@ def test_build_streaming_content_keeps_history_summary_separate_from_partial_ans
     assert content.endswith("---\n\n#### Final Answer\n新的正文")
 
 
-def test_build_streaming_content_renders_commentary_inline_during_streaming() -> None:
+def test_build_streaming_content_omits_running_commentary_during_streaming() -> None:
     content = build_streaming_content(
         {
             "history_items": [
@@ -282,10 +282,8 @@ def test_build_streaming_content_renders_commentary_inline_during_streaming() ->
     )
 
     assert "Searching" in content
-    assert "<br>• 我用 using-openharness 做了最小入口检查。" in content
+    assert "我用 using-openharness 做了最小入口检查。" not in content
     assert "进展" not in content
-    assert "---" not in content
-    assert content.index("Searching") < content.index("<br>• 我用 using-openharness 做了最小入口检查。")
 
 
 

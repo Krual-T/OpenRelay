@@ -46,14 +46,8 @@ class LiveTurnReducer:
                     self.state.turn_id = turn_id
                 self.state.commentary = ()
                 self.state.error_message = ""
-            case AssistantDeltaEvent(delta=delta) if str(event.provider_payload.get("phase") or "").strip() == "commentary":
+            case AssistantDeltaEvent() if str(event.provider_payload.get("phase") or "").strip() == "commentary":
                 self.state.status = "running"
-                self._upsert_commentary(
-                    item_id=str(event.provider_payload.get("item_id") or ""),
-                    delta=delta,
-                    status="running",
-                    created_at=event.created_at,
-                )
             case AssistantDeltaEvent(delta=delta):
                 self.state.status = "running"
                 self.state.assistant_text = f"{self.state.assistant_text}{delta}"

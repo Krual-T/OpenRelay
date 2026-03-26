@@ -46,8 +46,7 @@ def test_live_turn_presenter_builds_snapshot_from_view_model() -> None:
     assert any(item["type"] == "interaction" for item in snapshot["history_items"])
     plan_item = next(item for item in snapshot["history_items"] if item["type"] == "plan")
     assert plan_item["steps"] == [{"step": "Inspect runtime", "status": "completed"}]
-    commentary_item = next(item for item in snapshot["history_items"] if item["type"] == "commentary")
-    assert commentary_item["text"] == "progress update"
+    assert all(item["type"] != "commentary" for item in snapshot["history_items"])
     assert "Command Approval Required" in process_text
     assert "Search runtime" in process_text
 
@@ -77,10 +76,8 @@ def test_live_turn_presenter_keeps_running_commentary_out_of_history_items() -> 
 
     snapshot = presenter.build_snapshot(state)
 
-    commentary_item = next(item for item in snapshot["history_items"] if item["type"] == "commentary")
     assert snapshot["partial_text"] == ""
-    assert commentary_item["state"] == "running"
-    assert commentary_item["text"] == "我用 using-openharness 做了最小入口检查。"
+    assert all(item["type"] != "commentary" for item in snapshot["history_items"])
 
 
 def test_live_turn_presenter_builds_approval_resolved_snapshot() -> None:
