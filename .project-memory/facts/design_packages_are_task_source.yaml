@@ -1,14 +1,14 @@
 id: design_packages_are_task_source
 kind: fact
-title: docs/designs/<task>/ 是设计任务事实源
+title: docs/task-packages/<task>/ 是设计任务事实源
 scope:
   repo: openrelay
   branch: main
 status: reviewed
 created_at: '2026-03-19T06:13:31Z'
-updated_at: '2026-03-19T06:13:31Z'
+updated_at: '2026-03-27T00:00:00Z'
 confidence: 0.8
-last_verified_commit: 042fba3c74968e7ee4e53080b7b2ac2118a884f7
+last_verified_commit: null
 intent_aliases:
 - 任务设计事实源在哪
 - design package 是什么
@@ -18,11 +18,11 @@ tags:
 - fact
 applies_to:
 - AGENTS.md
-statement: openrelay 现在以 AGENTS.md 作为仓库地图，以 docs/designs/<task>/ 作为设计任务事实源；docs/archived/legacy/ 只保留历史材料。
+statement: openrelay 现在以 AGENTS.md 作为仓库地图，以 docs/task-packages/<task>/ 作为设计任务事实源，以 docs/archived/task-packages/<task>/ 作为已归档 package 区域；docs/archived/legacy/ 只保留历史材料，不再作为当前任务事实源。
 evidence:
 - path: AGENTS.md
   kind: file
-- path: .agents/skills/openharness/using-openharness/references/manifest.yaml
+- path: /home/Shaokun.Tang/.agents/skill-hub/openharness/skills/using-openharness/references/manifest.yaml
   kind: file
-- path: docs/archived/designs/harness-foundation/01-requirements.md
+- path: docs/task-packages/legacy-design-package-maturation/README.md
   kind: file

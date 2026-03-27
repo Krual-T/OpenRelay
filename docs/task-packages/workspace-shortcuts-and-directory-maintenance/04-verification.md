@@ -1,7 +1,7 @@
 # Verification
 
 ## Required Commands
-- `.agents/skills/openharness/using-openharness/scripts/openharness.py check-tasks`
+- `openharness check-tasks`
 - `uv run pytest tests/runtime/test_command_router_workspace.py -q`
 - `uv run pytest tests/runtime/test_command_router_admin.py tests/runtime/test_help_renderer.py tests/runtime/test_reply_policy.py tests/runtime/test_panel_service.py tests/runtime/test_command_router_workspace.py -q`
 
@@ -25,4 +25,4 @@
   - 帮助文本不再列出 `/main`、`/develop`
   - `/status` 不再输出 `channel=`
   - 面板与工作区相关现有回归仍通过
-- 2026-03-27: 仓库内声明的 `.agents/skills/openharness/using-openharness/scripts/openharness.py check-tasks` 在当前仓库不存在；本轮只能确认该路径报 `No such file or directory`，未能完成这条 harness 验证。
+- 2026-03-27: `openharness check-tasks` 通过；此前失效的仓库内 `openharness.py` 路径已从当前 active package 约定中移除。

@@ -13,6 +13,5 @@ Track historical packages that were scaffolded from legacy task notes and still 
 - `01-requirements.md`
 - `02-overview-design.md`
 - `03-detailed-design.md`
-- `04-implementation-plan.md`
-- `05-verification.md`
-- `06-evidence.md`
+- `04-verification.md`
+- `05-evidence.md`

@@ -13,6 +13,5 @@ Consolidate the current-session status and control entrypoint.
 - `01-requirements.md`
 - `02-overview-design.md`
 - `03-detailed-design.md`
-- `04-implementation-plan.md`
-- `05-verification.md`
-- `06-evidence.md`
+- `04-verification.md`
+- `05-evidence.md`

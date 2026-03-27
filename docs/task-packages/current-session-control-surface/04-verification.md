@@ -1,7 +1,7 @@
 # Verification
 
 ## Required Commands
-- `.agents/skills/openharness/using-openharness/scripts/openharness.py check-tasks`
+- `openharness check-tasks`
 
 ## Expected Outcomes
 - The active task now exists as a formal harness package.
@@ -9,3 +9,4 @@
 
 ## Latest Result
 - 2026-03-19: package scaffolded from historical task notes and promoted to a formal harness package.
+- 2026-03-27: `openharness check-tasks` 通过；当前 package 文件集合已适配 manifest 要求的 `04-verification.md` 和 `05-evidence.md`。

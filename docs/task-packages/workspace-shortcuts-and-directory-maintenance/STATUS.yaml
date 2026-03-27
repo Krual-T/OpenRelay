@@ -17,14 +17,14 @@ entrypoints:
 - docs/task-packages/workspace-shortcuts-and-directory-maintenance/01-requirements.md
 - docs/task-packages/workspace-shortcuts-and-directory-maintenance/02-overview-design.md
 - docs/task-packages/workspace-shortcuts-and-directory-maintenance/03-detailed-design.md
-- docs/task-packages/workspace-shortcuts-and-directory-maintenance/04-implementation-plan.md
+- docs/task-packages/workspace-shortcuts-and-directory-maintenance/04-verification.md
 done_criteria:
 - 完成正式设计稿，明确最近使用目录、固定目录、快捷目录三者的关系、优先级和展示边界。
 - 工作区卡或相关入口能稳定展示高频目录快捷入口，减少重复逐级浏览。
 - '`/shortcut` 的增删改至少有一条不依赖纯命令记忆的卡片化维护路径。'
 verification:
   required_commands:
-  - .agents/skills/openharness/using-openharness/scripts/openharness.py check-tasks
+  - openharness check-tasks
   required_scenarios:
   - package_scaffold_review
 evidence:
@@ -33,9 +33,8 @@ evidence:
   - docs/task-packages/workspace-shortcuts-and-directory-maintenance/01-requirements.md
   - docs/task-packages/workspace-shortcuts-and-directory-maintenance/02-overview-design.md
   - docs/task-packages/workspace-shortcuts-and-directory-maintenance/03-detailed-design.md
-  - docs/task-packages/workspace-shortcuts-and-directory-maintenance/04-implementation-plan.md
-  - docs/task-packages/workspace-shortcuts-and-directory-maintenance/05-verification.md
-  - docs/task-packages/workspace-shortcuts-and-directory-maintenance/06-evidence.md
+  - docs/task-packages/workspace-shortcuts-and-directory-maintenance/04-verification.md
+  - docs/task-packages/workspace-shortcuts-and-directory-maintenance/05-evidence.md
   code:
   - src/openrelay/runtime/command_router.py
   - src/openrelay/runtime/help.py

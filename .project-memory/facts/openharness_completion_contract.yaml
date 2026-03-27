@@ -6,9 +6,9 @@ scope:
   branch: main
 status: reviewed
 created_at: '2026-03-20T00:00:00Z'
-updated_at: '2026-03-20T00:00:00Z'
+updated_at: '2026-03-27T00:00:00Z'
 confidence: 0.91
-last_verified_commit: edcf021
+last_verified_commit: null
 intent_aliases:
 - openharness completion contract
 - 什么时候才能说任务完成
@@ -19,13 +19,13 @@ tags:
 - completion
 - fact
 applies_to:
-- .agents/skills/openharness/using-openharness/SKILL.md
-- .agents/skills/openharness/using-openharness/scripts/openharness.py
-statement: In OpenHarness-governed work, completion claims are valid only after required verification commands pass, `05-verification.md` and `06-evidence.md` are updated, `STATUS.yaml` is current, and `check-completion` passes.
+- /home/Shaokun.Tang/.agents/skill-hub/openharness/skills/using-openharness/SKILL.md
+- /home/Shaokun.Tang/.agents/skill-hub/openharness/skills/using-openharness/references/manifest.yaml
+statement: In OpenHarness-governed work, completion claims are valid only after required verification commands pass, `04-verification.md` and `05-evidence.md` are updated, `STATUS.yaml` is current, and `openharness verify` or `openharness check-tasks` provides current supporting evidence for the claimed status.
 evidence:
-- path: docs/archived/designs/openharness-skill-system-refactor/03-detailed-design.md
+- path: docs/archived/legacy/task-packages/openharness-skill-system-refactor/03-detailed-design.md
   kind: file
-- path: .agents/skills/openharness/using-openharness/SKILL.md
+- path: /home/Shaokun.Tang/.agents/skill-hub/openharness/skills/using-openharness/SKILL.md
   kind: file
-- path: .agents/skills/openharness/using-openharness/scripts/openharness.py
+- path: /home/Shaokun.Tang/.agents/skill-hub/openharness/skills/using-openharness/references/manifest.yaml
   kind: file

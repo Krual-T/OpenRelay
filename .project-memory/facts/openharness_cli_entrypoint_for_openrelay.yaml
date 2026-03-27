@@ -1,0 +1,31 @@
+id: openharness_cli_entrypoint_for_openrelay
+kind: fact
+title: openrelay 当前应使用全局 openharness 命令
+scope:
+  repo: openrelay
+  branch: main
+status: reviewed
+created_at: '2026-03-27T09:53:58Z'
+updated_at: '2026-03-27T10:00:00Z'
+confidence: 0.8
+last_verified_commit: null
+intent_aliases:
+- openharness 入口在哪
+- 为什么不能用 openharness.py
+- task package 检查命令怎么跑
+tags:
+- harness
+- cli
+- fact
+applies_to:
+- AGENTS.md
+- docs/task-packages/legacy-design-package-maturation/04-verification.md
+- docs/task-packages/workspace-shortcuts-and-directory-maintenance/04-verification.md
+statement: 在 openrelay 仓库里，OpenHarness 的可执行入口应使用环境中的 `openharness` 命令；不要再引用仓库内 `.agents/.../openharness.py` 路径。
+evidence:
+- path: /home/Shaokun.Tang/.agents/skill-hub/openharness/skills/using-openharness/references/manifest.yaml
+  kind: file
+- path: docs/task-packages/legacy-design-package-maturation/04-verification.md
+  kind: file
+- path: .project-memory/facts/openharness_completion_contract.yaml
+  kind: file

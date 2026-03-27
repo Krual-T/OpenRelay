@@ -25,9 +25,9 @@
   - 覆盖 `/status` 不再输出 channel。
 - `docs/task-packages/workspace-shortcuts-and-directory-maintenance/STATUS.yaml`
   - 记录本轮实现与验证证据。
-- `docs/task-packages/workspace-shortcuts-and-directory-maintenance/05-verification.md`
+- `docs/task-packages/workspace-shortcuts-and-directory-maintenance/04-verification.md`
   - 记录本轮命令级验证结果。
-- `docs/task-packages/workspace-shortcuts-and-directory-maintenance/06-evidence.md`
+- `docs/task-packages/workspace-shortcuts-and-directory-maintenance/05-evidence.md`
   - 回写本轮落地证据和遗留问题。
 
 ## Interfaces

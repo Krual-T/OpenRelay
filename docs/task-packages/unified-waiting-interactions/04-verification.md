@@ -1,7 +1,7 @@
 # Verification
 
 ## Required Commands
-- `.agents/skills/openharness/using-openharness/scripts/openharness.py check-tasks`
+- `openharness check-tasks`
 - `uv run pytest tests/feishu/test_streaming_content.py tests/presentation/test_live_turn_presenter.py tests/feishu/test_reply_card.py`
 - `uv run pytest tests/presentation/test_live_turn_presenter.py tests/agent_runtime/test_live_turn_registry.py tests/feishu/test_streaming_content.py tests/feishu/test_reply_card.py tests/backends/codex_adapter/test_mapper.py`
 
@@ -17,3 +17,4 @@
 - 2026-03-26: commentary 渲染调整落地时，仓库协议仍残留 `docs/designs` / `check-designs` 表述，后续已统一迁回 `docs/task-packages` / `check-tasks`。
 - 2026-03-26: commentary 已完全并入结构化 transcript 主线，不再依赖独立的 `commentary_text` / `commentary_items` 通道；同一 turn 中的多条 commentary 现在按 `commentary_id` 保留并与 `Ran` / `Searched` 同级渲染。
 - 2026-03-26: 首条消息连接阶段的 streaming card 不再空白；当还没有 reasoning、tool 或 answer 时，卡片会回退到 `Starting Codex` 或当前 heading，并显示三点 spinner 过渡。验证覆盖初始 waiting snapshot、连接状态项回退，以及相关 Feishu streaming/reply 渲染链。
+- 2026-03-27: `openharness check-tasks` 通过；package 文档编号和验证入口已切换到当前 OpenHarness 规范。
