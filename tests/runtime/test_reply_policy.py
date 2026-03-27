@@ -218,3 +218,17 @@ async def test_resume_success_text_is_thread_focused(tmp_path: Path) -> None:
     assert "已在当前顶层对话中连接；接下来直接继续发消息即可。" in text
     assert hooks.replies[-1]["kwargs"]["command_name"] == "/resume"
     store.close()
+
+
+def test_status_text_hides_release_channel(tmp_path: Path) -> None:
+    config = make_config(tmp_path)
+    prepare_dirs(config)
+    store = StateStore(config)
+    session = store.load_session("p2p:oc_1")
+    presenter = RuntimeStatusPresenter(config, store, SessionPresentation(config, store))
+
+    text = presenter.build_text("/status", session.base_key, session)
+
+    assert "channel=" not in text
+    assert "last_release_event=" not in text
+    store.close()

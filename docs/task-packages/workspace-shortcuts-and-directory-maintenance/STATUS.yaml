@@ -37,6 +37,14 @@ evidence:
   - docs/task-packages/workspace-shortcuts-and-directory-maintenance/05-verification.md
   - docs/task-packages/workspace-shortcuts-and-directory-maintenance/06-evidence.md
   code:
+  - src/openrelay/runtime/command_router.py
+  - src/openrelay/runtime/help.py
+  - src/openrelay/presentation/runtime_status.py
+  - src/openrelay/presentation/panel.py
+  - src/openrelay/presentation/session.py
   - src/openrelay/runtime/command_services/workspace_commands.py
   tests:
+  - tests/runtime/test_command_router_admin.py
+  - tests/runtime/test_help_renderer.py
+  - tests/runtime/test_reply_policy.py
   - tests/runtime/test_command_router_workspace.py

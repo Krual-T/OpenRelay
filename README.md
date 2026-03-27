@@ -153,9 +153,6 @@ Help me install this project into the xx directory. https://raw.githubuserconten
 
 ### 目录与上下文控制
 
-- `/main [reason]`
-- `/stable [reason]`
-- `/develop [reason]`
 - `/workspace [--page N] [--path <dir>] [--query <text>]`
 - `/shortcut list|add|remove|use`
 

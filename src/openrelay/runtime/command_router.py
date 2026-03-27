@@ -12,7 +12,6 @@ from openrelay.storage import StateStore
 
 from .command_context import CommandContext, PanelCommandArgs, PagingCommandArgs, RuntimeCommandHooks
 from .command_handlers.control import ControlCommandHandler
-from .command_handlers.release import ReleaseCommandHandler
 from .command_handlers.runtime_session import RuntimeSessionCommandHandler
 from .command_handlers.session_config import SessionConfigCommandHandler
 from .command_handlers.shortcut import ShortcutCommandHandler
@@ -84,7 +83,6 @@ class RuntimeCommandRouter:
         )
         control_handler = ControlCommandHandler(self.hooks, self.status_presenter)
         session_config_handler = SessionConfigCommandHandler(self.hooks, session_service)
-        release_handler = ReleaseCommandHandler(self.hooks, self.release_commands, self.session_presentation)
         runtime_session_handler = RuntimeSessionCommandHandler(
             self.hooks,
             self.session_scope,
@@ -116,8 +114,6 @@ class RuntimeCommandRouter:
             CommandSpec("/backend"),
         ]:
             registry.register(spec, session_config_handler)
-        for spec in [CommandSpec("/main"), CommandSpec("/stable"), CommandSpec("/develop")]:
-            registry.register(spec, release_handler)
         for spec in [CommandSpec("/resume"), CommandSpec("/compact")]:
             registry.register(spec, runtime_session_handler)
         registry.register(CommandSpec("/workspace", aliases=("/ws",)), workspace_handler)

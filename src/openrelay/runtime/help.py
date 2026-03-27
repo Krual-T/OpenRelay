@@ -68,8 +68,6 @@ class HelpRenderer:
                     "- `/shortcut add <name> <path> [all|main|develop]`：新增快捷目录。",
                     "- `/shortcut use <name>`：切到快捷目录。",
                     "- `/shortcut remove <name>`：删除快捷目录。",
-                    "- `/main` 或 `/stable`：切到 main 稳定工作区。",
-                    "- `/develop`：切到 develop 修复工作区。",
                 ],
             ),
             (

@@ -1,9 +1,20 @@
 # Evidence
 
 ## Files
+- `src/openrelay/runtime/command_router.py`
+- `src/openrelay/runtime/help.py`
+- `src/openrelay/presentation/runtime_status.py`
+- `src/openrelay/presentation/panel.py`
+- `src/openrelay/presentation/session.py`
 - `src/openrelay/runtime/command_services/workspace_commands.py`
+- `README.md`
+- `tests/runtime/test_command_router_admin.py`
+- `tests/runtime/test_help_renderer.py`
+- `tests/runtime/test_reply_policy.py`
 - `tests/runtime/test_command_router_workspace.py`
 - `docs/task-packages/workspace-shortcuts-and-directory-maintenance/STATUS.yaml`
+- `docs/task-packages/workspace-shortcuts-and-directory-maintenance/01-requirements.md`
+- `docs/task-packages/workspace-shortcuts-and-directory-maintenance/02-overview-design.md`
 - `docs/task-packages/workspace-shortcuts-and-directory-maintenance/03-detailed-design.md`
 - `docs/task-packages/workspace-shortcuts-and-directory-maintenance/05-verification.md`
 - `docs/task-packages/workspace-shortcuts-and-directory-maintenance/06-evidence.md`
@@ -11,9 +22,12 @@
 ## Commands
 - `.agents/skills/openharness/using-openharness/scripts/openharness.py new-design workspace-shortcuts-and-directory-maintenance OR-013 "Workspace Shortcuts And Directory Maintenance" --owner codex --summary "Reduce repeated workspace navigation with high-frequency shortcuts and maintenance flows."`
 - `uv run pytest tests/runtime/test_command_router_workspace.py -q`
+- `uv run pytest tests/runtime/test_command_router_admin.py tests/runtime/test_help_renderer.py tests/runtime/test_reply_policy.py tests/runtime/test_panel_service.py tests/runtime/test_command_router_workspace.py -q`
 - `uv run .agents/skills/openharness/using-openharness/scripts/openharness.py check-tasks`
 
 ## Observed Evidence
+- `/main`、`/stable`、`/develop` 已从命令路由与帮助文本主路径移除。
+- 状态文本、面板头部和会话 meta 不再继续暴露 channel 概念。
 - `/workspace select` 成功文案现在区分两种显示路径：
   - release workspace 内继续显示短路径，如 `docs`
   - release workspace 外改显示 workspace picker 路径，如 `~/side-project`
@@ -23,3 +37,4 @@
 ## Follow-ups
 - 修正 `STATUS.yaml.verification.required_commands` 中失效的仓库内 `openharness.py` 路径，避免后续 package 验证继续被假失败阻塞。
 - 继续补全本 package 的实现级详细设计，覆盖最近目录、快捷目录卡片入口和维护路径。
+- 后续若确定彻底废弃 release 模型，再单开一轮删除底层 `release_channel` 字段、事件日志与快捷目录 channel 过滤。

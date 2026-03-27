@@ -26,6 +26,8 @@ def test_help_renderer_lists_commands_for_single_backend(tmp_path: Path) -> None
     assert "- `/workspace`：打开工作区浏览器。" in text
     assert "- `/model <name|default>`：切换模型。" in text
     assert "- `/panel`：已移除；改用 `/resume`、`/workspace`、`/status`。" in text
+    assert "/main" not in text
+    assert "/develop" not in text
     assert "当前状态：" not in text
     assert "你现在最该做什么：" not in text
     assert "下一条消息可以直接这样发：" not in text

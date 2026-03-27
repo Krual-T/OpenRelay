@@ -3,8 +3,11 @@
 ## Required Commands
 - `.agents/skills/openharness/using-openharness/scripts/openharness.py check-tasks`
 - `uv run pytest tests/runtime/test_command_router_workspace.py -q`
+- `uv run pytest tests/runtime/test_command_router_admin.py tests/runtime/test_help_renderer.py tests/runtime/test_reply_policy.py tests/runtime/test_panel_service.py tests/runtime/test_command_router_workspace.py -q`
 
 ## Expected Outcomes
+- `/main`、`/stable`、`/develop` 不再作为用户命令主路径存在。
+- `/help`、`/status`、面板、会话列表不再展示 release channel。
 - `/workspace select` 在当前 release workspace 内仍回显短路径。
 - `/workspace select` 切到 release workspace 外的目录时，回显 workspace picker 路径而不是错误的当前项目名。
 - 成功文案明确说明“下一条真实消息开始使用新 thread”。
@@ -17,4 +20,9 @@
   - `open` / `--hidden`
   - 快捷目录切换
   - 跨 release 根目录切换后的成功文案回显
+- 2026-03-27: `uv run pytest tests/runtime/test_command_router_admin.py tests/runtime/test_help_renderer.py tests/runtime/test_reply_policy.py tests/runtime/test_panel_service.py tests/runtime/test_command_router_workspace.py -q` 通过，覆盖：
+  - `/develop` 不再作为已实现命令存在
+  - 帮助文本不再列出 `/main`、`/develop`
+  - `/status` 不再输出 `channel=`
+  - 面板与工作区相关现有回归仍通过
 - 2026-03-27: 仓库内声明的 `.agents/skills/openharness/using-openharness/scripts/openharness.py check-tasks` 在当前仓库不存在；本轮只能确认该路径报 `No such file or directory`，未能完成这条 harness 验证。

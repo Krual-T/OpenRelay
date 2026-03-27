@@ -1,22 +1,24 @@
 # Overview Design
 
 ## System Boundary
-本任务当前先把历史遗留任务描述收敛成正式 package。范围以内只定义问题边界、目标体验和高层模块关系；具体实现与迁移细节留到下一轮详细设计。
+本轮范围聚焦在“移除用户可见的 release channel 切换语义”，把目录上下文主路径统一收敛到 workspace 选择与 shortcut 跳转。底层持久化兼容暂时保留，不在这一轮演变成数据库清理任务。
 
 ## Proposed Structure
-- `01-requirements.md` 固定任务目标、当前关注和关闭条件。
-- `02-overview-design.md` 固定产品边界和主交互方向。
-- `03-detailed-design.md` 记录下一轮需要细化的文件级落点和验证计划。
+- `runtime/command_router.py` 不再注册 `/main`、`/stable`、`/develop`。
+- `runtime/help.py` 不再向用户暴露 release channel 切换命令。
+- `presentation/runtime_status.py`、`presentation/panel.py`、`presentation/session.py` 不再把 channel 作为主路径状态事实展示。
 
 ## Key Flows
 - 用户问题通过飞书线程进入当前会话。
-- 系统需要把当前高频状态/交互收敛成更稳定、更可理解的主路径。
+- 用户若要换执行位置，只通过 `/workspace` 或 `/shortcut` 进入目标目录。
+- 用户查看当前现场时，只看到目录、模型、sandbox、backend thread，不再看到 `main/develop` channel。
 - 设计完成后，后续实现应优先落在：
-  - src/openrelay/session/workspace.py
-  - src/openrelay/session/shortcuts.py
-  - src/openrelay/presentation/panel.py
-  - src/openrelay/runtime/command_handlers/shortcut.py
+  - `src/openrelay/runtime/command_router.py`
+  - `src/openrelay/runtime/help.py`
+  - `src/openrelay/presentation/runtime_status.py`
+  - `src/openrelay/presentation/panel.py`
+  - `src/openrelay/presentation/session.py`
 
 ## Trade-offs
-- 先 formalize package 能让任务进入 harness 主路径，但不会自动解决需求细节不足的问题。
-- 本轮优先解决事实源收敛，后续再做实现级设计。
+- 直接删除底层 release 模型会更彻底，但会把这一轮扩大成存储迁移与兼容清理。
+- 先移除用户入口和展示语义，可以先把主路径收敛正确，再决定后续是否删掉残余内部字段。

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from openrelay.core import AppConfig, SessionRecord, format_release_channel, infer_release_channel
+from openrelay.core import AppConfig, SessionRecord
 from openrelay.feishu.cards import build_button, build_card_shell, build_note_bar, build_section_block, build_status_hero, divider_block, markdown_block
 from openrelay.storage import StateStore
 
@@ -221,11 +221,10 @@ class SessionPresentation:
             parts.append("原生" if entry.matches_workspace else "原生·外部目录")
         else:
             parts.append("本地")
-        parts.append(format_release_channel(entry.release_channel or "main"))
         if entry.updated_at:
             parts.append(entry.updated_at[:16].replace("T", " "))
         if entry.cwd:
-            parts.append(f"目录 {self.workspace.format_cwd(entry.cwd, None, entry.release_channel or 'main')}")
+            parts.append(f"目录 {self.workspace.format_workspace_picker_path(entry.cwd)}")
         if entry.message_count:
             parts.append(f"{entry.message_count} 条消息")
         if entry.native_session_id and entry.native_session_id != entry.session_id:

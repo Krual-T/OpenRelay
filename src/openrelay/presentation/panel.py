@@ -5,7 +5,7 @@ from typing import Any
 import shlex
 
 from openrelay.backends import BackendDescriptor
-from openrelay.core import AppConfig, IncomingMessage, SessionRecord, format_release_channel, infer_release_channel
+from openrelay.core import AppConfig, IncomingMessage, SessionRecord
 from openrelay.feishu.cards import build_button, build_card_shell, build_interactive_container, build_note_bar, build_status_hero, divider_block, markdown_block
 from openrelay.session.browser import SessionBrowser, SessionSortMode
 from openrelay.session.shortcuts import SessionShortcutService
@@ -155,7 +155,6 @@ def _build_header_elements(info: dict[str, Any], view: str) -> list[dict[str, An
     model = str(info.get("model") or "-")
     provider = str(info.get("provider") or "-")
     sandbox = str(info.get("sandbox") or "-")
-    channel = str(info.get("channel") or "main（稳定）")
     summary = "从卡片按钮进入结果面、翻页或返回总览时，优先原地更新当前卡片。"
     if view == PANEL_HOME:
         summary = "总入口。先选会话 / 工作区 / 命令 / 状态，再进入对应结果面。"
@@ -180,7 +179,6 @@ def _build_header_elements(info: dict[str, Any], view: str) -> list[dict[str, An
         summary=summary,
         facts=[
             ("当前会话", f"{current_title}\n`{session_id}`"),
-            ("通道", f"`{channel}`"),
             ("目录", f"`{cwd}`"),
             ("模型", f"`{model}`"),
             ("Provider", f"`{provider}`"),
@@ -540,7 +538,6 @@ class RuntimePanelPresenter:
             {
                 "session_id": session.session_id,
                 "current_title": self.session_presentation.build_session_title(session.label, session.session_id),
-                "channel": format_release_channel(infer_release_channel(self.config, session)),
                 "cwd": self.workspace.format_cwd(session.cwd, session),
                 "page": session_page.page,
                 "total_pages": session_page.total_pages,
@@ -567,7 +564,6 @@ class RuntimePanelPresenter:
             "view": view,
             "session_id": session.session_id,
             "current_title": self.session_presentation.build_session_title(session.label, session.session_id),
-            "channel": format_release_channel(infer_release_channel(self.config, session)),
             "cwd": self.workspace.format_cwd(session.cwd, session),
             "model": self.session_presentation.effective_model(session),
             "provider": self.backend_descriptors.get(session.backend).transport if session.backend in self.backend_descriptors else "-",
@@ -589,13 +585,12 @@ class RuntimePanelPresenter:
         ]
 
     def build_panel_status_entries(self, session: SessionRecord) -> list[dict[str, str]]:
-        channel = format_release_channel(infer_release_channel(self.config, session))
         cwd = self.workspace.format_cwd(session.cwd, session)
         context_preview = self.session_presentation.build_context_preview(session) or "还没有可总结的本地上下文。"
         return [
             {
                 "title": "当前会话状态",
-                "meta": f"{channel} · 目录 {cwd} · sandbox {session.safety_mode}",
+                "meta": f"目录 {cwd} · sandbox {session.safety_mode}",
                 "preview": f"模型 {self.session_presentation.effective_model(session)} · 后端线程 {session.native_session_id or 'pending'}",
                 "command": "/status",
                 "action_label": "完整状态",
@@ -610,7 +605,6 @@ class RuntimePanelPresenter:
             "OpenRelay 面板",
             f"当前会话={self.session_presentation.shorten(session.label or session.session_id, 40)}",
             f"session_id={session.session_id}",
-            f"channel={format_release_channel(infer_release_channel(self.config, session))}",
             f"cwd={self.workspace.format_cwd(session.cwd, session)}",
             f"model={self.session_presentation.effective_model(session)}",
             f"sandbox={session.safety_mode}",

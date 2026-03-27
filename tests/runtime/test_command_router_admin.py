@@ -36,16 +36,12 @@ async def test_runtime_command_router_replies_panel_removed_and_admin_restart(tm
 
 
 @pytest.mark.asyncio
-async def test_runtime_command_router_switches_release_via_service(tmp_path: Path) -> None:
+async def test_runtime_command_router_rejects_removed_release_commands(tmp_path: Path) -> None:
     router, store, hooks = build_router(tmp_path)
     session = store.load_session("p2p:oc_1")
 
     await router.handle(make_message("/develop bugfix", suffix="develop"), session.base_key, session)
 
-    switched = store.find_session(session.base_key)
-    assert switched is not None
-    assert switched.session_id == session.session_id
-    assert switched.release_channel == "develop"
-    assert hooks.cancel_calls == [(session.session_id, "/develop")]
-    assert "已切到 develop 修复版本。" in str(hooks.replies[-1]["text"])
+    assert hooks.cancel_calls == []
+    assert hooks.replies[-1]["text"] == "本地命令未实现：/develop。发送 /help 查看可用命令。"
     store.close()
