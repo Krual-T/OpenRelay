@@ -72,3 +72,26 @@ async def test_runtime_command_router_manages_directory_shortcuts(tmp_path: Path
     assert str(hooks.replies[2]["text"]).startswith("工作区已切换到 docs。")
     assert hooks.replies[3]["text"] == "已删除快捷目录 `docs`。"
     store.close()
+
+
+@pytest.mark.asyncio
+async def test_runtime_command_router_reports_selected_workspace_outside_release_root(tmp_path: Path) -> None:
+    router, store, hooks = build_router(tmp_path)
+    external_dir = router.config.workspace_root / "side-project"
+    external_dir.mkdir(parents=True, exist_ok=True)
+    session = store.load_session("p2p:oc_1")
+
+    await router.handle(
+        make_message(f"/workspace select {external_dir}", suffix="workspace_select_external"),
+        session.base_key,
+        session,
+    )
+
+    assert hooks.replies[-1]["text"] == "\n".join(
+        [
+            "工作区已切换到 ~/side-project。",
+            "当前 scope 会从下一条真实消息开始使用新 thread。",
+            "如需切回旧 thread，请用 /resume。",
+        ]
+    )
+    store.close()

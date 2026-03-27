@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import shlex
+from pathlib import Path
 
 from openrelay.core import DirectoryShortcut, IncomingMessage, SessionRecord
 from openrelay.session import SessionMutationService, SessionShortcutService, SessionWorkspaceService
@@ -30,11 +31,19 @@ class WorkspaceCommandService:
         return self.session_mutations.switch_cwd(session_key, session, next_cwd)
 
     def format_workspace_switch_success(self, session: SessionRecord) -> str:
+        selected_path = self._format_selected_workspace_path(session)
         return "\n".join([
-            f"工作区已切换到 {self.workspace.format_cwd(session.cwd, session)}。",
-            "现在直接发消息，就会在这个目录进入 Codex。",
-            "当前 scope 已原地更新；如需切回旧 thread，请用 /resume。",
+            f"工作区已切换到 {selected_path}。",
+            "当前 scope 会从下一条真实消息开始使用新 thread。",
+            "如需切回旧 thread，请用 /resume。",
         ])
+
+    def _format_selected_workspace_path(self, session: SessionRecord) -> str:
+        target = Path(session.cwd).expanduser().resolve()
+        release_root = self.workspace.workspace_root(session)
+        if target == release_root or release_root in target.parents:
+            return self.workspace.format_cwd(str(target), session)
+        return self.workspace.format_workspace_picker_path(target, session)
 
     def build_directory_shortcut_entries(self, session: SessionRecord, limit: int = 100):
         return self.shortcuts.build_directory_shortcut_entries(session, limit=limit)

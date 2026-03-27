@@ -1,11 +1,11 @@
 id: OR-013
 title: Workspace Shortcuts And Directory Maintenance
-status: proposed
+status: in_progress
 summary: Reduce repeated workspace navigation with high-frequency shortcuts and maintenance
   flows.
 owner: codex
 created_at: 2026-03-19
-updated_at: 2026-03-19
+updated_at: 2026-03-27
 depends_on: []
 scope:
   areas:
@@ -36,5 +36,7 @@ evidence:
   - docs/task-packages/workspace-shortcuts-and-directory-maintenance/04-implementation-plan.md
   - docs/task-packages/workspace-shortcuts-and-directory-maintenance/05-verification.md
   - docs/task-packages/workspace-shortcuts-and-directory-maintenance/06-evidence.md
-  code: []
-  tests: []
+  code:
+  - src/openrelay/runtime/command_services/workspace_commands.py
+  tests:
+  - tests/runtime/test_command_router_workspace.py
