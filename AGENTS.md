@@ -9,9 +9,9 @@
 1. `AGENTS.md`
     - 仓库地图、默认协作协议、结构约束、验证要求。
 2. `docs/task-packages/<task>/`
-    - 设计任务的唯一事实来源；每个任务是一个独立 design package。
+    - 设计任务的唯一事实来源；每个任务是一个独立 task package。
 3. `docs/archived/task-packages/<task>/`
-    - 已完成 design package 的归档区；保留历史事实与验证证据，但不再属于 active package 集合。
+    - 已完成 task package 的归档区；保留历史事实与验证证据，但不再属于 active package 集合。
 4. `docs/architecture.md`
     - 当前系统结构说明。
 5. `.project-memory/`
