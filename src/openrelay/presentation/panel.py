@@ -121,8 +121,8 @@ def _append_generic_items(elements: list[dict[str, Any]], items: list[dict[str, 
 
 def _append_view_nav(elements: list[dict[str, Any]], current_view: str, action_context: dict[str, str]) -> None:
     rows = [
-        [("总览", "/panel", PANEL_HOME), ("会话", "/panel sessions", PANEL_SESSIONS), ("工作区", "/panel workspace", PANEL_WORKSPACE)],
-        [("命令", "/panel commands", PANEL_COMMANDS), ("状态", "/panel status", PANEL_STATUS), ("帮助", "/help", "help")],
+        [("会话", "/resume", PANEL_SESSIONS), ("工作区", "/workspace", PANEL_WORKSPACE), ("状态", "/status", PANEL_STATUS)],
+        [("帮助", "/help", "help")],
     ]
     for row in rows:
         elements.append(
@@ -202,10 +202,10 @@ def _build_home_card(info: dict[str, Any]) -> dict[str, Any]:
     elements: list[dict[str, Any]] = [*_build_header_elements(info, PANEL_HOME), divider_block()]
     _append_view_nav(elements, PANEL_HOME, action_context)
     elements.append(_markdown("**进入哪一类结果**\n> 这四个入口分别收敛会话、工作区、命令和状态结果；下面的预览和结果页使用同一套项目语义。"))
-    elements.append(_action_row([build_button("恢复上一条", "/resume latest", "primary", action_context), build_button("会话列表", "/resume", "default", action_context), build_button("当前状态", "/panel status", "default", action_context)]))
+    elements.append(_action_row([build_button("恢复上一条", "/resume latest", "primary", action_context), build_button("会话列表", "/resume", "default", action_context), build_button("当前状态", "/status", "default", action_context)]))
     elements.append(_markdown("**最近会话**\n> 想继续旧任务时，优先先看这里；如果不够，再切到完整会话结果页。"))
     _append_session_items(elements, sessions, action_context)
-    elements.append(_action_row([build_button("全部会话", "/panel sessions", "default", action_context), build_button("命令式列表", "/resume", "default", action_context), build_button("帮助", "/help", "default", action_context)]))
+    elements.append(_action_row([build_button("全部会话", "/resume", "default", action_context), build_button("帮助", "/help", "default", action_context)]))
     elements.append(_markdown("**工作区入口**\n> 先看常用目录入口；需要完整选择器时，再打开工作区结果页。"))
     _append_directory_items(elements, shortcuts, action_context)
     elements.append(_action_row([build_button("工作区选择", "/workspace", "primary", action_context), build_button("快捷目录", "/shortcut list", "default", action_context), build_button("当前状态", "/status", "default", action_context)]))
@@ -221,15 +221,15 @@ def _build_sessions_card(info: dict[str, Any]) -> dict[str, Any]:
     _append_view_nav(elements, PANEL_SESSIONS, action_context)
     elements.append(_markdown("**会话结果**\n> 先在这里排序或翻页，再决定恢复哪条会话；真正执行仍统一走 `/resume`。"))
     elements.append(_action_row([
-        build_button("最近更新", "/panel sessions --page 1 --sort updated-desc", "primary" if sort_mode == "updated-desc" else "default", action_context),
-        build_button("当前优先", "/panel sessions --page 1 --sort active-first", "primary" if sort_mode == "active-first" else "default", action_context),
+        build_button("最近更新", "/resume --page 1 --sort updated-desc", "primary" if sort_mode == "updated-desc" else "default", action_context),
+        build_button("当前优先", "/resume --page 1 --sort active-first", "primary" if sort_mode == "active-first" else "default", action_context),
         build_button("恢复上一条", "/resume latest", "default", action_context),
     ]))
     page_actions = [build_button("命令式列表", f"/resume --page {page} --sort {sort_mode}", "default", action_context)]
     if page > 1:
-        page_actions.insert(0, build_button("上一页", f"/panel sessions --page {page - 1} --sort {sort_mode}", "default", action_context))
+        page_actions.insert(0, build_button("上一页", f"/resume --page {page - 1} --sort {sort_mode}", "default", action_context))
     if page < total_pages:
-        page_actions.append(build_button("下一页", f"/panel sessions --page {page + 1} --sort {sort_mode}", "default", action_context))
+        page_actions.append(build_button("下一页", f"/resume --page {page + 1} --sort {sort_mode}", "default", action_context))
     elements.append(_action_row(page_actions))
     _append_session_items(elements, list(info.get("sessions") or []), action_context)
     return build_card_shell("openrelay panel", elements, tone="info")
@@ -576,7 +576,7 @@ class RuntimePanelPresenter:
     def build_panel_command_entries(self) -> list[dict[str, str]]:
         return [
             {"title": "恢复上一条", "meta": "会话 · 最短继续路径", "preview": "直接回到最近会话，不必先打开列表。", "command": "/resume latest", "action_label": "恢复上一条", "action_type": "primary"},
-            {"title": "浏览会话结果", "meta": "会话 · 翻页 / 排序", "preview": "在面板里看最近会话，再决定恢复哪一条。", "command": "/panel sessions", "action_label": "看会话"},
+            {"title": "浏览会话结果", "meta": "会话 · 翻页 / 排序", "preview": "在会话列表里看最近会话，再决定恢复哪一条。", "command": "/resume", "action_label": "看会话"},
             {"title": "打开工作区选择器", "meta": "工作区 · 浏览 / 搜索 / 分页", "preview": "从 `~` 根别名开始浏览；默认打开配置好的工作目录，并支持搜索。", "command": "/workspace", "action_label": "选工作区"},
             {"title": "管理快捷目录", "meta": "工作区 · 新增 / 列表 / 快速切换", "preview": "用 /shortcut add|list|use 在飞书里维护自己的常用目录入口。", "command": "/shortcut list", "action_label": "看快捷目录"},
             {"title": "查看完整状态", "meta": "状态 · 目录 / 模型 / 上下文", "preview": "先确认现场，再决定继续当前任务还是切上下文。", "command": "/status", "action_label": "看状态"},
@@ -609,8 +609,8 @@ class RuntimePanelPresenter:
             f"model={self.session_presentation.effective_model(session)}",
             f"sandbox={session.safety_mode}",
             "",
-            "结果面：/panel sessions | /panel workspace | /panel commands | /panel status",
-            "提示：/panel 现在是总入口；先选会话 / 工作区 / 命令 / 状态，再进入对应结果面。",
+            "常用入口：/resume | /workspace | /status | /help",
+            "提示：/panel 已移除；会话、工作区和状态都走各自的主命令。",
             "工作区选择改为卡片主路径；默认打开配置好的工作目录，并支持继续下钻、返回和搜索。",
             "",
             "最近会话：",
@@ -624,12 +624,12 @@ class RuntimePanelPresenter:
             lines.extend(["", "工作区入口：暂无快捷目录；可直接打开 /workspace。"])
         lines.extend([
             "",
-            "commands: /panel sessions /panel workspace /panel commands /panel status /workspace /resume /resume latest /shortcut list /status /model [name|default] /sandbox [mode] /clear",
+            "commands: /workspace /resume /resume latest /shortcut list /status /model [name|default] /sandbox [mode] /clear",
         ])
         return "\n".join(lines)
 
     def build_panel_sessions_text(self, session_page: Any) -> str:
-        return "\n".join(["OpenRelay 面板 · 会话", self.session_presentation.format_session_list_page(session_page), "", "返回总览：/panel。"])
+        return "\n".join(["OpenRelay 面板 · 会话", self.session_presentation.format_session_list_page(session_page), "", "常用入口：/resume、/workspace、/status。"])
 
     def build_panel_workspace_text(self, entries: list[Any], *, browser_display: str, page: int, total_pages: int, total_entries: int, query: str, show_hidden: bool) -> str:
         lines = [f"OpenRelay 面板 · 工作区 {browser_display}（第 {page}/{total_pages} 页，共 {total_entries} 个入口）", "点目录进入下一层；选中当前目录会更新当前 scope。"]
