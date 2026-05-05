@@ -72,8 +72,8 @@
 - `~/.openrelay/data/openrelay.sqlite3`，真实运行 trace 数据库。
 
 ## Follow-ups
-- 由用户或 CLI 触发 `F-010-stop`，维护者用 `openrelay-trace` 采集证据。
-- 服务重启后，继续补一组真实连续 `/resume` 两条后端会话的样例，确认两个成功回复子 thread 不再互相串会话。
-- 继续补一条 workspace 卡片 action 样例，确认 card action trace。
-- 补 card sender 的 `egress/reply.sent` 或等价 trace，否则 `/help`、`/resume`、`/workspace` 无法完全由本地 trace 自动判定。
+- 优先补 `F-010-stop`：真实飞书启动长回复后发送 `/stop`，用 `openrelay-trace --db ~/.openrelay/data/openrelay.sqlite3` 采集停止命令、停止确认和无 stale update 证据。
+- 再补 card action 后续回复：推荐用 `/resume` 成功回复子 thread，确认后续消息绑定到正确本地会话，不串到顶层或另一条恢复会话。
+- 处理 card sender observability：补 `egress/reply.sent` 或等价 trace；如果本轮不补代码，则必须把该缺口拆成独立后续任务，避免 `OR-015` 误称卡片发送可完全自动判定。
+- 完成上述三项后，把 `STATUS.yaml` 的 `last_run_result` 从 `insufficient_verification` 改为实际结果，并决定是否进入 `verifying`。
 - 如果要自动判断矩阵，后续新增窄范围 `openrelay-verify-message`。

@@ -1,20 +1,33 @@
 # Requirements
 
 ## Goal
-Track the historical package debt that remains after OR-016, specifically packages that now exist formally but still need implementation-grade design completion.
+把历史迁移出来的任务包债务整理成可执行的成熟化顺序：维护者能一眼看出哪些包只是占位、哪些包已经接近实现、下一轮应该先补哪个包，以及补到什么程度才能让该包独立推进。
+
+单一成功指标：读完本包后，维护者能不回看 legacy standalone notes，就能决定 `OR-010` 到 `OR-013` 的下一轮设计补写顺序和每个包的完成口径。
 
 ## Problem Statement
-`OR-016` can complete the harness migration and enforcement work without pretending that packages scaffolded from historical task notes are already fully designed. That remaining debt needs an explicit home.
+目标用户是维护 openrelay task package 的协作者。核心场景是：历史任务已经从 legacy notes 迁入正式任务包，但许多包只有短需求、短设计和占位验证；如果没有一个成熟化计划，后续协作者会误以为这些包已经实现就绪，或者反过来重新打开 legacy notes 作为事实来源。
+
+现在需要做，是因为 `AGENTS.md` 已经把 `docs/task-packages/<task>/` 定为设计任务的唯一事实来源。历史迁移完成不等于设计成熟完成，剩余债务必须在任务包体系内被明确排队，而不是继续散落在旧文档或聊天记忆里。
 
 ## Required Outcomes
-1. Identify which packages are formalized but still not implementation-ready.
-2. Define the next-step design work needed for each package.
-3. Keep this debt out of OR-016 so harness completion can land cleanly.
+1. 标出历史迁移包的成熟度。
+   - `acceptance criteria`：至少覆盖 `OR-010`、`OR-011`、`OR-012`、`OR-013`，并说明每个包当前缺的是需求、概览设计、详细设计、实现证据还是归档证据。
+2. 给出后续推进顺序。
+   - `acceptance criteria`：顺序必须解释为什么先做某个包，不能只按编号排列。
+3. 定义每个目标包“成熟”的最低口径。
+   - `acceptance criteria`：每个包都要有能进入下一阶段的明确门槛，例如需要补哪些设计决策、哪些代码落点、哪些测试或真实运行证据。
+4. 保持 OR-017 的边界清楚。
+   - `acceptance criteria`：本包只排序和定义门槛，不替代目标包自身的需求、设计、实现和验证。
 
 ## Non-Goals
-- Do not implement the product work tracked by these packages here.
-- Do not reopen legacy standalone notes as live fact sources.
+- 不在本包里实现 `OR-010` 到 `OR-013` 的产品功能。
+- 不把 `docs/archived/legacy/` 重新升格为当前事实来源。
+- 不要求一次性把所有历史包推进到 `archived`。
+- 不把 `OR-015`、`OR-018` 这类新近任务纳入“历史迁移包成熟化”范围。
+- `counterexample`：修正 `OR-013` 的 `README.md` 状态不一致是必要清理，但它本身不等于完成 OR-013 的产品任务，也不等于完成 OR-017。
 
 ## Constraints
-- Follow-up work must happen inside the package system.
-- Legacy material may be cited only as historical evidence.
+- 事实来源优先级必须遵守 `AGENTS.md`：当前任务事实写回 `docs/task-packages/<task>/`，legacy 材料只能作为历史证据。
+- 目标包一旦进入实际设计或实现，应直接修改目标包，而不是让 OR-017 承载它的详细内容。
+- `cost cap`：本轮只做成熟化计划和状态口径，不做大规模产品实现，不迁移历史数据库，不重开 OR-016。

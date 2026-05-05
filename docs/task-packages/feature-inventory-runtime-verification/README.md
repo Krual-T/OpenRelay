@@ -9,7 +9,8 @@
 ## Current Status
 - Status: `detailed_ready`
 - 已完成飞书官方 CLI / 官方调试工具调研、功能清单初稿和真实运行验证矩阵初稿。
-- 本轮没有采集真实飞书客户端人工观察证据，因此不进入 `verifying` 或 `archived`。
+- 当前完成路径已经收敛为三条闭环：补 `F-010-stop` 真实停止证据、补至少一条 card action 后续回复证据、补 card sender 的结构化 trace 或明确把它拆成后续 observability 任务。
+- 在上述证据补齐前，本包不进入 `verifying` 或 `archived`。
 
 ## Read This First
 - `STATUS.yaml`

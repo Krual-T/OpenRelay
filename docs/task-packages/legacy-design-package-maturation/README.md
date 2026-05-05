@@ -1,12 +1,14 @@
 # OR-017 Legacy Design Package Maturation
 
 ## Summary
-Track historical packages that were scaffolded from legacy task notes and still need implementation-grade design completion.
+- 跟踪从历史记录迁移来的任务包，明确哪些还只是占位设计、哪些已经可以继续实现、下一步按什么顺序补成熟。
+- 本包不实现那些产品任务，只负责把历史设计债务变成可执行的成熟化顺序。
 
 ## Current Status
-- Status: `proposed`
+- Status: `detailed_ready`
 - Owner: `codex`
-- Last Updated: `2026-03-19`
+- Last Updated: `2026-05-05`
+- 已补齐历史包分层、优先级和完成口径；下一步应按 `03-detailed-design.md` 的顺序逐个进入目标任务包本身推进。
 
 ## Read This First
 - `STATUS.yaml`

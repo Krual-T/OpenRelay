@@ -72,9 +72,48 @@
 
 回滚触发点：如果矩阵维护成本明显高于收益，应收缩到 10 个最高频功能，不追求全量覆盖。
 
+## Completion Plan
+本包不需要继续扩展功能清单范围；完成口径应从“继续补更多表格”收敛为“把关键真实运行证据补到足以归档”。
+
+### Closure Lane A: stop control
+- 目标功能：`F-010-stop`。
+- 触发方式：在真实飞书会话里启动一条可持续一段时间的普通消息，再发送 `/stop`。
+- 必要证据：
+  - `openrelay-trace --db ~/.openrelay/data/openrelay.sqlite3 --message-id "$STOP_MESSAGE_ID" --json` 能看到 `/stop` command 分支和停止确认回复。
+  - 被停止的 run 没有继续产生 stale streaming update。
+  - 人工观察飞书端能看到停止确认，且原回复状态不误导用户继续等待。
+- 通过后写回：
+  - `docs/runtime-verification-matrix.md` 的 `Executed Dry Runs`。
+  - 本包 `04-verification.md` 与 `05-evidence.md`。
+
+### Closure Lane B: card action follow-up
+- 目标功能：至少覆盖 `F-011-card-pagination`、`F-012-card-form-action` 或 `/resume` 连接后的后续回复其中一类。
+- 推荐优先级：先用 `/resume` 成功回复子 thread，因为真实问题已经暴露过会话错乱，且当前矩阵已经记录过相关 trace。
+- 必要证据：
+  - card action incoming event 可以定位到原卡片、按钮动作和回复消息。
+  - 成功回复消息的后续用户消息进入正确本地会话，不串到顶层会话或另一条恢复会话。
+  - trace、`session_key_aliases`、`relay_session_bindings` 能互相解释同一个结果。
+- 通过后写回：
+  - `docs/runtime-verification-matrix.md` 增加一条 card action 执行样例。
+  - 若发现 `/resume` 生命周期语义仍不清晰，把产品语义留给 `OR-018`，本包只记录验证缺口和证据。
+
+### Closure Lane C: card sender observability
+- 当前缺口：`/help`、`/resume`、`/workspace` 的 interactive card 能从飞书消息查询看到，但本地 trace 没有等价的 `egress/reply.sent` 事件。
+- 两种可接受完成方式：
+  1. 直接补 card sender 的结构化 trace，并重新验证 `/help`、`/resume`、`/workspace` 至少一条。
+  2. 如果本轮不改 observability，则新增或关联后续任务，把“card sender trace 缺口”明确移出本包完成口径；本包归档时只能宣称矩阵已识别缺口，不能宣称卡片发送全自动可判定。
+- 推荐方向：若要让 `OR-015` 作为发布前验证基线，优先补 trace；否则本包会长期停在人工观察依赖上。
+
+### Status Gate
+- 满足 Lane A、Lane B，并对 Lane C 做出“补 trace”或“拆后续任务”的明确处理后，状态可从 `detailed_ready` 推进到 `verifying`。
+- `verifying` 阶段必须重新运行 `openharness check-tasks`，并至少运行与 `/resume`、reply policy、message observability 相关的目标测试。
+- 只有当 `04-verification.md` 的 `Latest Result` 不再是 `insufficient_verification`，且 `05-evidence.md` 的 follow-up 不再包含阻塞型证据缺口时，才能归档。
+
 ## Detailed Reflection
 测试视角挑战：矩阵不能把 `lark-cli` 查询到消息当作 UI 通过。处理结果：接受，所有流式卡片相关条目都要求 `real_feishu_manual`，CLI 只作为辅助。
 
 架构视角挑战：清单如果直接做成机器可读格式，可能在字段未稳定前增加维护成本。处理结果：暂缓，先用 Markdown 表格稳定语义。
 
 风险视角挑战：现有 trace 对 CardKit 中间更新缺少结构化事件，只能用最终 `reply.sent.payload.streaming=true` 和日志辅助判断。处理结果：接受为残余风险，后续如果真实 dry run 需要自动判定流式细节，再拆 observability 增强任务。
+
+完成口径挑战：如果继续要求覆盖全部 14 个功能，本包会变成无止境的验收清单。处理结果：拒绝全量阻塞归档，改为以 stop、card action、card sender observability 三类当前最高风险缺口作为归档前硬门槛，其余功能保留在矩阵中按后续发布节奏补证据。

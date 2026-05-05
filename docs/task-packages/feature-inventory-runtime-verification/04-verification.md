@@ -25,6 +25,7 @@
 - 已完成一条独立 CLI 主动触发 `/status` dry run，可证明 `F-002-status` 的基础链路；尚未完成 `/stop` 和更多 card action 矩阵条目。
 - 已确认 `/resume`、`/workspace`、`/help` 的 interactive card 在飞书消息查询中可见，但 card sender 当前没有写入 `egress/reply.sent` trace，这是本轮发现的可观测性缺口。
 - 已确认 `/resume` 的目标交互语义应是：每次成功连接都创建独立本地会话，并把对应成功回复消息的子 thread 绑定到该本地会话；在顶层直接发送普通消息仍会开启新的对话。
+- 2026-05-05 本轮把剩余验证缺口收敛为三条完成通道：`F-010-stop`、至少一条 card action 后续回复、card sender observability 处理。
 
 只有当实现已经完成到足以采集新证据时，才进入 `verifying`。
 如果实现仍然延期到后续轮次，就不要使用 `archived`。
@@ -48,6 +49,7 @@
 - `docs/runtime-verification-matrix.md` 给出真实飞书 dry run 和 trace 判断流程。
 - 当前已采集真实普通消息、CLI 主动命令消息和可交互卡片展示证据；缺口是停止用例、card action 点击用例和 card sender trace 还不完整。
 - 已采集 card action 点击链路并修正文案与绑定一致性；仍需要服务重启后再用真实飞书回复成功消息，采集一条完整继续会话 trace。
+- 归档前 traceability 检查应逐项确认：`F-010-stop` 有真实停止证据；card action 后续回复能证明会话不串线；card sender trace 缺口已经被补齐或被拆到独立后续任务且不再冒充自动可判定能力。
 
 ## Risk Acceptance
 - 接受当前只完成 task package 建档，不宣称官方 CLI 能力或真实验证闭环已经成立。
@@ -67,4 +69,5 @@
 - 2026-05-05：重启后连续点击同一张 `/resume` 卡片的两个连接按钮，trace `id=838..879` 显示两个成功回复 id 分别为 `om_x100b50a3bb170d00c22b06ce38682c8` 和 `om_x100b50a3b9a9b8a4c369234903cbdc5`；后续回复最终都被解析为顶层 `p2p:...`，证明旧实现把多个成功回复子 thread 别名到同一顶层 scope。
 - 2026-05-05：`uv run pytest tests/session/test_binding_store.py tests/runtime/test_command_router_resume.py tests/runtime/test_message_observability.py tests/runtime/test_reply_policy.py tests/feishu/test_parsing.py` 通过，34 passed。
 - 2026-05-05：总体仍记录为 `insufficient_verification`，原因是矩阵已覆盖普通消息、`/status`、部分只读命令和卡片展示，但停止、card action 点击和 card sender trace 缺口尚未关闭。
+- 2026-05-05：补充完成计划；本包仍停留在 `detailed_ready`，下一步不是扩展清单，而是按 `03-detailed-design.md` 的 `Completion Plan` 补三类阻塞证据。
 - Latest Artifact:
