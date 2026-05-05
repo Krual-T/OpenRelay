@@ -48,28 +48,28 @@ Fallback：
 - 测试策略：本包只跑 `openharness check-tasks`；目标包进入实现时再运行目标测试。
 - 可观测要求：每个目标包必须能从 `STATUS.yaml` 和 `04` / `05` 判断真实阶段，不能只看 README 摘要。
 - 实现落点：实际成熟化改动必须落到目标包自身目录。
-- 迁移顺序：先 OR-013 收口，再 OR-011，后 OR-010，最后 OR-012。
+- 迁移顺序：先 OR-011，再 OR-010，后 OR-012；OR-013 功能开发优先级较低，暂时 hold。
 - 证据类型：结构检查、文档 gate 复核、目标包后续测试和真实运行证据。
 
 ## Execution Sequence
-1. `OR-013 Workspace Shortcuts And Directory Maintenance`
-   - 先修 `README.md` 与 `STATUS.yaml` 状态不一致。
-   - 复核 `/shortcut` 卡片化维护路径是否已经满足 done criteria。
-   - 如果已满足，补 `04-verification.md` 和 `05-evidence.md` 后进入 `verifying`；如果未满足，在 OR-013 内补详细设计或实现。
-2. `OR-011 Current Session Control Surface`
+1. `OR-011 Current Session Control Surface`
    - 先补需求 gate：当前会话状态模型、高频动作、低频动作下沉、不做项。
    - 再探索现有 `/status`、`/stop`、session lock、reply policy 和 panel 表面。
    - 目标是推进到 `detailed_ready`，为 OR-010 和 OR-012 提供状态边界。
-3. `OR-010 Unified Waiting Interactions`
+2. `OR-010 Unified Waiting Interactions`
    - 基于 OR-011 的状态模型收敛等待态分类。
    - 明确 terminal interaction、user input、MCP elicitation 的统一回复入口和提交反馈。
    - 目标是把已有 presentation / Feishu 测试证据整理成可执行详细设计。
-4. `OR-012 Asynchronous Lookback Experience`
+3. `OR-012 Asynchronous Lookback Experience`
    - 在状态模型和等待态语义稳定后，设计异步回看摘要、停止原因、下一步建议和历史恢复入口。
    - 目标是避免回看体验重复定义当前会话状态。
+4. `OR-013 Workspace Shortcuts And Directory Maintenance`
+   - 暂时 hold，因为用户明确它属于较低优先级的功能开发。
+   - 后续收尾窗口再修 `README.md` 与 `STATUS.yaml` 状态不一致。
+   - 复核 `/shortcut` 卡片化维护路径是否已经满足 done criteria。
 
 ## Decision Closure
-接受：先收口 OR-013，因为它已有实现和测试证据，最可能最快减少一个 active package。
+接受：OR-013 暂时 hold。原因是它主要是功能开发和收尾型债务，优先级低于真实运行中已经暴露的会话语义和状态控制问题。
 
 接受：OR-011 先于 OR-010 / OR-012，因为当前会话状态是等待交互和异步回看的共同基础。
 
@@ -93,7 +93,7 @@ Fallback：
 
 归档条件：
 1. `OR-010` 到 `OR-013` 均至少被复核一次，并且不再处于“只有占位设计、没有下一步”的状态。
-2. `OR-013` 的状态不一致已处理。
+2. `OR-013` 的 hold 原因和后续收尾条件已记录；若恢复推进，再处理状态不一致。
 3. 至少一个目标包完成 handoff 并在自己的 `04` / `05` 中留下新证据。
 4. `openharness check-tasks` 通过。
 
