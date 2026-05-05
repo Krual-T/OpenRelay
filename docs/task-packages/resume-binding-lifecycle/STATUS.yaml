@@ -1,0 +1,46 @@
+id: "OR-018"
+title: "Resume Binding Lifecycle"
+# Default flow: proposed -> requirements_ready -> overview_ready -> detailed_ready -> in_progress -> verifying -> archived
+# requirements_ready -> overview_ready -> detailed_ready are design-readiness checkpoints; later statuses imply earlier checkpoints are already materially complete.
+# `detailed_ready` is the normal resting point for design-complete work before implementation.
+# `archived` means the task package is implemented, verified, and no longer active.
+status: "proposed"
+summary: "Clarify how resumed backend sessions map to persistent Feishu conversation entrypoints."
+owner: "codex"
+created_at: "2026-05-05"
+updated_at: "2026-05-05"
+depends_on: []
+scope:
+  areas:
+    - product
+    - runtime
+    - session
+    - feishu
+    - observability
+entrypoints:
+  - docs/task-packages/resume-binding-lifecycle/README.md
+  - docs/task-packages/resume-binding-lifecycle/01-requirements.md
+  - docs/task-packages/resume-binding-lifecycle/02-overview-design.md
+  - docs/task-packages/resume-binding-lifecycle/03-detailed-design.md
+done_criteria:
+  - 明确 `/resume` 成功后用户应在哪个飞书入口继续聊天，以及这个入口是否持续有效。
+  - 明确大量 resume 入口的保留、展示、失效和清理语义。
+  - 明确同一个后端会话被多个飞书入口同时使用时的并发边界。
+  - 明确需要先讨论的问题和需要先探索的代码/运行事实。
+verification:
+  required_commands:
+    - openharness check-tasks
+  required_scenarios:
+    - package_scaffold_review
+  last_run_at: "2026-05-05"
+  last_run_result: "passed"
+  last_run_artifact: ""
+evidence:
+  docs:
+    - docs/task-packages/resume-binding-lifecycle/README.md
+    - docs/task-packages/resume-binding-lifecycle/STATUS.yaml
+    - docs/task-packages/resume-binding-lifecycle/01-requirements.md
+    - docs/task-packages/resume-binding-lifecycle/04-verification.md
+    - docs/task-packages/resume-binding-lifecycle/05-evidence.md
+  code: []
+  tests: []
