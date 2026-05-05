@@ -60,9 +60,12 @@ evidence:
     - src/openrelay/runtime/
     - src/openrelay/session/mutations.py
     - src/openrelay/session/scope/resolver.py
+    - src/openrelay/runtime/command_handlers/runtime_session.py
+    - src/openrelay/runtime/reply_service.py
   tests:
     - tests/storage/test_message_observability.py
     - tests/session/test_binding_store.py
     - tests/runtime/test_command_router_resume.py
     - tests/runtime/test_reply_policy.py
+    - tests/runtime/test_message_observability.py
     - tests/tools/test_codex_app_server_trace.py

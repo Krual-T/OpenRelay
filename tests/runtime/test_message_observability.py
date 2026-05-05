@@ -134,3 +134,36 @@ async def test_reply_service_records_reply_sent_event(tmp_path: Path) -> None:
         assert events[-1].reply_message_id == "om_reply_1"
     finally:
         store.close()
+
+
+@pytest.mark.asyncio
+async def test_reply_service_can_attach_outbound_aliases_to_resume_scope(tmp_path: Path) -> None:
+    config = make_app_config(tmp_path)
+    prepare_app_dirs(config, include_data_dir=False)
+    store = StateStore(config)
+    try:
+        captured: dict[str, object] = {}
+        session_scope = SimpleNamespace(
+            build_session_key=lambda message: "p2p:oc_1",
+            remember_outbound_aliases=lambda message, session_key, alias_groups: captured.update(
+                {"session_key": session_key, "alias_groups": alias_groups}
+            ),
+            root_id_for_message=lambda message: "",
+            is_card_action_message=lambda message: True,
+        )
+        reply_service = RuntimeReplyService(
+            config=config,
+            messenger=_FakeMessenger(),
+            session_scope=session_scope,
+            reply_policy=RuntimeReplyPolicy(config, session_scope),
+            live_turn_presenter=SimpleNamespace(build_final_card=lambda snapshot, fallback_text="": {"text": fallback_text}),
+            trace_recorder=store.trace_recorder,
+        )
+        message = build_message()
+
+        await reply_service.reply(message, "connected", command_reply=True, command_name="/resume", alias_session_key="p2p:oc_1:thread:resume:1")
+
+        assert captured["session_key"] == "p2p:oc_1:thread:resume:1"
+        assert captured["alias_groups"] == [("om_reply_1", "om_root_1")]
+    finally:
+        store.close()

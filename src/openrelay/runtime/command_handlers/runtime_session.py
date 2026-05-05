@@ -37,7 +37,6 @@ class RuntimeSessionCommandHandler:
         except ValueError as exc:
             await self.hooks.reply(ctx.message, f"resume 参数无效：{exc}\n{RESUME_USAGE}", command_reply=True, command_name="/resume")
             return True
-        scope_key = self.session_scope.top_level_thread_scope_key(ctx.message)
         if not self.service.supports_session_listing(ctx.session):
             await self.hooks.reply(ctx.message, "当前后端不支持 `/resume` 原生命令。", command_reply=True, command_name="/resume")
             return True
@@ -49,12 +48,14 @@ class RuntimeSessionCommandHandler:
             await self.hooks.reply(ctx.message, "没有找到可连接的后端会话。先发 `/resume` 查看可用会话。", command_reply=True, command_name="/resume")
             return True
         runtime_session = await self.service.read_runtime_session(ctx.session, target_session_id)
-        resumed_session = self.service.bind_native_thread(scope_key, ctx.session, runtime_session)
+        scope_key = self._resume_scope_key(ctx, target_session_id)
+        resumed_session = self.service.bind_native_thread(scope_key, ctx.session, runtime_session, create_new_session=True)
         await self.hooks.reply(
             ctx.message,
             self.service.format_runtime_session_resume_success(resumed_session, runtime_session),
             command_reply=True,
             command_name="/resume",
+            alias_session_key=scope_key,
         )
         return True
 
@@ -88,3 +89,9 @@ class RuntimeSessionCommandHandler:
         if args.target.lower() == "list":
             raise ValueError("`list` 已移除；直接使用 /resume")
         return ResumeCommandArgs(target=args.target, page=args.page, sort_mode=args.sort_mode)
+
+    def _resume_scope_key(self, ctx: CommandContext, target_session_id: str) -> str:
+        if not self.session_scope.is_card_action_message(ctx.message):
+            return self.session_scope.top_level_thread_scope_key(ctx.message)
+        suffix = f"resume:{ctx.message.event_id or ctx.message.message_id}:{target_session_id}"
+        return f"{ctx.session_key}:thread:{suffix}"

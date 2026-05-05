@@ -119,6 +119,22 @@ def test_bind_native_thread_updates_existing_binding_before_hydration(tmp_path: 
     store.close()
 
 
+def test_bind_native_thread_to_new_session_keeps_resume_scopes_separate(tmp_path: Path) -> None:
+    config = make_app_config(tmp_path, max_session_messages=3)
+    prepare_app_dirs(config, include_data_dir=False)
+    store = StateStore(config)
+    current = store.load_session("p2p:chat_1")
+    mutations = SessionMutationService(config, store, SessionPresentation(config, store))
+
+    first = mutations.bind_native_thread_to_new_session("p2p:chat_1:thread:resume:first", current, "thread_first")
+    second = mutations.bind_native_thread_to_new_session("p2p:chat_1:thread:resume:second", first, "thread_second")
+
+    assert first.session_id != second.session_id
+    assert store.load_session("p2p:chat_1:thread:resume:first").native_session_id == "thread_first"
+    assert store.load_session("p2p:chat_1:thread:resume:second").native_session_id == "thread_second"
+    store.close()
+
+
 def test_card_action_outbound_alias_uses_explicit_p2p_session_key(tmp_path: Path) -> None:
     config = make_app_config(tmp_path, max_session_messages=3)
     prepare_app_dirs(config, include_data_dir=False)
@@ -140,4 +156,29 @@ def test_card_action_outbound_alias_uses_explicit_p2p_session_key(tmp_path: Path
     scope.remember_outbound_aliases(message, "p2p:oc_1", [("om_resume_success",)])
 
     assert store.find_session_key_alias("p2p:oc_1:thread:om_resume_success") == "p2p:oc_1"
+    store.close()
+
+
+def test_card_action_outbound_alias_can_target_distinct_resume_scope(tmp_path: Path) -> None:
+    config = make_app_config(tmp_path, max_session_messages=3)
+    prepare_app_dirs(config, include_data_dir=False)
+    store = StateStore(config)
+    scope = SessionScopeResolver(config, store, logging.getLogger("test.session.alias"))
+    message = IncomingMessage(
+        event_id="evt_resume_card",
+        message_id="om_resume_card",
+        reply_to_message_id="om_resume_card",
+        chat_id="oc_1",
+        chat_type="group",
+        sender_open_id="ou_user",
+        source_kind="card_action",
+        session_key="p2p:oc_1",
+        text="/resume thread_1",
+        actionable=True,
+    )
+    resume_scope = "p2p:oc_1:thread:resume:evt_resume_card:thread_1"
+
+    scope.remember_outbound_aliases(message, resume_scope, [("om_resume_success",)])
+
+    assert store.find_session_key_alias("p2p:oc_1:thread:om_resume_success") == resume_scope
     store.close()

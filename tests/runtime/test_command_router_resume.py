@@ -90,7 +90,7 @@ async def test_runtime_command_router_resume_latest_binds_native_thread_and_retu
 
     rebound = store.find_session(session.base_key)
     assert rebound is not None
-    assert rebound.session_id == session.session_id
+    assert rebound.session_id != session.session_id
     assert rebound.native_session_id == "thread_latest"
     assert "session_id=thread_latest" in str(hooks.replies[-1]["text"])
     assert "请回复本条消息继续该会话" in str(hooks.replies[-1]["text"])
@@ -108,9 +108,32 @@ async def test_runtime_command_router_resume_local_session_id_maps_to_native_thr
 
     rebound = store.find_session(original.base_key)
     assert rebound is not None
-    assert rebound.session_id == original.session_id
+    assert rebound.session_id != original.session_id
     assert rebound.native_session_id == "thread_older"
     assert "session_id=thread_older" in str(hooks.replies[-1]["text"])
+    store.close()
+
+
+@pytest.mark.asyncio
+async def test_runtime_command_router_card_resume_uses_unique_scope_per_click(tmp_path: Path) -> None:
+    router, store, hooks = build_router(tmp_path)
+    session = store.load_session("p2p:oc_1")
+    first_click = make_card_action_message("/resume thread_latest", suffix="resume_card")
+    second_click = make_card_action_message("/resume thread_older", suffix="resume_card")
+    second_click.event_id = "evt_resume_card_second"
+
+    await router.handle(first_click, session.base_key, session)
+    after_first = store.find_session(session.base_key)
+    assert after_first is not None
+
+    await router.handle(second_click, session.base_key, after_first)
+    after_second = store.find_session(session.base_key)
+    assert after_second is not None
+
+    assert after_first.session_id != after_second.session_id
+    assert after_first.native_session_id == "thread_latest"
+    assert after_second.native_session_id == "thread_older"
+    assert hooks.replies[0]["kwargs"]["alias_session_key"] != hooks.replies[1]["kwargs"]["alias_session_key"]
     store.close()
 
 

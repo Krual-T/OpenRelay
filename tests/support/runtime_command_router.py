@@ -241,6 +241,18 @@ class FakeSessionMutationService:
             self.store.clear_session_messages(saved.session_id)
         return self.store.get_session(saved.session_id)
 
+    def bind_native_thread_to_new_session(
+        self,
+        scope_key: str,
+        current: SessionRecord,
+        thread_id: str,
+        *,
+        cwd: str | None = None,
+        label: str = "",
+    ) -> SessionRecord:
+        created = self.store.create_next_session(scope_key, current, label)
+        return self.bind_native_thread(scope_key, created, thread_id, cwd=cwd, label=label)
+
 
 def make_config(tmp_path: Path) -> AppConfig:
     projects_dir = tmp_path / "home" / "Projects"

@@ -134,6 +134,18 @@ class SessionMutationService:
             self.store.clear_session_messages(saved.session_id)
         return self.store.get_session(saved.session_id)
 
+    def bind_native_thread_to_new_session(
+        self,
+        scope_key: str,
+        current: SessionRecord,
+        thread_id: str,
+        *,
+        cwd: str | None = None,
+        label: str = "",
+    ) -> SessionRecord:
+        created = self.store.create_next_session(scope_key, current, label)
+        return self.bind_native_thread(scope_key, created, thread_id, cwd=cwd, label=label)
+
     def _save_binding_if_needed(self, current: SessionRecord, saved: SessionRecord) -> None:
         existing = self.bindings.get(current.session_id)
         if existing is None and not saved.native_session_id:

@@ -100,8 +100,16 @@ class RuntimeSessionCommandService:
             return local_match.native_session_id or ""
         return ""
 
-    def bind_native_thread(self, scope_key: str, session: SessionRecord, runtime_session: RuntimeSessionDetails) -> SessionRecord:
-        return self.session_mutations.bind_native_thread(
+    def bind_native_thread(
+        self,
+        scope_key: str,
+        session: SessionRecord,
+        runtime_session: RuntimeSessionDetails,
+        *,
+        create_new_session: bool = False,
+    ) -> SessionRecord:
+        binder = self.session_mutations.bind_native_thread_to_new_session if create_new_session else self.session_mutations.bind_native_thread
+        return binder(
             scope_key,
             session,
             runtime_session.session_id,

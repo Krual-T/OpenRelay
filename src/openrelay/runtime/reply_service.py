@@ -32,10 +32,11 @@ class RuntimeReplyService:
         *,
         command_reply: bool = False,
         command_name: str = "",
+        alias_session_key: str = "",
         trace_context: MessageTraceContext | None = None,
     ) -> None:
         route = self.reply_policy.command_route(message, command_name) if command_reply else self.reply_policy.default_route(message)
-        await self.send_text(message, text, route, trace_context=trace_context)
+        await self.send_text(message, text, route, alias_session_key=alias_session_key, trace_context=trace_context)
 
     async def reply_command_fallback(
         self,
@@ -87,6 +88,7 @@ class RuntimeReplyService:
         text: str,
         route: ReplyRoute,
         *,
+        alias_session_key: str = "",
         trace_context: MessageTraceContext | None = None,
     ) -> None:
         try:
@@ -100,7 +102,7 @@ class RuntimeReplyService:
         except Exception as exc:
             self._record_reply_failure(message, route, text, exc, trace_context=trace_context)
             raise
-        session_key = self.session_scope.build_session_key(message)
+        session_key = alias_session_key or self.session_scope.build_session_key(message)
         self.session_scope.remember_outbound_aliases(message, session_key, [sent_message.alias_ids() for sent_message in sent_messages])
         self._record_reply_sent(message, route, text, sent_messages, trace_context=trace_context)
 
