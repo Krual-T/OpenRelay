@@ -57,7 +57,16 @@
 - 提交信息应准确描述“为什么改”以及“改了什么”。
 - 如果改动尚未通过最基本的自检，不应急于提交。
 
-## 5. 信息输出要求（必须遵循）
+## 5. 真实飞书验证约定
+
+- `lark-cli` 在本仓库只作为独立飞书工具使用，不是 openrelay 服务的一部分。
+- 默认 `lark-cli` profile 应使用隔离的 `feishu-cli`；不要把 openrelay 服务应用作为 CLI 默认 profile。
+- openrelay 服务应用只由运行中的 openrelay 进程使用，用于接收事件和发送业务回复；除非用户明确要求，不要用 `lark-cli` 切到或操作该应用。
+- 真实运行 trace 优先查询 `~/.openrelay/data/openrelay.sqlite3`，不要默认使用仓库内 `data/openrelay.sqlite3`。
+- 查询真实运行链路时显式传入数据库路径，例如：
+  - `uv run openrelay-trace --db ~/.openrelay/data/openrelay.sqlite3 --message-id <message_id> --json`
+
+## 6. 信息输出要求（必须遵循）
 
 - 回复用户 or 任何向用户展示、输出信息时都禁止使用中文英文穿插的简述型、口号型表达，而是采用通俗易懂的中文进行表述（包括函数的参数释义），如有必要，例如专有英文名词需要使用括号补充在中文后面，或者通用的英文产品、英文人名、知名度高的英文也可以直接使用
 

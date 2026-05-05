@@ -19,6 +19,12 @@ uv run openrelay-trace --session-id "$RELAY_SESSION_ID" --json --limit 100
 uv run openrelay-trace --turn-id "$TURN_ID" --json
 ```
 
+当前长期运行的 `openrelayd` 使用 `~/.openrelay/data/openrelay.sqlite3`，真实运行验证应显式传入：
+
+```bash
+uv run openrelay-trace --db ~/.openrelay/data/openrelay.sqlite3 --message-id "$MESSAGE_ID" --json
+```
+
 ## Matrix
 | Feature ID | Primary Verification | Required Runtime Evidence | UI Evidence | Official Tool Role | Known Blind Spot |
 | --- | --- | --- | --- | --- | --- |
@@ -59,6 +65,12 @@ uv run openrelay-trace --message-id "$MESSAGE_ID" --json
    - `/status` 类命令有 `dispatch.command.detected` 和 `reply.sent`。
    - 普通消息类 turn 有 `dispatch.turn.accepted`、`turn.started`、`storage.session.saved`、`reply.sent`。
    - 真实飞书 UI 与功能清单里的 `Expected User UI` 一致。
+
+## Executed Dry Runs
+| Date | Feature | Trigger | Message ID | Result | Evidence |
+| --- | --- | --- | --- | --- | --- |
+| 2026-05-05 | `F-008-normal-turn` / `F-009-streaming-card` | 用户在真实飞书 OpenRelay P2P 会话发送 `你好` | `om_x100b50a2e81b90b8c353b701aa42e0b` | 通过一条基础链路验证；trace 包含 ingress、session、dispatch、turn、storage、reply | `~/.openrelay/data/openrelay.sqlite3`；reply id `om_x100b50a2e83734a4c3cf7c946800763`；`reply.sent.payload.streaming=true` |
+| 2026-05-05 | `F-002-status` | 独立 `feishu-cli` profile 向 OpenRelay P2P 会话发送 `/status OR-015 cli dry run 2026-05-05 12:08` | `om_x100b50a2f69548a0c43828d7fad1bb7` | 通过一条 CLI 主动触发链路验证；trace 包含 ingress、session、command、reply | `~/.openrelay/data/openrelay.sqlite3`；reply id `om_x100b50a2f6a720a0c1477d9a3339a80`；`dispatch.command.detected` summary `/status` |
 
 ## Tooling Direction
 短期不新增完整自动化平台。下一步更合适的是扩展 `openrelay-trace` 或新增窄验证命令，例如：

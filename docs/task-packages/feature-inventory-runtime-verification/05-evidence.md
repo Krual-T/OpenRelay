@@ -4,12 +4,17 @@
 
 ## Residual Risks
 - 飞书官方 CLI / 官方调试工具无法单独证明真实客户端流式 UI，本轮已记录为能力边界。
-- 真实飞书手动触发后的 trace 验证样例尚未采集。
-- `lark-cli` 本机未安装；本轮只记录官方资料与候选命令，没有执行真实 CLI 调用。
+- 已采集真实飞书普通消息和独立 CLI 主动 `/status` 命令 trace 样例，但停止型和 card action 样例尚未采集。
+- `feishu-cli` profile 已独立于 openrelay 应用配置，并已补授权 `search:message` 与 `im:message.send_as_user`。
+- 仓库内 `data/openrelay.sqlite3` 不是当前服务运行库；真实运行库位于 `~/.openrelay/data/openrelay.sqlite3`。
 
 ## Manual Steps
-- 后续需要人工在飞书触发至少一条测试消息或卡片动作，并用本地 trace 查询验证链路。
-- 推荐优先执行 `F-002-status`、`F-008-normal-turn`、`F-009-streaming-card`、`F-010-stop`。
+- 2026-05-05：用户在真实飞书 OpenRelay P2P 会话发送 `你好`。
+- 维护者使用 `lark-cli im +messages-search --as user --query '你好'` 定位到 OpenRelay P2P `chat_id=oc_7bea2cfa55a47c1d33fb0fdc607153f2` 和 incoming message id `om_x100b50a2e81b90b8c353b701aa42e0b`。
+- 维护者使用 `uv run openrelay-trace --db ~/.openrelay/data/openrelay.sqlite3 --message-id om_x100b50a2e81b90b8c353b701aa42e0b --json` 验证链路。
+- 2026-05-05：维护者使用独立 `feishu-cli` profile 发送 `/status OR-015 cli dry run 2026-05-05 12:08`，消息 id 为 `om_x100b50a2f69548a0c43828d7fad1bb7`。
+- 维护者使用 `uv run openrelay-trace --db ~/.openrelay/data/openrelay.sqlite3 --message-id om_x100b50a2f69548a0c43828d7fad1bb7 --json` 验证 `/status` 命令链路。
+- 后续推荐优先执行 `F-010-stop` 和 card action 样例。
 
 ## Files
 - `docs/task-packages/feature-inventory-runtime-verification/README.md`
@@ -32,13 +37,19 @@
 - `curl -L https://raw.githubusercontent.com/larksuite/cli/main/skills/lark-im/SKILL.md`
 - `curl -L https://raw.githubusercontent.com/larksuite/cli/main/skills/lark-event/SKILL.md`
 - `curl -L https://raw.githubusercontent.com/larksuite/cli/main/README.zh.md`
+- `lark-cli im +messages-search --as user --query '你好' --page-size 20 --format json`
+- `sqlite3 -header -column ~/.openrelay/data/openrelay.sqlite3 "select id, occurred_at, stage, event_type, chat_id, incoming_message_id, reply_message_id, source_kind, summary from message_event_log order by id desc limit 40;"`
+- `uv run openrelay-trace --db ~/.openrelay/data/openrelay.sqlite3 --message-id om_x100b50a2e81b90b8c353b701aa42e0b --json`
+- `lark-cli im +messages-send --as user --chat-id 'oc_7bea2cfa55a47c1d33fb0fdc607153f2' --text '/status OR-015 cli dry run 2026-05-05 12:08'`
+- `uv run openrelay-trace --db ~/.openrelay/data/openrelay.sqlite3 --message-id om_x100b50a2f69548a0c43828d7fad1bb7 --json`
 
 ## Artifact Paths
 - `docs/research/feishu-official-runtime-tools.md`
 - `docs/feature-inventory.md`
 - `docs/runtime-verification-matrix.md`
+- `~/.openrelay/data/openrelay.sqlite3`，真实运行 trace 数据库。
 
 ## Follow-ups
-- 安装并授权 `lark-cli` 后，用测试 chat 执行一次消息发送 / 事件监听 dry run。
-- 由用户在真实飞书客户端触发 `F-002-status` 或 `F-008-normal-turn`，维护者用 `openrelay-trace` 采集证据。
+- 由用户或 CLI 触发 `F-010-stop`，维护者用 `openrelay-trace` 采集证据。
+- 继续补一条 resume 或 workspace 卡片 action 样例，确认 card action trace。
 - 如果要自动判断矩阵，后续新增窄范围 `openrelay-verify-message`。
