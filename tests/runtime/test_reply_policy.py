@@ -215,7 +215,7 @@ async def test_resume_success_text_is_thread_focused(tmp_path: Path) -> None:
     assert "cwd=~/Projects/openrelay" in text
     assert "最近更新：" in text
     assert "最近历史：" not in text
-    assert "已在当前顶层对话中连接；接下来直接继续发消息即可。" in text
+    assert "请回复本条消息继续该会话" in text
     assert hooks.replies[-1]["kwargs"]["command_name"] == "/resume"
     store.close()
 

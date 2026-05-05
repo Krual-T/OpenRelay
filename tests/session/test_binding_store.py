@@ -1,7 +1,11 @@
+import logging
 from pathlib import Path
 
-from openrelay.session.store import SessionBindingStore
+from openrelay.core import IncomingMessage
+from openrelay.presentation.session import SessionPresentation
+from openrelay.session import SessionMutationService, SessionScopeResolver
 from openrelay.session.models import RelaySessionBinding
+from openrelay.session.store import SessionBindingStore
 from openrelay.storage import StateStore
 from tests.support.app import make_app_config, prepare_app_dirs
 
@@ -83,4 +87,57 @@ def test_session_binding_store_lists_recent_by_backend(tmp_path: Path) -> None:
     recent = bindings.list_recent(backend="claude")
 
     assert [entry.relay_session_id for entry in recent] == [second.session_id]
+    store.close()
+
+
+def test_bind_native_thread_updates_existing_binding_before_hydration(tmp_path: Path) -> None:
+    config = make_app_config(tmp_path, max_session_messages=3)
+    prepare_app_dirs(config, include_data_dir=False)
+    store = StateStore(config)
+    session = store.load_session("p2p:chat_1")
+    bindings = SessionBindingStore(store)
+    bindings.save(
+        RelaySessionBinding(
+            relay_session_id=session.session_id,
+            backend="codex",
+            native_session_id="thread_old",
+            cwd=session.cwd,
+            model=session.model_override,
+            safety_mode=session.safety_mode,
+            feishu_chat_id="chat_1",
+            feishu_thread_id="",
+        )
+    )
+    hydrated = store.get_session(session.session_id)
+    mutations = SessionMutationService(config, store, SessionPresentation(config, store))
+
+    rebound = mutations.bind_native_thread("p2p:chat_1:thread:om_resume", hydrated, "thread_new")
+
+    assert rebound.native_session_id == "thread_new"
+    assert store.get_session(session.session_id).native_session_id == "thread_new"
+    assert bindings.get(session.session_id).native_session_id == "thread_new"  # type: ignore[union-attr]
+    store.close()
+
+
+def test_card_action_outbound_alias_uses_explicit_p2p_session_key(tmp_path: Path) -> None:
+    config = make_app_config(tmp_path, max_session_messages=3)
+    prepare_app_dirs(config, include_data_dir=False)
+    store = StateStore(config)
+    scope = SessionScopeResolver(config, store, logging.getLogger("test.session.alias"))
+    message = IncomingMessage(
+        event_id="evt_resume_card",
+        message_id="om_resume_card",
+        reply_to_message_id="om_resume_card",
+        chat_id="oc_1",
+        chat_type="group",
+        sender_open_id="ou_user",
+        source_kind="card_action",
+        session_key="p2p:oc_1",
+        text="/resume thread_1",
+        actionable=True,
+    )
+
+    scope.remember_outbound_aliases(message, "p2p:oc_1", [("om_resume_success",)])
+
+    assert store.find_session_key_alias("p2p:oc_1:thread:om_resume_success") == "p2p:oc_1"
     store.close()

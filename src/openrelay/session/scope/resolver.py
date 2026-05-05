@@ -124,15 +124,15 @@ class SessionScopeResolver:
                 alias = str(message_id or "").strip()
                 if not alias:
                     continue
-                alias_key = self.compose_key(message, thread_id=alias)
-                self.store.save_session_key_alias(alias_key, session_key)
-                self.logger.info(
-                    "saved outbound session alias event_id=%s message_id=%s alias_key=%s session_key=%s",
-                    message.event_id,
-                    message.message_id,
-                    alias_key,
-                    session_key,
-                )
+                for alias_key in self._outbound_alias_keys(message, alias):
+                    self.store.save_session_key_alias(alias_key, session_key)
+                    self.logger.info(
+                        "saved outbound session alias event_id=%s message_id=%s alias_key=%s session_key=%s",
+                        message.event_id,
+                        message.message_id,
+                        alias_key,
+                        session_key,
+                    )
 
     def is_command_message(self, message: IncomingMessage) -> bool:
         return str(message.text or "").strip().startswith("/")
@@ -154,6 +154,34 @@ class SessionScopeResolver:
 
     def root_id_for_message(self, message: IncomingMessage) -> str:
         return message.root_id or message.thread_id
+
+    def _outbound_alias_keys(self, message: IncomingMessage, alias: str) -> tuple[str, ...]:
+        keys = [self.compose_key(message, thread_id=alias)]
+        explicit_key = str(message.session_key or "").strip()
+        if explicit_key:
+            resolved = self.store.find_session_key_alias(explicit_key) or explicit_key
+            owner_key = self.store.owner_session_key(resolved)
+            explicit_alias = self._compose_alias_from_owner_key(owner_key, alias)
+            if explicit_alias and explicit_alias not in keys:
+                keys.append(explicit_alias)
+        return tuple(keys)
+
+    def _compose_alias_from_owner_key(self, owner_key: str, alias: str) -> str:
+        parts = owner_key.split(":")
+        if len(parts) < 2:
+            return ""
+        chat_type = parts[0]
+        chat_id = parts[1]
+        if chat_type == "p2p":
+            return f"p2p:{chat_id}:thread:{alias}"
+        if chat_type == "group":
+            sender = ""
+            if ":sender:" in owner_key:
+                sender = owner_key.rsplit(":sender:", 1)[1]
+            if sender:
+                return f"group:{chat_id}:thread:{alias}:sender:{sender}"
+            return f"group:{chat_id}:thread:{alias}"
+        return ""
 
     def _thread_ids(self, message: IncomingMessage) -> list[str]:
         thread_ids: list[str] = []

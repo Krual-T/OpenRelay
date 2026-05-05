@@ -93,7 +93,7 @@ async def test_runtime_command_router_resume_latest_binds_native_thread_and_retu
     assert rebound.session_id == session.session_id
     assert rebound.native_session_id == "thread_latest"
     assert "session_id=thread_latest" in str(hooks.replies[-1]["text"])
-    assert "已在当前顶层对话中连接；接下来直接继续发消息即可。" in str(hooks.replies[-1]["text"])
+    assert "请回复本条消息继续该会话" in str(hooks.replies[-1]["text"])
     store.close()
 
 

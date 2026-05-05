@@ -129,7 +129,7 @@ class SessionMutationService:
     ) -> SessionRecord:
         next_session = replace(current, **updates)
         saved = self.store.save_scope_session(scope_key, next_session)
-        self._save_binding_if_needed(current, saved)
+        self._save_binding_if_needed(current, next_session)
         if clear_messages:
             self.store.clear_session_messages(saved.session_id)
         return self.store.get_session(saved.session_id)

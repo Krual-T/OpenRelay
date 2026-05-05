@@ -123,7 +123,7 @@ class RuntimeSessionCommandService:
             lines.append(f"status={runtime_session.status}")
         if runtime_session.preview:
             lines.extend(["", f"预览：{self.session_presentation.shorten(runtime_session.preview, 120)}"])
-        lines.extend(["", "已在当前顶层对话中连接；接下来直接继续发消息即可。"])
+        lines.extend(["", "已连接到这条回复对应的子 thread；请回复本条消息继续该会话。顶层直接发新消息会开启新的对话。"])
         return "\n".join(lines)
 
     def format_user_facing_time(self, value: str) -> str:
