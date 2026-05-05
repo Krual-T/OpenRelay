@@ -7,8 +7,9 @@
 - 本包会把飞书官方 CLI 或官方调试工具作为调研方向，但在证据确认前不预设它一定能观测卡片流式 UI 状态。
 
 ## Current Status
-- Status: `proposed`
-- 当前只完成 task package 建档与需求收敛入口，尚未进入官方工具调研、详细设计或实现。
+- Status: `detailed_ready`
+- 已完成飞书官方 CLI / 官方调试工具调研、功能清单初稿和真实运行验证矩阵初稿。
+- 本轮没有采集真实飞书客户端人工观察证据，因此不进入 `verifying` 或 `archived`。
 
 ## Read This First
 - `STATUS.yaml`
@@ -17,3 +18,6 @@
 - `03-detailed-design.md`
 - `04-verification.md`
 - `05-evidence.md`
+- `docs/research/feishu-official-runtime-tools.md`
+- `docs/feature-inventory.md`
+- `docs/runtime-verification-matrix.md`

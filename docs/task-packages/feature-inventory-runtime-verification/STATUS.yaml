@@ -4,11 +4,11 @@ title: "Feature Inventory And Runtime Verification"
 # requirements_ready -> overview_ready -> detailed_ready are design-readiness checkpoints; later statuses imply earlier checkpoints are already materially complete.
 # `detailed_ready` is the normal resting point for design-complete work before implementation.
 # `archived` means the task package is implemented, verified, and no longer active.
-status: "proposed"
+status: "detailed_ready"
 summary: "Map user-visible features to real runtime verification evidence."
 owner: "codex"
 created_at: "2026-05-04"
-updated_at: "2026-05-04"
+updated_at: "2026-05-05"
 depends_on: []
 scope:
   areas:
@@ -23,6 +23,9 @@ entrypoints:
   - docs/task-packages/feature-inventory-runtime-verification/01-requirements.md
   - docs/task-packages/feature-inventory-runtime-verification/02-overview-design.md
   - docs/task-packages/feature-inventory-runtime-verification/03-detailed-design.md
+  - docs/research/feishu-official-runtime-tools.md
+  - docs/feature-inventory.md
+  - docs/runtime-verification-matrix.md
 done_criteria:
   - 建立高频用户功能清单，至少覆盖命令入口、卡片入口、普通消息执行、流式回复和停止/恢复类控制。
   - 每个清单项都拆成用户可见 UI、实际副作用、状态持久化、可观测证据和验证方式。
@@ -35,8 +38,8 @@ verification:
     - feature_inventory_review
     - official_feishu_cli_capability_research
     - real_feishu_trace_validation_dry_run
-  last_run_at: "2026-05-04"
-  last_run_result: "passed"
+  last_run_at: "2026-05-05"
+  last_run_result: "insufficient_verification"
   last_run_artifact: ""
 evidence:
   docs:
@@ -47,6 +50,9 @@ evidence:
     - docs/task-packages/feature-inventory-runtime-verification/03-detailed-design.md
     - docs/task-packages/feature-inventory-runtime-verification/04-verification.md
     - docs/task-packages/feature-inventory-runtime-verification/05-evidence.md
+    - docs/research/feishu-official-runtime-tools.md
+    - docs/feature-inventory.md
+    - docs/runtime-verification-matrix.md
   code:
     - src/openrelay/tools/trace.py
     - src/openrelay/observability/
