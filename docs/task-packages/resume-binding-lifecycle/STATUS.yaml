@@ -4,7 +4,7 @@ title: "Resume Binding Lifecycle"
 # requirements_ready -> overview_ready -> detailed_ready are design-readiness checkpoints; later statuses imply earlier checkpoints are already materially complete.
 # `detailed_ready` is the normal resting point for design-complete work before implementation.
 # `archived` means the task package is implemented, verified, and no longer active.
-status: "proposed"
+status: "detailed_ready"
 summary: "Clarify how resumed backend sessions map to persistent Feishu conversation entrypoints."
 owner: "codex"
 created_at: "2026-05-05"
@@ -19,9 +19,12 @@ scope:
     - observability
 entrypoints:
   - docs/task-packages/resume-binding-lifecycle/README.md
+  - docs/task-packages/resume-binding-lifecycle/STATUS.yaml
   - docs/task-packages/resume-binding-lifecycle/01-requirements.md
   - docs/task-packages/resume-binding-lifecycle/02-overview-design.md
   - docs/task-packages/resume-binding-lifecycle/03-detailed-design.md
+  - docs/task-packages/resume-binding-lifecycle/04-verification.md
+  - docs/task-packages/resume-binding-lifecycle/05-evidence.md
 done_criteria:
   - 明确 `/resume` 成功后用户应在哪个飞书入口继续聊天，以及这个入口是否持续有效。
   - 明确大量 resume 入口的保留、展示、失效和清理语义。
@@ -31,6 +34,9 @@ verification:
   required_commands:
     - openharness check-tasks
   required_scenarios:
+    - requirements_convergence_review
+    - overview_design_review
+    - detailed_design_review
     - package_scaffold_review
   last_run_at: "2026-05-05"
   last_run_result: "passed"
@@ -40,7 +46,22 @@ evidence:
     - docs/task-packages/resume-binding-lifecycle/README.md
     - docs/task-packages/resume-binding-lifecycle/STATUS.yaml
     - docs/task-packages/resume-binding-lifecycle/01-requirements.md
+    - docs/task-packages/resume-binding-lifecycle/02-overview-design.md
+    - docs/task-packages/resume-binding-lifecycle/03-detailed-design.md
     - docs/task-packages/resume-binding-lifecycle/04-verification.md
     - docs/task-packages/resume-binding-lifecycle/05-evidence.md
-  code: []
-  tests: []
+  code:
+    - src/openrelay/feishu/parsing.py
+    - src/openrelay/session/scope/resolver.py
+    - src/openrelay/runtime/command_handlers/runtime_session.py
+    - src/openrelay/runtime/command_services/runtime_session_commands.py
+    - src/openrelay/runtime/reply_service.py
+    - src/openrelay/runtime/replying.py
+    - src/openrelay/runtime/message_dispatch.py
+    - src/openrelay/storage/repositories.py
+    - src/openrelay/session/store.py
+  tests:
+    - tests/runtime/test_command_router_resume.py
+    - tests/session/test_scope_resolver.py
+    - tests/runtime/test_reply_policy.py
+    - tests/feishu/test_parsing.py

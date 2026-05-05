@@ -22,21 +22,28 @@
 3. 明确需要探索的问题。
    - `acceptance criteria`：列出必须通过代码、数据库、飞书事件字段或真实运行 trace 才能确认的问题。
 
+## Requirements Closure
+本轮将 `/resume` 定义为“打开一个可继续回复的恢复入口”，不是切换顶层默认会话。
+
+- `/resume` 成功后，用户应回复成功消息对应的子 thread 继续该后端会话；顶层普通消息继续保持新对话语义。
+- 每次成功连接都可以创建一个独立本地会话和一个独立可回复入口；同一个后端 `native_session_id` 被多次连接时，也先按多个入口处理，避免复用入口时误伤历史 thread。
+- 恢复入口是持久入口：只要飞书消息和本地 SQLite 绑定仍存在，后续回复就应继续命中同一个本地会话。
+- 本轮不做用户可见的关闭、归档、清理入口；大量入口治理作为后续产品能力，不阻塞当前生命周期语义收敛。
+- 同一个 `native_session_id` 的并发 backend turn 默认不声明安全；实施阶段需要至少用本地锁策略阻止同一后端会话被并发运行，或把这个风险显式暴露为未覆盖能力。
+
 ## Needs Discussion
-- `/resume` 成功后，用户期望它像“打开一个长期聊天入口”，还是像“切换当前默认会话”。
-- 同一个后端会话被多次 resume 时，应该创建多个飞书入口，还是提示复用已有入口。
-- 用户同时保留多少个恢复入口才是合理体验；超过后应该隐藏、归档、提示清理，还是完全不限制。
-- 用户如何看见“当前这个 thread 绑定的是哪个后端会话”。
-- 是否需要用户可见的关闭、归档或清理入口，例如关闭当前恢复入口。
-- 顶层普通消息与恢复入口之间是否应始终隔离。
+- 已关闭：`/resume` 成功后按“长期聊天入口”处理，不按“切换顶层默认会话”处理。
+- 已关闭：同一个后端会话多次 resume 时，本轮优先创建多个独立入口；复用提示和入口去重延期。
+- 已关闭：用户通过成功回复文案看到 `session_id`、`cwd` 和“回复本条消息继续”的入口说明。
+- 已关闭：顶层普通消息与恢复入口始终隔离。
+- 延期：入口数量上限、隐藏、归档、关闭和清理入口不进入本轮实现。
 
 ## Needs Exploration
-- 飞书 card action 在同一张卡片多次点击时提供哪些稳定字段，能否区分不同按钮点击和不同成功回复。
-- 当前 `session_key_aliases`、`session_pointers`、`sessions`、`relay_session_bindings` 的职责边界是否足够表达恢复入口生命周期。
-- 当前执行锁按 `relay_session_id` 生效时，同一个后端会话被多个本地会话同时使用会发生什么。
-- Codex 后端对同一个 `native_session_id` 的并发请求是否安全，是否需要后端会话级串行化。
-- 现有 `/resume`、`/status`、trace 工具能否让用户和维护者准确判断当前 thread 绑定关系。
-- 大量历史绑定对数据库、列表展示和 trace 查询有什么实际成本。
+- 已确认：飞书 card action 事件可提供 `context.open_message_id`、`operator.open_id`、`action.value`、`action.form_value`、`action.input_value` 等字段；同一张卡片的不同连接按钮可能共享原卡片 `open_message_id`，因此不能只用卡片消息 id 区分恢复入口。
+- 已确认：`session_key_aliases` 可以把成功回复消息 id 绑定到新建本地会话，`session_pointers` 记录 scope 到 session 的当前指针，`sessions` 保留本地会话记录，`relay_session_bindings` 保留 relay 到 backend attachment。
+- 已确认：当前 execution key 默认按 `session.session_id` 串行；多个本地会话绑定同一个 `native_session_id` 时，现有锁不能天然阻止同一后端会话并发。
+- 待实施验证：`/status` 和 trace 需要能让维护者看到成功回复 thread、`relay_session_id`、`native_session_id` 的对应关系。
+- 延期：大量历史绑定的自动清理成本需要后续入口治理任务再量化。
 
 ## Non-Goals
 - 本轮不实现新的缓存、清理或并发控制机制。

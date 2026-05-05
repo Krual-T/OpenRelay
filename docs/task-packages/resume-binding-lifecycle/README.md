@@ -7,7 +7,7 @@
 - 本包当前只记录意图，不预设具体实现方案。
 
 ## Current Status
-- `proposed`：问题已由真实飞书运行暴露，但需求边界、产品语义和技术落点仍需要讨论与探索。
+- `detailed_ready`：已收敛 `/resume` 生命周期语义、系统边界、实现落点、测试策略和真实飞书验证路径。下一步是按 `03-detailed-design.md` 进入实现或补真实运行证据。
 
 ## Read This First
 - `STATUS.yaml`
