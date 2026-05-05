@@ -71,6 +71,13 @@ uv run openrelay-trace --message-id "$MESSAGE_ID" --json
 | --- | --- | --- | --- | --- | --- |
 | 2026-05-05 | `F-008-normal-turn` / `F-009-streaming-card` | 用户在真实飞书 OpenRelay P2P 会话发送 `你好` | `om_x100b50a2e81b90b8c353b701aa42e0b` | 通过一条基础链路验证；trace 包含 ingress、session、dispatch、turn、storage、reply | `~/.openrelay/data/openrelay.sqlite3`；reply id `om_x100b50a2e83734a4c3cf7c946800763`；`reply.sent.payload.streaming=true` |
 | 2026-05-05 | `F-002-status` | 独立 `feishu-cli` profile 向 OpenRelay P2P 会话发送 `/status OR-015 cli dry run 2026-05-05 12:08` | `om_x100b50a2f69548a0c43828d7fad1bb7` | 通过一条 CLI 主动触发链路验证；trace 包含 ingress、session、command、reply | `~/.openrelay/data/openrelay.sqlite3`；reply id `om_x100b50a2f6a720a0c1477d9a3339a80`；`dispatch.command.detected` summary `/status` |
+| 2026-05-05 | `F-001-help` | 独立 `feishu-cli` 发送 `/help OR-015 command dry run 2026-05-05 12:18` | `om_x100b50a2b8f1b8acc42faee09166a94` | 飞书消息查询能看到 help interactive card；trace 记录 command detected，但未记录卡片 `reply.sent` | help card id `om_x100b50a2b887e0a0c2df3105406b4ea`；观测缺口同 card sender |
+| 2026-05-05 | `F-003-resume-list` | 独立 `feishu-cli` 发送 `/resume` | `om_x100b50a2b4ca68a4c4c57c40decce7a` | 飞书消息查询能看到 resume interactive card；trace 记录 command detected，但未记录卡片 `reply.sent` | resume card id `om_x100b50a2b4db5ca8c2a87002bc74362`；CLI 显示 `<card title="Relay codex thread histories">...` |
+| 2026-05-05 | `F-005-workspace-browser` | 独立 `feishu-cli` 发送 `/workspace` | `om_x100b50a2b03b84b0c3841715ca91198` | 飞书消息查询能看到 workspace interactive card；trace 记录 command detected，但未记录卡片 `reply.sent` | workspace card id `om_x100b50a2b1c0f0a0c2a21b39c78dc31`；CLI 显示 `<card title="openrelay workspace">...` |
+| 2026-05-05 | `F-007-shortcut` | 独立 `feishu-cli` 发送 `/shortcut list` | `om_x100b50a2b03834a0c1460bdf1b199a6` | 通过；trace 包含 command 和 `reply.sent`，飞书返回当前没有可用快捷目录 | reply id `om_x100b50a2b1c8a0a8c3fa26a838d8343` |
+| 2026-05-05 | `F-014-removed-command` | 独立 `feishu-cli` 发送 `/panel` | `om_x100b50a34c9934a4c146a104eeff5c0` | 通过；trace 包含 command 和 `reply.sent`，飞书返回迁移提示 | reply id `om_x100b50a34cbac0a0c352154a1152c27` |
+
+可观测性缺口：通过 `RuntimeReplyService` 发送的文本 / post 命令回复会记录 `egress/reply.sent`；通过 panel / card sender 发送的 interactive card 已能在飞书消息查询中看到，但当前没有对应的 `reply.sent` trace。后续若要让矩阵自动判定 `/help`、`/resume`、`/workspace`，需要补 card sender 的结构化 trace。
 
 ## Tooling Direction
 短期不新增完整自动化平台。下一步更合适的是扩展 `openrelay-trace` 或新增窄验证命令，例如：

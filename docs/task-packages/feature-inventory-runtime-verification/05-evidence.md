@@ -4,7 +4,8 @@
 
 ## Residual Risks
 - 飞书官方 CLI / 官方调试工具无法单独证明真实客户端流式 UI，本轮已记录为能力边界。
-- 已采集真实飞书普通消息和独立 CLI 主动 `/status` 命令 trace 样例，但停止型和 card action 样例尚未采集。
+- 已采集真实飞书普通消息、独立 CLI 主动命令、只读命令和可交互卡片展示样例，但停止型和 card action 点击样例尚未采集。
+- `/resume`、`/workspace`、`/help` 的 interactive card 能从飞书消息查询看到，但当前 card sender 没有写入 `egress/reply.sent` trace。
 - `feishu-cli` profile 已独立于 openrelay 应用配置，并已补授权 `search:message` 与 `im:message.send_as_user`。
 - 仓库内 `data/openrelay.sqlite3` 不是当前服务运行库；真实运行库位于 `~/.openrelay/data/openrelay.sqlite3`。
 
@@ -14,6 +15,8 @@
 - 维护者使用 `uv run openrelay-trace --db ~/.openrelay/data/openrelay.sqlite3 --message-id om_x100b50a2e81b90b8c353b701aa42e0b --json` 验证链路。
 - 2026-05-05：维护者使用独立 `feishu-cli` profile 发送 `/status OR-015 cli dry run 2026-05-05 12:08`，消息 id 为 `om_x100b50a2f69548a0c43828d7fad1bb7`。
 - 维护者使用 `uv run openrelay-trace --db ~/.openrelay/data/openrelay.sqlite3 --message-id om_x100b50a2f69548a0c43828d7fad1bb7 --json` 验证 `/status` 命令链路。
+- 2026-05-05：维护者使用独立 `feishu-cli` profile 发送 `/resume` 和 `/workspace`，飞书消息查询分别显示 `<card title="Relay codex thread histories">...` 和 `<card title="openrelay workspace">...`。
+- 2026-05-05：维护者使用独立 `feishu-cli` profile 发送 `/shortcut list`、`/usage`、`/model`、`/sandbox`、`/backend list`、`/panel`，并用 SQLite trace 验证 command 与 reply。
 - 后续推荐优先执行 `F-010-stop` 和 card action 样例。
 
 ## Files
@@ -42,6 +45,15 @@
 - `uv run openrelay-trace --db ~/.openrelay/data/openrelay.sqlite3 --message-id om_x100b50a2e81b90b8c353b701aa42e0b --json`
 - `lark-cli im +messages-send --as user --chat-id 'oc_7bea2cfa55a47c1d33fb0fdc607153f2' --text '/status OR-015 cli dry run 2026-05-05 12:08'`
 - `uv run openrelay-trace --db ~/.openrelay/data/openrelay.sqlite3 --message-id om_x100b50a2f69548a0c43828d7fad1bb7 --json`
+- `lark-cli im +messages-send --as user --chat-id 'oc_7bea2cfa55a47c1d33fb0fdc607153f2' --text '/resume'`
+- `lark-cli im +messages-send --as user --chat-id 'oc_7bea2cfa55a47c1d33fb0fdc607153f2' --text '/workspace'`
+- `lark-cli im +chat-messages-list --as user --chat-id 'oc_7bea2cfa55a47c1d33fb0fdc607153f2' --page-size 8 --sort desc --format json`
+- `lark-cli im +messages-send --as user --chat-id 'oc_7bea2cfa55a47c1d33fb0fdc607153f2' --text '/shortcut list'`
+- `lark-cli im +messages-send --as user --chat-id 'oc_7bea2cfa55a47c1d33fb0fdc607153f2' --text '/usage'`
+- `lark-cli im +messages-send --as user --chat-id 'oc_7bea2cfa55a47c1d33fb0fdc607153f2' --text '/model'`
+- `lark-cli im +messages-send --as user --chat-id 'oc_7bea2cfa55a47c1d33fb0fdc607153f2' --text '/sandbox'`
+- `lark-cli im +messages-send --as user --chat-id 'oc_7bea2cfa55a47c1d33fb0fdc607153f2' --text '/backend list'`
+- `lark-cli im +messages-send --as user --chat-id 'oc_7bea2cfa55a47c1d33fb0fdc607153f2' --text '/panel'`
 
 ## Artifact Paths
 - `docs/research/feishu-official-runtime-tools.md`
@@ -52,4 +64,5 @@
 ## Follow-ups
 - 由用户或 CLI 触发 `F-010-stop`，维护者用 `openrelay-trace` 采集证据。
 - 继续补一条 resume 或 workspace 卡片 action 样例，确认 card action trace。
+- 补 card sender 的 `egress/reply.sent` 或等价 trace，否则 `/help`、`/resume`、`/workspace` 无法完全由本地 trace 自动判定。
 - 如果要自动判断矩阵，后续新增窄范围 `openrelay-verify-message`。
