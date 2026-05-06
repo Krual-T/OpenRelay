@@ -5,9 +5,17 @@ import json
 import os
 import subprocess
 import sys
+import logging
 from datetime import datetime, timezone
 from pathlib import Path
 from uuid import uuid4
+
+try:
+    from openharness.rwp import get_logger
+except ModuleNotFoundError:
+    def get_logger() -> logging.Logger:
+        logging.basicConfig(level=logging.INFO)
+        return logging.getLogger("openharness.rwp")
 
 RWP_ROOT = Path(__file__).resolve().parents[3]
 LIBS_ROOT = RWP_ROOT / "libs"
@@ -23,6 +31,9 @@ from feishu_msg import (  # noqa: E402
     save_target,
     targets_file,
 )
+
+
+logger = get_logger()
 
 
 def main() -> int:
@@ -43,8 +54,11 @@ def main() -> int:
 
     repo_root = resolve_repo_root()
     cache_path = targets_file(repo_root)
+    logger.info("feishu_msg send.py started")
+    logger.info("using target cache: %s", cache_path)
 
     if args.list_targets:
+        logger.info("listing Feishu targets")
         print(json.dumps({"targets_file": str(cache_path), "targets": list_target_names(cache_path)}, ensure_ascii=False, indent=2))
         return 0
 
@@ -57,6 +71,7 @@ def main() -> int:
             description=args.description,
         )
         save_target(cache_path, target, set_default=args.set_default)
+        logger.info("saved Feishu target `%s` to %s", target.name, cache_path)
         print(json.dumps({"saved_target": target.name, "targets_file": str(cache_path)}, ensure_ascii=False, indent=2))
         if not args.text:
             return 0
@@ -82,7 +97,9 @@ def main() -> int:
         dry_run=args.dry_run,
     )
 
+    logger.info("sending Feishu message through profile `%s` to target `%s`", args.profile, target.name)
     completed = subprocess.run(command, cwd=repo_root, text=True, capture_output=True, check=False)
+    logger.info("lark-cli finished with exit code %s", completed.returncode)
     parsed_stdout = parse_json_from_output(completed.stdout)
     result = {
         "run_id": run_id,
@@ -101,6 +118,7 @@ def main() -> int:
     log_dir.mkdir(parents=True, exist_ok=True)
     result_path = log_dir / "send-result.json"
     result_path.write_text(json.dumps(result, ensure_ascii=False, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    logger.info("wrote Feishu send result to %s", result_path)
 
     print(json.dumps({"run_id": run_id, "returncode": completed.returncode, "result_path": str(result_path)}, ensure_ascii=False, indent=2))
     if completed.stdout:

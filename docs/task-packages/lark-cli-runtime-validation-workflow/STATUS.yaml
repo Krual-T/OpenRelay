@@ -28,13 +28,16 @@ verification:
     - uv run pytest tests/rwp/test_feishu_msg.py
     - openharness rwp run feishu_msg send.py --chat-id oc_dummy --text 'openrelay feishu_msg dry run' --dry-run --run-id feishu-msg-dry-run-test
     - openharness rwp run feishu_msg send.py --target openrelay-dummy --text 'openrelay feishu_msg cached target dry run' --dry-run --run-id feishu-msg-cached-target-dry-run-final
+    - openharness rwp run feishu_msg send.py --target openrelay-p2p --text '/status OR-021 feishu_msg real run 20260506T163640Z' --run-id feishu-msg-real-status-20260506T163640Z
+    - uv run openrelay-trace --db ~/.openrelay/data/openrelay.sqlite3 --message-id om_x100b5082af207ca8c2ed58906b4e7b3 --json
   required_scenarios:
     - feishu_msg_discovery
     - feishu_msg_send_dry_run
     - feishu_msg_target_cache
+    - feishu_msg_real_status_trace
   last_run_at: "2026-05-07"
   last_run_result: "passed"
-  last_run_artifact: ".harness/rwp/logs/feishu_msg/feishu-msg-cached-target-dry-run-final/send-result.json"
+  last_run_artifact: ".harness/rwp/logs/feishu_msg/feishu-msg-real-status-20260506T163640Z/send-result.json"
 evidence:
   docs:
     - docs/task-packages/lark-cli-runtime-validation-workflow/README.md
