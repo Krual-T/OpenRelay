@@ -62,7 +62,7 @@ OPENRELAY_LARK_TARGETS_FILE=.harness/rwp/cache/lark-targets.json
 - target cache 缺失：脚本要求传入 `--target`、`--chat-id` 或 `--user-id`。
 - target 同时包含 `chat_id` 和 `user_id`：脚本拒绝执行，避免目标语义不清。
 - profile 授权失效：`lark-cli` 返回失败，日志保留原始输出。
-- `openharness.rwp` 未暴露到项目 `uv run python` 环境：脚本优先导入 `openharness.rwp.get_logger()`，导入失败时回退到同名标准 logger，避免发送路径被工具包环境阻塞。
+- `openharness.rwp` 未暴露到项目 `uv run python` 环境：这是 OpenHarness RWP 外壳问题，不在 `send.py` 内 fallback。已在 OpenHarness `b0908ab` 修复：`openharness rwp run` 会向子进程注入 runtime API 所在路径，使 `from openharness.rwp import get_logger` 在项目 Python 环境中可用。
 
 ## Follow-up
 下一阶段在本 RWP 内增加 trace 冒烟脚本，例如 `trace_smoke.py`，复用 `send.py` 或共享库发送 `/status` 后查询 `~/.openrelay/data/openrelay.sqlite3`。

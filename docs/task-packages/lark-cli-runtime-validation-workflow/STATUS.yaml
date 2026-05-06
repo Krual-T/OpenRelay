@@ -28,6 +28,7 @@ verification:
     - uv run pytest tests/rwp/test_feishu_msg.py
     - openharness rwp run feishu_msg send.py --chat-id oc_dummy --text 'openrelay feishu_msg dry run' --dry-run --run-id feishu-msg-dry-run-test
     - openharness rwp run feishu_msg send.py --target openrelay-dummy --text 'openrelay feishu_msg cached target dry run' --dry-run --run-id feishu-msg-cached-target-dry-run-final
+    - openharness rwp run feishu_msg send.py --chat-id oc_dummy --text 'openharness runtime api import after update' --dry-run --run-id feishu-msg-runtime-api-after-update
     - openharness rwp run feishu_msg send.py --target openrelay-p2p --text '/status OR-021 feishu_msg real run 20260506T163640Z' --run-id feishu-msg-real-status-20260506T163640Z
     - uv run openrelay-trace --db ~/.openrelay/data/openrelay.sqlite3 --message-id om_x100b5082af207ca8c2ed58906b4e7b3 --json
   required_scenarios:

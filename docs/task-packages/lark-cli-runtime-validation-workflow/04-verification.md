@@ -22,7 +22,11 @@
 - `openharness rwp run feishu_msg send.py --chat-id oc_dummy --text 'logger dry run' --dry-run --run-id feishu-msg-logger-dry-run`
   - 结果：初次失败，原因是当前项目 `uv run python` 环境无法 import `openharness.rwp`。
 - `openharness rwp run feishu_msg send.py --chat-id oc_dummy --text 'logger dry run' --dry-run --run-id feishu-msg-logger-dry-run-2`
-  - 结果：退出码 0，脚本通过 fallback logger 输出 `INFO:openharness.rwp:...`，并保留 `openharness.rwp.get_logger()` 优先路径。
+  - 结果：曾通过 fallback logger 临时恢复；随后按用户要求移除 fallback，把根因修到 OpenHarness 源仓库。
+- OpenHarness 源仓库 `b0908ab Expose RWP runtime API to workflow scripts`
+  - 结果：修复 `openharness rwp run`，向 RWP 子进程注入 runtime API 路径；已 push 到 `origin/main`，并在 openrelay 中执行 `openharness update`。
+- `openharness rwp run feishu_msg send.py --chat-id oc_dummy --text 'openharness runtime api import after update' --dry-run --run-id feishu-msg-runtime-api-after-update`
+  - 结果：退出码 0；`send.py` 已无 fallback，直接导入 `from openharness.rwp import get_logger`，通过更新后的 OpenHarness 外壳正常运行。
 - `openharness rwp run feishu_msg send.py --save-target openrelay-p2p --chat-id 'oc_7bea2cfa55a47c1d33fb0fdc607153f2' --set-default --description 'OpenRelay P2P real runtime validation chat'`
   - 结果：退出码 0，真实 OpenRelay P2P target 写入本地 target cache。
 - `openharness rwp run feishu_msg send.py --target openrelay-p2p --text '/status OR-021 feishu_msg real run 20260506T163640Z' --run-id feishu-msg-real-status-20260506T163640Z`

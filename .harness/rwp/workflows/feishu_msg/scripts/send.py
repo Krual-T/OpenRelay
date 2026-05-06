@@ -5,17 +5,11 @@ import json
 import os
 import subprocess
 import sys
-import logging
 from datetime import datetime, timezone
 from pathlib import Path
 from uuid import uuid4
 
-try:
-    from openharness.rwp import get_logger
-except ModuleNotFoundError:
-    def get_logger() -> logging.Logger:
-        logging.basicConfig(level=logging.INFO)
-        return logging.getLogger("openharness.rwp")
+from openharness.rwp import get_logger
 
 RWP_ROOT = Path(__file__).resolve().parents[3]
 LIBS_ROOT = RWP_ROOT / "libs"
