@@ -1,10 +1,10 @@
 id: OR-021
 title: Lark Cli Runtime Validation Workflow
-status: proposed
+status: in_progress
 summary: 将 openrelay 的真实飞书 runtime 验证意图沉淀为项目专属工作流，并以 lark-cli 作为首个可自动化工具样例。
 owner: codex
 created_at: 2026-05-06
-updated_at: 2026-05-06
+updated_at: 2026-05-07
 depends_on:
   - OR-015
 scope:
@@ -20,15 +20,32 @@ done_criteria:
   - 明确 openrelay 需要哪些项目专属 runtime 级验证路径。
   - 明确哪些过去依赖人工飞书客户端操作的验证可以通过 lark-cli 或类似工具自动化。
   - 明确这类项目级 runtime 工作流与 pytest、真实人工验收、openharness 通用机制之间的关系。
+  - 提供第一条可发现的 RWP：`feishu_msg`，支持通过 `send.py` 一键发送真实飞书文本消息。
 verification:
-  required_commands: []
-  required_scenarios: []
-  last_run_at: ""
-  last_run_result: ""
-  last_run_artifact: ""
+  required_commands:
+    - openharness rwp list
+    - openharness rwp show feishu_msg
+    - uv run pytest tests/rwp/test_feishu_msg.py
+    - openharness rwp run feishu_msg send.py --chat-id oc_dummy --text 'openrelay feishu_msg dry run' --dry-run --run-id feishu-msg-dry-run-test
+    - openharness rwp run feishu_msg send.py --target openrelay-dummy --text 'openrelay feishu_msg cached target dry run' --dry-run --run-id feishu-msg-cached-target-dry-run-final
+  required_scenarios:
+    - feishu_msg_discovery
+    - feishu_msg_send_dry_run
+    - feishu_msg_target_cache
+  last_run_at: "2026-05-07"
+  last_run_result: "passed"
+  last_run_artifact: ".harness/rwp/logs/feishu_msg/feishu-msg-cached-target-dry-run-final/send-result.json"
 evidence:
   docs:
     - docs/task-packages/lark-cli-runtime-validation-workflow/README.md
     - docs/task-packages/lark-cli-runtime-validation-workflow/01-requirements.md
-  code: []
-  tests: []
+    - docs/task-packages/lark-cli-runtime-validation-workflow/02-overview-design.md
+    - docs/task-packages/lark-cli-runtime-validation-workflow/03-detailed-design.md
+    - docs/task-packages/lark-cli-runtime-validation-workflow/04-verification.md
+    - docs/task-packages/lark-cli-runtime-validation-workflow/05-evidence.md
+  code:
+    - .harness/rwp/workflows/feishu_msg/workflow.md
+    - .harness/rwp/workflows/feishu_msg/scripts/send.py
+    - .harness/rwp/libs/feishu_msg.py
+  tests:
+    - tests/rwp/test_feishu_msg.py

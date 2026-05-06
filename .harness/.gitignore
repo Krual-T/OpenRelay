@@ -1,0 +1,14 @@
+*
+!.gitignore
+!rwp/
+rwp/*
+!rwp/workflows/
+!rwp/workflows/**
+!rwp/libs/
+!rwp/libs/**
+rwp/libs/**/__pycache__/
+rwp/libs/**/*.pyc
+rwp/.env
+rwp/cache/
+rwp/logs/
+rwp/artifacts/

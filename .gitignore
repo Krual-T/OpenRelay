@@ -8,7 +8,19 @@ __pycache__/
 .project-memory/facts/*
 !.project-memory/facts/openharness_completion_contract.yaml
 .agents/
-.harness/
+.harness/*
+!.harness/.gitignore
+!.harness/rwp/
+!.harness/rwp/workflows/
+!.harness/rwp/workflows/**
+!.harness/rwp/libs/
+!.harness/rwp/libs/**
+.harness/rwp/libs/**/__pycache__/
+.harness/rwp/libs/**/*.pyc
+.harness/rwp/.env
+.harness/rwp/cache/
+.harness/rwp/logs/
+.harness/rwp/artifacts/
 .openharness/
 data/
 
