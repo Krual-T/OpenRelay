@@ -1,0 +1,39 @@
+id: OR-022
+title: Feishu Transcript Rendering Matrix
+status: requirements_ready
+summary: 梳理流式输出和 Execution Log 的内容类型、排版规则与真实飞书卡片验证矩阵。
+owner: unassigned
+created_at: '2026-05-07'
+updated_at: '2026-05-07'
+depends_on: []
+scope:
+  areas:
+  - src/openrelay/feishu/reply_card.py
+  - src/openrelay/feishu/highlight.py
+  - src/openrelay/feishu/renderers/live_turn_renderer.py
+  - src/openrelay/presentation/live_turn_view_builder.py
+collaboration: {}
+entrypoints:
+- docs/task-packages/feishu-transcript-rendering-matrix/README.md
+- docs/task-packages/feishu-transcript-rendering-matrix/01-requirements.md
+- docs/task-packages/feishu-transcript-rendering-matrix/02-overview-design.md
+- docs/task-packages/feishu-transcript-rendering-matrix/03-detailed-design.md
+done_criteria:
+- 明确列出流式输出和最终 Execution Log 可能承载的过程输出类型。
+- 为每类输出定义推荐渲染策略、降噪边界和是否保留详细内容。
+- 用 lark-cli 发送覆盖主要类型的真实飞书卡片样例，并记录客户端渲染证据。
+- 基于证据形成实现方案，避免在真实飞书客户端暴露 `<font>`、`<text_tag>`、`&nbsp;`、`<br>` 等原始标记。
+verification:
+  required_commands:
+  - uv run openharness check-tasks
+  required_scenarios:
+  - lark_cli_rendering_samples
+  last_run_at: '2026-05-07'
+  last_run_result: insufficient_verification
+  last_run_artifact: docs/task-packages/feishu-transcript-rendering-matrix/artifacts/render-sample-card.json
+evidence:
+  docs:
+  - docs/task-packages/feishu-transcript-rendering-matrix/04-verification.md
+  - docs/task-packages/feishu-transcript-rendering-matrix/05-evidence.md
+  code: []
+  tests: []

@@ -1,0 +1,108 @@
+{
+  "schema": "2.0",
+  "config": {
+    "wide_screen_mode": true
+  },
+  "body": {
+    "elements": [
+      {
+        "tag": "markdown",
+        "content": "**OR-022 Feishu rendering sample**\n\n这张卡片用于比较过程日志在飞书客户端中的真实渲染效果。重点看折叠面板里的换行、颜色标记、长输出和 diff 是否稳定。"
+      },
+      {
+        "tag": "collapsible_panel",
+        "expanded": true,
+        "header": {
+          "title": {
+            "tag": "markdown",
+            "content": "A. 当前风险写法：HTML-like 高亮直接进入 Execution Log"
+          },
+          "vertical_align": "center",
+          "icon": {
+            "tag": "standard_icon",
+            "token": "down-small-ccm_outlined",
+            "size": "16px 16px"
+          },
+          "icon_position": "follow_text",
+          "icon_expanded_angle": -180
+        },
+        "border": {
+          "color": "grey",
+          "corner_radius": "5px"
+        },
+        "vertical_spacing": "8px",
+        "padding": "8px 8px 8px 8px",
+        "elements": [
+          {
+            "tag": "markdown",
+            "content": "🟠 **Updated files**  \n│  \n<text_tag color='orange'>Edit</text_tag> `/home/Shaokun.Tang/Projects/openrelay/src/demo.py`  \n=====output=====  \n<font color='grey'>---&nbsp;a/src/demo.py</font><br><font color='grey'>+++&nbsp;b/src/demo.py</font><br><font color='grey'>@@&nbsp;-1,2&nbsp;+1,2&nbsp;@@</font><br><text_tag color='red'>-</text_tag><font color='red'>old</font><font color='red'>&nbsp;</font><font color='red'>line</font><br><text_tag color='green'>+</text_tag><font color='green'>new</font><font color='green'>&nbsp;</font><font color='green'>line</font>"
+          }
+        ]
+      },
+      {
+        "tag": "collapsible_panel",
+        "expanded": true,
+        "header": {
+          "title": {
+            "tag": "markdown",
+            "content": "B. 安全写法：摘要优先，原始 diff 用普通文本"
+          },
+          "vertical_align": "center",
+          "icon": {
+            "tag": "standard_icon",
+            "token": "down-small-ccm_outlined",
+            "size": "16px 16px"
+          },
+          "icon_position": "follow_text",
+          "icon_expanded_angle": -180
+        },
+        "border": {
+          "color": "grey",
+          "corner_radius": "5px"
+        },
+        "vertical_spacing": "8px",
+        "padding": "8px 8px 8px 8px",
+        "elements": [
+          {
+            "tag": "markdown",
+            "content": "🟠 **Updated files**\n\nEdit: `/home/Shaokun.Tang/Projects/openrelay/src/demo.py`\n\nDiff summary:\n- 1 file changed\n- 1 deletion\n- 1 addition\n\nOutput preview:\n```diff\n--- a/src/demo.py\n+++ b/src/demo.py\n@@ -1,2 +1,2 @@\n- old line\n+ new line\n```"
+          }
+        ]
+      },
+      {
+        "tag": "collapsible_panel",
+        "expanded": false,
+        "header": {
+          "title": {
+            "tag": "markdown",
+            "content": "C. 长输出写法：默认折叠，只保留结论和前几行"
+          },
+          "vertical_align": "center",
+          "icon": {
+            "tag": "standard_icon",
+            "token": "down-small-ccm_outlined",
+            "size": "16px 16px"
+          },
+          "icon_position": "follow_text",
+          "icon_expanded_angle": -180
+        },
+        "border": {
+          "color": "grey",
+          "corner_radius": "5px"
+        },
+        "vertical_spacing": "8px",
+        "padding": "8px 8px 8px 8px",
+        "elements": [
+          {
+            "tag": "markdown",
+            "content": "🟢 **Ran shell command**\n\nCommand: `uv run pytest tests/runtime/test_turn.py -q`\n\nResult: `45 passed`\n\nOutput preview:\n```text\n.............................................\n45 passed in 3.21s\n```\n\nHidden: 18 lines"
+          }
+        ]
+      },
+      {
+        "tag": "markdown",
+        "content": "**Final answer area**\n\n最终回答应该在视觉上优先于过程日志。过程日志用于排障，不应该因为高亮标签或长输出干扰主回复。"
+      }
+    ]
+  }
+}
