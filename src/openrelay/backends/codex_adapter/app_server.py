@@ -16,6 +16,7 @@ DEFAULT_RESUME_TIMEOUT_SECONDS = 15.0
 STOP_INTERRUPT_REASON = "interrupted by /stop"
 JSONRPC_INTERNAL_ERROR = -32603
 JSONRPC_METHOD_NOT_FOUND = -32601
+STDOUT_READ_CHUNK_SIZE = 64 * 1024
 LOGGER = logging.getLogger("openrelay.backends.codex_adapter.app_server")
 RequestId: TypeAlias = int | str
 
@@ -354,21 +355,40 @@ class CodexAppServerClient:
 
     async def _read_stdout(self) -> None:
         assert self.process is not None and self.process.stdout is not None
-        while True:
-            line = await self.process.stdout.readline()
-            if not line:
-                return
-            raw = line.decode("utf-8", errors="replace").strip()
-            if not raw:
-                continue
-            try:
-                message = json.loads(raw)
-            except json.JSONDecodeError:
-                continue
-            try:
-                await self._handle_message(message)
-            except Exception:
-                LOGGER.exception("failed to handle Codex app-server message: %s", raw)
+        pending = bytearray()
+        try:
+            while True:
+                chunk = await self.process.stdout.read(STDOUT_READ_CHUNK_SIZE)
+                if not chunk:
+                    if pending:
+                        await self._handle_stdout_line(bytes(pending))
+                    return
+                pending.extend(chunk)
+                while True:
+                    newline_index = pending.find(b"\n")
+                    if newline_index < 0:
+                        break
+                    line = bytes(pending[:newline_index])
+                    del pending[:newline_index + 1]
+                    await self._handle_stdout_line(line)
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            LOGGER.exception("Codex app-server stdout reader failed")
+            await self._reset(f"Codex app-server stdout reader failed: {exc}")
+
+    async def _handle_stdout_line(self, line: bytes) -> None:
+        raw = line.decode("utf-8", errors="replace").strip()
+        if not raw:
+            return
+        try:
+            message = json.loads(raw)
+        except json.JSONDecodeError:
+            return
+        try:
+            await self._handle_message(message)
+        except Exception:
+            LOGGER.exception("failed to handle Codex app-server message: %s", raw[:2000])
 
     async def _read_stderr(self) -> None:
         assert self.process is not None and self.process.stderr is not None
