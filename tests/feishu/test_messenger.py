@@ -62,7 +62,7 @@ async def test_send_interactive_card_logs_nbsp_entity_flow(
     messenger = _MessengerUnderTest()
     card = {
         "schema": "2.0",
-        "body": {"elements": [{"tag": "markdown", "content": "=====output=====\n&nbsp;&nbsp;&nbsp;&nbsp;return&nbsp;raw"}]},
+        "body": {"elements": [{"tag": "markdown", "content": "&nbsp;&nbsp;&nbsp;&nbsp;return&nbsp;raw"}]},
     }
 
     sent = await messenger.send_interactive_card(

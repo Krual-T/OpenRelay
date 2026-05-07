@@ -35,7 +35,7 @@
         "elements": [
           {
             "tag": "markdown",
-            "content": "🟠 **Updated files**  \n│  \n<text_tag color='orange'>Edit</text_tag> `/home/Shaokun.Tang/Projects/openrelay/src/demo.py`  \n=====output=====  \n<font color='grey'>---&nbsp;a/src/demo.py</font><br><font color='grey'>+++&nbsp;b/src/demo.py</font><br><font color='grey'>@@&nbsp;-1,2&nbsp;+1,2&nbsp;@@</font><br><text_tag color='red'>-</text_tag><font color='red'>old</font><font color='red'>&nbsp;</font><font color='red'>line</font><br><text_tag color='green'>+</text_tag><font color='green'>new</font><font color='green'>&nbsp;</font><font color='green'>line</font>"
+            "content": "🟠 **Updated files**  \n│  \n<text_tag color='orange'>Edit</text_tag> `/home/Shaokun.Tang/Projects/openrelay/src/demo.py`  \n<font color='grey'>---&nbsp;a/src/demo.py</font><br><font color='grey'>+++&nbsp;b/src/demo.py</font><br><font color='grey'>@@&nbsp;-1,2&nbsp;+1,2&nbsp;@@</font><br><text_tag color='red'>-</text_tag><font color='red'>old</font><font color='red'>&nbsp;</font><font color='red'>line</font><br><text_tag color='green'>+</text_tag><font color='green'>new</font><font color='green'>&nbsp;</font><font color='green'>line</font>"
           }
         ]
       },

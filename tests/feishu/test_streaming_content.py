@@ -168,7 +168,7 @@ def test_build_streaming_content_returns_answer_only_after_answer_starts() -> No
 
     assert "🔵 Explored" in content
     assert "Search Voyager" in content
-    assert "=====output=====" in content
+    assert "=====output=====" not in content
     assert "Gemini&nbsp;Voyager" in content
     assert "---" in content
     assert content.endswith("找到结果，准备整理。")
@@ -209,7 +209,8 @@ def test_build_streaming_content_interleaves_summary_blocks_with_history_items()
     assert "<font color='blue'>sed</font>" in content
     assert "<font color='purple'>-n</font>" in content
     assert "<font color='wathet'>src/openrelay/runtime/live.py</font>" in content
-    assert "=====output=====" in content
+    assert "=====output=====" not in content
+    assert "from&nbsp;__future__&nbsp;import&nbsp;annotations" in content
     assert "---\n\n第二段总结" in content
 
 
@@ -308,7 +309,7 @@ def test_build_streaming_content_marks_failed_command_with_red_dot() -> None:
     assert "🔴 Ran" in content
     assert "<font color='blue'>pytest</font>" in content
     assert "exit 1" in content
-    assert "=====output=====" in content
+    assert "=====output=====" not in content
     assert "<font color='orange'>1</font>&nbsp;<font color='red'>failed</font>" in content
     assert "<font color='red'>AssertionError</font>" in content
 
@@ -424,7 +425,7 @@ def test_build_streaming_content_preserves_output_indentation_without_code_fence
     )
 
     assert "```text" not in content
-    assert "=====output=====" in content
+    assert "=====output=====" not in content
     assert "<font color='purple'>def</font>" in content
     assert "<font color='blue'>main</font>" in content
     assert "&nbsp;&nbsp;&nbsp;&nbsp;<font color='purple'>print</font>" in content
@@ -693,7 +694,7 @@ def test_build_streaming_content_renders_updated_files_with_section_separator() 
     assert "🟠 Updated files" in content
     assert "🟠 Updated files  \n│  \n<text_tag color='orange'>Edit</text_tag> `src/openrelay/feishu/reply_card.py`" in content
     assert "<text_tag color='orange'>Edit</text_tag> `tests/test_feishu_streaming.py`" in content
-    assert "=====output=====" in content
+    assert "=====output=====" not in content
     assert "<font color='grey'>---&nbsp;a/src/openrelay/feishu/reply_card.py</font>" in content
     assert "<text_tag color='red'>-</text_tag><font color='red'>old</font><font color='red'>&nbsp;</font><font color='red'>line</font>" in content
     assert "<text_tag color='green'>+</text_tag><font color='green'>new</font><font color='green'>&nbsp;</font><font color='green'>line</font>" in content
@@ -734,7 +735,7 @@ def test_build_streaming_content_renders_turn_diff_fallback_for_file_change() ->
 
     assert "🟠 Updated files" in content
     assert "<text_tag color='orange'>Edit</text_tag> `/home/Shaokun.Tang/Projects/tool-demo-edit.txt`" in content
-    assert "=====output=====" in content
+    assert "=====output=====" not in content
     assert "<font color='grey'>---&nbsp;a/tool-demo-edit.txt</font>" in content
     assert "<font color='grey'>+++&nbsp;b/tool-demo-edit.txt</font>" in content
     assert "<text_tag color='red'>-</text_tag><font color='red'>状态:&nbsp;旧值</font>" in content

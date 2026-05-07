@@ -357,7 +357,7 @@ def _build_output_entries(
     )
     if not rendered_output:
         return []
-    return [["=====output====="], [rendered_output]]
+    return [[rendered_output]]
 
 
 def _join_markdown_lines(lines: list[str]) -> str:

@@ -256,10 +256,10 @@ async def test_streaming_session_update_card_content_keeps_nbsp_entities(
         "card_signature": ("plain", ""),
     }
 
-    await session.update_card_content("=====output=====\n&nbsp;&nbsp;&nbsp;&nbsp;return&nbsp;raw")
+    await session.update_card_content("&nbsp;&nbsp;&nbsp;&nbsp;return&nbsp;raw")
 
     request = messenger.client.cardkit.v1.card_element.calls[0]
-    assert request.request_body.content == "=====output=====\n&nbsp;&nbsp;&nbsp;&nbsp;return&nbsp;raw"
+    assert request.request_body.content == "&nbsp;&nbsp;&nbsp;&nbsp;return&nbsp;raw"
     assert any("streaming update card content" in record.getMessage() for record in caplog.records)
 
 @pytest.mark.asyncio
