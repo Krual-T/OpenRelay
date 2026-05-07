@@ -32,7 +32,6 @@ class TurnRunState:
     streaming: FeishuStreamingSession | None = None
     streaming_broken: bool = False
     last_live_text: str = ""
-    last_stable_live_text: str = ""
     spinner_task: asyncio.Task[None] | None = None
     streaming_update_event: asyncio.Event = field(default_factory=asyncio.Event)
     pending_streaming_states: deque[dict[str, Any]] = field(default_factory=deque)
@@ -218,19 +217,13 @@ class TurnRunController:
         if self.runtime.config.feishu.stream_mode != "card" or self.state.streaming_broken:
             return
         live_text = self.renderer.build_streaming_content(snapshot)
-        stable_live_text = self._build_stable_streaming_content(snapshot)
-        if not live_text or (
-            live_text == self.state.last_live_text
-            and stable_live_text == self.state.last_stable_live_text
-        ):
+        if not live_text or live_text == self.state.last_live_text:
             return
         try:
             if self.state.streaming is None:
                 await self.start_streaming_session()
             if not self.state.streaming.is_active():
                 if self.state.streaming.needs_rollover():
-                    if stable_live_text == self.state.last_stable_live_text:
-                        return
                     await self.roll_over_streaming(snapshot)
                     return
                 self._stop_spinner_task()
@@ -242,7 +235,6 @@ class TurnRunController:
                     return
                 self._stop_spinner_task()
             self.state.last_live_text = live_text
-            self.state.last_stable_live_text = stable_live_text
         except Exception:
             has_started = self.state.streaming.has_started() if self.state.streaming is not None else False
             self.state.streaming_broken = True
@@ -250,11 +242,6 @@ class TurnRunController:
                 self.state.streaming = None
             self._stop_spinner_task()
             LOGGER.exception("streaming update failed for execution_key=%s", self.execution_key)
-
-    def _build_stable_streaming_content(self, snapshot: dict[str, Any]) -> str:
-        stable_snapshot = dict(snapshot)
-        stable_snapshot["spinner_frame"] = 0
-        return self.renderer.build_streaming_content(stable_snapshot)
 
     async def spinner_loop(self) -> None:
         while True:
