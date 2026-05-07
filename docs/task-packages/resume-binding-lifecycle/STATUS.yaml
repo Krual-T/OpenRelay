@@ -5,7 +5,7 @@ title: "Resume Binding Lifecycle"
 # `detailed_ready` is the normal resting point for design-complete work before implementation.
 # `archived` means the task package is implemented, verified, and no longer active.
 status: "in_progress"
-summary: "Clarify how resumed backend sessions map to persistent Feishu conversation entrypoints; the app-server large-response hang found during real /resume clicking has been fixed and is under verification."
+summary: "Clarify how resumed backend sessions map to persistent Feishu conversation entrypoints; the app-server large-response hang and the spinner-only rollover loop found during real /resume follow-up investigation have been fixed and are under verification."
 owner: "codex"
 created_at: "2026-05-05"
 updated_at: "2026-05-07"
@@ -34,7 +34,7 @@ done_criteria:
 verification:
   required_commands:
     - openharness check-tasks
-    - uv run pytest tests/backends/codex_adapter tests/runtime/test_command_router_resume.py -q
+    - uv run pytest tests/runtime/test_turn.py tests/runtime/test_command_router_resume.py tests/backends/codex_adapter tests/feishu/test_streaming_session.py -q
   required_scenarios:
     - requirements_convergence_review
     - overview_design_review
@@ -54,6 +54,7 @@ evidence:
     - docs/task-packages/resume-binding-lifecycle/05-evidence.md
   code:
     - src/openrelay/backends/codex_adapter/app_server.py
+    - src/openrelay/runtime/turn_run_controller.py
     - src/openrelay/feishu/parsing.py
     - src/openrelay/session/scope/resolver.py
     - src/openrelay/runtime/command_handlers/runtime_session.py
@@ -65,6 +66,7 @@ evidence:
     - src/openrelay/session/store.py
   tests:
     - tests/backends/codex_adapter/test_app_server.py
+    - tests/runtime/test_turn.py
     - tests/runtime/test_command_router_resume.py
     - tests/session/test_scope_resolver.py
     - tests/runtime/test_reply_policy.py

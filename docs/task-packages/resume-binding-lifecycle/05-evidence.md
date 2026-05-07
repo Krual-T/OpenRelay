@@ -21,7 +21,9 @@
 - `docs/task-packages/resume-binding-lifecycle/04-verification.md`：记录本轮验证计划和当前验证缺口。
 - `docs/task-packages/resume-binding-lifecycle/05-evidence.md`：记录本轮证据索引。
 - `src/openrelay/backends/codex_adapter/app_server.py`：把 Codex app-server stdout 从整行读取改为分块读取；读取器异常时重置客户端并失败挂起请求。
+- `src/openrelay/runtime/turn_run_controller.py`：为流式卡片增加稳定文本判断，避免 freeze 后仅因 spinner 动画变化而 rollover 出新的重复卡片。
 - `tests/backends/codex_adapter/test_app_server.py`：新增大 JSON-RPC 单行响应和 stdout 读取器异常传播的回归测试。
+- `tests/runtime/test_turn.py`：新增 freeze 后 spinner-only 不 rollover、稳定内容变化仍可 rollover 的回归测试。
 
 ## Commands
 - `uv run /home/Shaokun.Tang/.agents/skill-hub/openharness/skills/project-memory/scripts/query_memory.py "018 任务 推进 task package"`
@@ -31,6 +33,7 @@
 - `uv run openharness check-tasks`，结果通过，验证 8 个 task package。
 - `uv run pytest tests/backends/codex_adapter/test_app_server.py -q`，旧实现先失败 2 项；修复后结果 2 passed。
 - `uv run pytest tests/backends/codex_adapter tests/runtime/test_command_router_resume.py -q`，结果 31 passed。
+- `uv run pytest tests/runtime/test_turn.py tests/runtime/test_command_router_resume.py tests/backends/codex_adapter tests/feishu/test_streaming_session.py -q`，结果 45 passed。
 - `curl -I --max-time 5 https://chatgpt.com`，直接连接 5 秒超时；随后按网络约定使用 `proxy` 执行真实只读复现。
 - `bash -ilc 'proxy uv run python - <<'PY' ... transport.read_thread("019dfe0e-91b8-74d2-9128-680f7a419c33", include_turns=True) ... PY'`，结果 `read_ok 019dfe0e-91b8-74d2-9128-680f7a419c33 12 /home/Shaokun.Tang/Projects/openrelay notLoaded`。
 - `uv run openharness check-tasks`，结果通过，验证 9 个 task package。`final verification command`
