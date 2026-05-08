@@ -97,28 +97,27 @@ class TurnV2State:
         self.agent_turn_running = False
 
     def consolidate_agent_message(self) -> None:
-        """将 transcript_cells 中的连续 AgentMessageCell 合并为单个 AgentMarkdownCell。
+        """将 transcript_cells 中的每组连续 AgentMessageCell 分别合并。
 
-        对齐官方 ConsolidateAgentMessage event 处理。
+        对齐官方 TUI：只合并相邻的 AgentMessageCell，中间有其他 cell
+        （如工具执行）时各自独立成组。
         """
-        agent_cells: list[AgentMessageCell] = []
-        indices: list[int] = []
-        for i, cell in enumerate(self.transcript_cells):
+        new_cells: list[Cell] = []
+        i = 0
+        while i < len(self.transcript_cells):
+            cell = self.transcript_cells[i]
             if isinstance(cell, AgentMessageCell):
-                agent_cells.append(cell)
-                indices.append(i)
-
-        if len(agent_cells) <= 1:
-            return
-
-        # 合并所有 AgentMessageCell 的 source_line
-        source = "\n".join(c.source_line for c in agent_cells)
-
-        # 从后往前替换，避免索引偏移
-        for i in reversed(indices):
-            self.transcript_cells.pop(i)
-
-        self.transcript_cells.insert(indices[0], AgentMarkdownCell(source=source))
+                # 收集连续的一段 AgentMessageCell
+                group: list[AgentMessageCell] = []
+                while i < len(self.transcript_cells) and isinstance(self.transcript_cells[i], AgentMessageCell):
+                    group.append(self.transcript_cells[i])  # type: ignore[arg-type]
+                    i += 1
+                source = "\n".join(c.source_line for c in group)
+                new_cells.append(AgentMarkdownCell(source=source))
+            else:
+                new_cells.append(cell)
+                i += 1
+        self.transcript_cells = new_cells
 
     def finalize_with_error(self, message: str) -> None:
         """错误结束 turn：flush active_cell 为 failed + ErrorCell + FinalSeparator。"""
