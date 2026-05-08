@@ -10,6 +10,7 @@ from __future__ import annotations
 from .cell_renderer import (
     SPINNER_FRAMES,
     _dim,
+    _format_duration,
     render_agent_markdown_cell,
     render_collab_agent_cell,
     render_error_cell,
@@ -43,7 +44,6 @@ from .cells import (
 from .state import TurnV2State
 
 STREAMING_ELEMENT_ID = "streaming_content"
-PROCESS_LOG_PANEL_TITLE = "Execution Log"
 
 
 # ---- transcript rendering -------------------------------------------------
@@ -73,14 +73,14 @@ def render_transcript(state: TurnV2State) -> str:
 
     content = "\n\n".join(b for b in blocks if b).strip()
 
-    # 状态栏始终在顶部
+    # 状态栏始终在底部
     header = state.status_header or "Working"
     spinner = SPINNER_FRAMES[state.spinner_frame % 3]
-    status_line = f"{header} {spinner}"
+    status_line = f"---\n\n{header} {spinner}"
 
     if content:
-        return f"{status_line}\n\n---\n\n{content}"
-    return status_line
+        return f"{content}\n\n{status_line}"
+    return f"{header} {spinner}"
 
 
 def render_final_transcript(state: TurnV2State) -> str:
@@ -207,20 +207,25 @@ def build_streaming_card_json(state: TurnV2State) -> dict:
 def build_final_card_json(state: TurnV2State, *, fallback_text: str = "") -> dict:
     """构建 final card JSON。
 
-    - 执行日志放在 collapsible_panel 中
+    - 过程日志放在 collapsible_panel 中（标题显示工作时长）
     - 最终 assistant 文本放在 panel 外
     """
+    import time
+
     transcript = render_final_transcript(state)
     elements: list[dict] = []
 
     if transcript:
+        elapsed = time.monotonic() - state.turn_started_at if state.turn_started_at > 0 else 0.0
+        panel_title = f"Worked for {_format_duration(elapsed)}" if elapsed >= 1 else "Worked"
+
         elements.append({
             "tag": "collapsible_panel",
             "expanded": False,
             "header": {
                 "title": {
                     "tag": "markdown",
-                    "content": PROCESS_LOG_PANEL_TITLE,
+                    "content": panel_title,
                 },
                 "vertical_align": "center",
                 "icon": {
