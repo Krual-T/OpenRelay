@@ -72,8 +72,6 @@ class TurnV2Renderer:
             flushed = self.state.stream_controller.flush_partial()
             for cell in flushed:
                 self.state.add_to_history(cell)
-            # 标记：下一批 Agent 文本是新的 group，需要分隔线
-            self.state._between_agent_groups = True
 
         method_name = f"_handle_{_camel_to_snake(variant)}"
         handler = getattr(self, method_name, None)
@@ -180,20 +178,10 @@ class TurnV2Renderer:
         cells = self.state.stream_controller.push(delta)
         if cells:
             LOGGER.info("v2 cell ← %d AgentMessageCell(s)", len(cells))
-            self._maybe_add_separator()
-            self.state._agent_group_seen = True
-            self.state._between_agent_groups = False
         for cell in cells:
             self.state.add_to_history(cell)
         if self.state.status_header == "":
             self.state.status_header = "Working"
-
-    def _maybe_add_separator(self) -> None:
-        """在非第一组 agent 文本前插入分隔线。"""
-        from .cells import SeparatorCell
-
-        if self.state._agent_group_seen and self.state._between_agent_groups:
-            self.state.add_to_history(SeparatorCell())
 
     def _handle_reasoning_text_delta(self, notification: ServerNotification) -> None:
         # 对齐官方：默认忽略 raw reasoning

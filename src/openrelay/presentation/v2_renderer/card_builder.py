@@ -93,17 +93,8 @@ def render_final_transcript(state: TurnV2State) -> str:
             last_agent_idx = i
             break
 
-    # 找倒数第二个 cell 中是否为 SeparatorCell，如果是则丢弃
-    from .cells import SeparatorCell
-    discard_before_last: int | None = None
-    if last_agent_idx is not None and last_agent_idx > 0:
-        if isinstance(state.transcript_cells[last_agent_idx - 1], SeparatorCell):
-            discard_before_last = last_agent_idx - 1
-
     blocks: list[str] = []
     for i, cell in enumerate(state.transcript_cells):
-        if i == discard_before_last:
-            continue  # 丢弃紧邻最后一个 Agent 前的分隔线
         if last_agent_idx is not None and i == last_agent_idx:
             continue  # 最后一个 AgentMarkdownCell → 放 panel 外做最终回复
         rendered = _render_one_cell(cell, running=False, spinner_frame=0)
@@ -117,21 +108,12 @@ def render_final_transcript(state: TurnV2State) -> str:
 
 
 def _extract_final_answer(state: TurnV2State) -> str:
-    """从 transcript_cells 中提取最后一个 Agent 回复文本。
-
-    如果文本中有 <thinking> 标签，只取标签后的内容作为最终回复。
-    """
-    import logging
-    _log = logging.getLogger("openrelay.presentation.v2_renderer")
-
+    """从 transcript_cells 中提取最后一个 Agent 回复文本。"""
     from .cells import AgentMarkdownCell, AgentMessageCell
 
     for cell in reversed(state.transcript_cells):
         if isinstance(cell, AgentMarkdownCell):
-            source = cell.source.strip()
-            _log.info("final_answer raw len=%d has_thinking=%s preview=%s",
-                      len(source), "<thinking>" in source.lower(), source[:200])
-            return source
+            return cell.source.strip()
     for cell in reversed(state.transcript_cells):
         if isinstance(cell, AgentMessageCell):
             return cell.source_line.strip()
@@ -170,8 +152,6 @@ def _render_one_cell(cell, *, running: bool, spinner_frame: int) -> str:
         return render_error_cell(cell)
     if isinstance(cell, FinalSeparatorCell):
         return render_final_separator_cell(cell)
-    if isinstance(cell, SeparatorCell):
-        return "---"
     return ""
 
 
