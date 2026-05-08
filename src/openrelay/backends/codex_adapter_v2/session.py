@@ -11,7 +11,9 @@ CodexV2Session — 一个 Feishu 对话的持久会话。
 
 from __future__ import annotations
 
+import asyncio
 import logging
+from collections.abc import Awaitable, Callable
 from pathlib import Path
 from typing import Any
 
@@ -23,6 +25,8 @@ from .requests import ServerRequest
 
 LOGGER = logging.getLogger("openrelay.backends.codex_adapter_v2.session")
 
+SPINNER_INTERVAL = 1.0  # spinner 刷新间隔（秒）
+
 
 class CodexV2Session:
     """一个 Feishu 对话的持久会话。"""
@@ -33,6 +37,7 @@ class CodexV2Session:
         self.thread_id: str | None = None
         self.cwd: str = ""
         self._active_turn_id: str | None = None
+        self._spinner_task: asyncio.Task[None] | None = None
 
         # 接线：client 收到 notification → renderer 处理
         self.client.on_notification(self._on_notification)
@@ -83,6 +88,7 @@ class CodexV2Session:
 
     async def shutdown(self) -> None:
         """关闭线程和连接。"""
+        self._stop_spinner()
         if self.thread_id is not None:
             try:
                 await self.client.notify("thread/unsubscribe", {"threadId": self.thread_id})
@@ -91,6 +97,69 @@ class CodexV2Session:
         await self.client.shutdown()
 
     # ---- turn ----
+
+    async def run_turn(
+        self,
+        user_text: str,
+        *,
+        streaming: Any = None,  # FeishuStreamingSession, 避免硬依赖
+        cancel_event: asyncio.Event | None = None,
+        model: str | None = None,
+    ) -> None:
+        """执行完整的一轮 turn：启动 → spinner 循环 → final card。
+
+        streaming 必须有 update_v2(content, card_json) 和 close(final_card) 方法。
+        """
+        if streaming is not None:
+            initial_card = self.renderer.build_initial_card_json()
+            await streaming.update_card_json(initial_card)
+
+        await self.start_turn(user_text, model=model)
+
+        if streaming is not None:
+            self._spinner_task = asyncio.create_task(
+                self._streaming_loop(streaming, cancel_event=cancel_event)
+            )
+
+        # 等待 turn 结束（renderer 收到 TurnCompleted/Error 后 agent_turn_running 变 False）
+        while self.renderer.state.agent_turn_running:
+            if cancel_event is not None and cancel_event.is_set():
+                await self.interrupt()
+            await asyncio.sleep(0.25)
+
+        self._stop_spinner()
+
+        if streaming is not None:
+            final_text = self.renderer.state.assistant_text or ""
+            final_card = self.renderer.build_final_card_json(fallback_text=final_text)
+            await streaming.close(final_card)
+
+    async def _streaming_loop(
+        self,
+        streaming: Any,
+        *,
+        cancel_event: asyncio.Event | None = None,
+    ) -> None:
+        """后台 spinner 循环：定期更新 streaming card 内容。"""
+        last_content = ""
+        while self.renderer.state.agent_turn_running:
+            if cancel_event is not None and cancel_event.is_set():
+                return
+            self.renderer.bump_spinner()
+            content = self.renderer.build_streaming_content()
+            card_json = self.renderer.build_streaming_card_json()
+            if content and content != last_content:
+                last_content = content
+                try:
+                    await streaming.update_v2(content, card_json)
+                except Exception:
+                    LOGGER.exception("streaming update_v2 failed")
+            await asyncio.sleep(SPINNER_INTERVAL)
+
+    def _stop_spinner(self) -> None:
+        if self._spinner_task is not None:
+            self._spinner_task.cancel()
+            self._spinner_task = None
 
     async def start_turn(self, user_text: str, *, model: str | None = None) -> str:
         """开始新的一轮。返回 turn_id。"""
