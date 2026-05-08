@@ -55,6 +55,9 @@ class TurnV2State:
 
     # Agent 文本分组 — 第一段不加分隔线，后续每段前加 SeparatorCell
     _agent_group_seen: bool = False
+    # 标记"自上次 AgentMessageDelta 后是否有非 Agent 通知"
+    # 用于判断下一批 Agent 文本是否属于新 group，需要加分隔线
+    _between_agent_groups: bool = False
 
     # 警告去重
     warning_display_state: set[str] = field(default_factory=set)
@@ -175,4 +178,6 @@ class TurnV2State:
         self.status_header = "Working"
         self.spinner_frame = 0
         self.turn_started_at = time.monotonic()
+        self._agent_group_seen = False
+        self._between_agent_groups = False
         self.warning_display_state.clear()

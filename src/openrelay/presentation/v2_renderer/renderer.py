@@ -68,13 +68,12 @@ class TurnV2Renderer:
         variant = notification.variant
 
         # 非 AgentMessageDelta 的通知到达时，先 flush 积压的 Agent 文本
-        # 保证 cell 时间线顺序
         if variant != "AgentMessageDelta":
             flushed = self.state.stream_controller.flush_partial()
-            if flushed:
-                self._maybe_add_separator()
             for cell in flushed:
                 self.state.add_to_history(cell)
+            # 标记：下一批 Agent 文本是新的 group，需要分隔线
+            self.state._between_agent_groups = True
 
         method_name = f"_handle_{_camel_to_snake(variant)}"
         handler = getattr(self, method_name, None)
@@ -82,14 +81,6 @@ class TurnV2Renderer:
             LOGGER.debug("v2 notification variant=%s method=%s", variant, notification.method)
             handler(notification)
         # 未知 variant 静默忽略（对齐官方 ignored 分支）
-
-    def _maybe_add_separator(self) -> None:
-        """如果这不是第一段 agent 文本，插入分隔线 cell。"""
-        from .cells import SeparatorCell
-
-        if self.state._agent_group_seen:
-            self.state.add_to_history(SeparatorCell())
-        self.state._agent_group_seen = True
 
     def handle_server_request(self, request: ServerRequest) -> None:
         """ServerRequest — 入站审批请求，推入 transcript_cells，等待用户交互。"""
@@ -189,11 +180,20 @@ class TurnV2Renderer:
         cells = self.state.stream_controller.push(delta)
         if cells:
             LOGGER.info("v2 cell ← %d AgentMessageCell(s)", len(cells))
+            self._maybe_add_separator()
             self.state._agent_group_seen = True
+            self.state._between_agent_groups = False
         for cell in cells:
             self.state.add_to_history(cell)
         if self.state.status_header == "":
             self.state.status_header = "Working"
+
+    def _maybe_add_separator(self) -> None:
+        """在非第一组 agent 文本前插入分隔线。"""
+        from .cells import SeparatorCell
+
+        if self.state._agent_group_seen and self.state._between_agent_groups:
+            self.state.add_to_history(SeparatorCell())
 
     def _handle_reasoning_text_delta(self, notification: ServerNotification) -> None:
         # 对齐官方：默认忽略 raw reasoning

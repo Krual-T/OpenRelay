@@ -170,6 +170,8 @@ def _render_one_cell(cell, *, running: bool, spinner_frame: int) -> str:
         return render_error_cell(cell)
     if isinstance(cell, FinalSeparatorCell):
         return render_final_separator_cell(cell)
+    if isinstance(cell, SeparatorCell):
+        return "---"
     return ""
 
 
