@@ -169,6 +169,8 @@ class TurnV2Renderer:
         else:
             return
         cells = self.state.stream_controller.push(delta)
+        if cells:
+            LOGGER.info("v2 cell ← %d AgentMessageCell(s)", len(cells))
         for cell in cells:
             self.state.add_to_history(cell)
         if self.state.status_header == "":
@@ -205,6 +207,7 @@ class TurnV2Renderer:
 
         item_type = str(item.get("type") or "")
         item_id = str(item.get("id") or "")
+        LOGGER.info("v2 cell ← ItemStarted type=%-25s id=%s", item_type, item_id)
 
         if item_type == "commandExecution":
             self.state.flush_active_cell()
@@ -249,6 +252,7 @@ class TurnV2Renderer:
 
         item_type = str(item.get("type") or "")
         item_id = str(item.get("id") or "")
+        LOGGER.info("v2 cell ← ItemCompleted type=%-25s id=%s", item_type, item_id)
 
         if item_type == "commandExecution":
             if isinstance(self.state.active_cell, ExecCell) and self.state.active_cell.call_id == item_id:

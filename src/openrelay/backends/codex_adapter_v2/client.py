@@ -258,11 +258,16 @@ class CodexV2Client:
 
         elif isinstance(msg, JSONRPCNotification):
             notification = parse_server_notification(msg)
-            if notification is not None and self._notification_handler is not None:
-                try:
-                    self._notification_handler(notification)
-                except Exception:
-                    LOGGER.exception("notification handler failed variant=%s", notification.variant)
+            if notification is not None:
+                LOGGER.info(
+                    "v2 rpc ← notification variant=%-40s method=%s",
+                    notification.variant, notification.method,
+                )
+                if self._notification_handler is not None:
+                    try:
+                        self._notification_handler(notification)
+                    except Exception:
+                        LOGGER.exception("notification handler failed variant=%s", notification.variant)
 
         elif hasattr(msg, "method") and hasattr(msg, "id"):
             # JSONRPCRequest from server → needs response
