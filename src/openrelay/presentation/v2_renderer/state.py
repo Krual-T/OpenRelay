@@ -71,19 +71,19 @@ class TurnV2State:
         self.transcript_cells.append(cell)
 
     def finalize_turn(self) -> None:
-        """结束 turn：flush + consolidate + FinalSeparator。
+        """结束 turn：flush + finalize streams + consolidate + FinalSeparator。
 
         对齐官方 on_task_complete() + finalize_turn()。
         """
         self.flush_active_cell()
 
-        # consolidate AgentMessageCell 片段 → AgentMarkdownCell
-        self.consolidate_agent_message()
-
-        # finalize stream controller
+        # finalize stream controller — 先把剩余行推入 history
         remaining_cells, _raw_source = self.stream_controller.finalize()
         for cell in remaining_cells:
             self.add_to_history(cell)
+
+        # consolidate AgentMessageCell 片段 → AgentMarkdownCell
+        self.consolidate_agent_message()
 
         # finalize plan stream controller
         plan_cell = self.plan_stream_controller.finalize()

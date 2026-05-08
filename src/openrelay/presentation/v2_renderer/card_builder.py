@@ -109,12 +109,16 @@ def render_final_transcript(state: TurnV2State) -> str:
 
 def _extract_final_answer(state: TurnV2State) -> str:
     """从 transcript_cells 中提取最终 reply 文本。"""
-    from .cells import AgentMarkdownCell
+    from .cells import AgentMarkdownCell, AgentMessageCell
 
     for cell in reversed(state.transcript_cells):
         if isinstance(cell, AgentMarkdownCell):
             return cell.source.strip()
-    # fallback: 从 stream_controller 的 raw_source 取
+    # fallback: 可能只有单个 AgentMessageCell 没被 consolidate
+    for cell in reversed(state.transcript_cells):
+        if isinstance(cell, AgentMessageCell):
+            return cell.source_line.strip()
+    # last resort: stream_controller 残留
     raw = state.stream_controller.raw_source.strip()
     if raw:
         return raw
