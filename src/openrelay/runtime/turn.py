@@ -7,6 +7,7 @@ from openrelay.agent_runtime.service import AgentRuntimeService
 from openrelay.core import ActiveRun, AppConfig, IncomingMessage, SessionRecord
 from openrelay.feishu import FeishuMessenger, FeishuStreamingSession, FeishuTypingManager
 from openrelay.observability import MessageTraceContext, MessageTraceRecorder
+from openrelay.backends.codex_adapter_v2.pool import ConnectionPool
 from openrelay.presentation.live_turn import LiveTurnPresenter
 from openrelay.session import RelaySessionBinding
 
@@ -63,5 +64,6 @@ class TurnRuntimeContext:
     reply_final: TurnReplyFinalHook
     trace_recorder: MessageTraceRecorder | None = None
     live_turn_presenter: LiveTurnPresenter | None = None
+    v2_pool: ConnectionPool | None = None
     binding_store: TurnBindingStore | None = None
     runtime_service: AgentRuntimeService | None = None

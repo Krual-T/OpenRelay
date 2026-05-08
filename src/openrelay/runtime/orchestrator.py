@@ -8,6 +8,7 @@ from openrelay.backends import BackendDescriptor, build_builtin_backend_descript
 from openrelay.backends.claude_adapter import ClaudeRuntimeBackend
 from openrelay.backends.codex_adapter.app_server import CodexAppServerClient
 from openrelay.backends.codex_adapter.backend import CodexRuntimeBackend
+from openrelay.backends.codex_adapter_v2.pool import ConnectionPool
 from openrelay.core import (
     AppConfig,
     IncomingMessage,
@@ -76,6 +77,7 @@ class RuntimeOrchestrator:
         self.session_browser = SessionBrowser(config, store)
         self.session_presentation = SessionPresentation(config, store)
         self.live_turn_presenter = LiveTurnPresenter()
+        self.v2_pool = ConnectionPool.from_env()
         self.session_workspace = SessionWorkspaceService(config)
         self.session_shortcuts = SessionShortcutService(config, store, self.session_workspace)
         self.session_mutations = SessionMutationService(config, store, self.session_presentation)
@@ -163,6 +165,7 @@ class RuntimeOrchestrator:
             reply_final=self.reply_service.reply_final,
             trace_recorder=self.store.trace_recorder,
             live_turn_presenter=self.live_turn_presenter,
+            v2_pool=self.v2_pool,
             binding_store=self.binding_store,
             runtime_service=self.agent_runtime,
         )
