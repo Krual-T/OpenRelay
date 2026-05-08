@@ -50,59 +50,28 @@ PROCESS_LOG_PANEL_TITLE = "Execution Log"
 
 
 def render_transcript(state: TurnV2State) -> str:
-    """将 transcript_cells + active_cell 渲染为 streaming markdown。
+    """将 transcript_cells + active_cell 按时间线渲染为 streaming markdown。
 
-    AgentMessageCell（回复文本）和思考/工具过程分开：
-    - 上半部分：工具执行 + 推理思考（过程日志）
-    - 下半部分：Agent 回复文本（最终答案）
+    对齐官方 TUI：所有消息按时间顺序追加，不区分工具/推理/回复。
     """
-    from .cells import AgentMarkdownCell, AgentMessageCell
+    blocks: list[str] = []
 
-    process_blocks: list[str] = []
-    answer_lines: list[str] = []
-
-    # 历史 cells（最近 12 条）
     for cell in state.transcript_cells[-12:]:
-        if isinstance(cell, (AgentMessageCell, AgentMarkdownCell)):
-            text = cell.source_line if isinstance(cell, AgentMessageCell) else cell.source
-            if text.strip():
-                answer_lines.append(text.strip())
-        else:
-            rendered = _render_one_cell(cell, running=False, spinner_frame=state.spinner_frame)
-            if rendered:
-                process_blocks.append(rendered)
+        rendered = _render_one_cell(cell, running=False, spinner_frame=state.spinner_frame)
+        if rendered:
+            blocks.append(rendered)
 
-    # 当前 active_cell
     if state.active_cell is not None:
         rendered = _render_one_cell(state.active_cell, running=True, spinner_frame=state.spinner_frame)
         if rendered:
-            process_blocks.append(rendered)
+            blocks.append(rendered)
 
-    # active_hook_cell
     if state.active_hook_cell is not None:
         rendered = _render_one_cell(state.active_hook_cell, running=True, spinner_frame=state.spinner_frame)
         if rendered:
-            process_blocks.append(rendered)
+            blocks.append(rendered)
 
-    # reasoning buffer
-    if state.reasoning_buffer.strip():
-        process_blocks.append(f"💭 **Thinking...**\n\n{state.reasoning_buffer.strip()}")
-
-    # 拼接
-    parts: list[str] = []
-    process = "\n\n".join(b for b in process_blocks if b).strip()
-    if process:
-        parts.append(process)
-
-    answer = "\n\n".join(answer_lines).strip()
-    if answer:
-        if parts:
-            parts.append("---")
-        parts.append(answer)
-
-    content = "\n\n".join(parts).strip()
-
-    # 如果没有任何内容，显示状态栏 + spinner
+    content = "\n\n".join(b for b in blocks if b).strip()
     if not content:
         content = f"{state.status_header or 'Working'} {SPINNER_FRAMES[state.spinner_frame % 3]}"
 
@@ -110,16 +79,26 @@ def render_transcript(state: TurnV2State) -> str:
 
 
 def render_final_transcript(state: TurnV2State) -> str:
-    """将工具执行相关的 transcript_cells 渲染为执行日志 markdown。
+    """除最后一个 AgentMarkdownCell 之外的所有 cells → Execution Log。
 
-    排除 AgentMessageCell / AgentMarkdownCell（这些是最终回复，放 panel 外）。
+    对齐官方 TUI：最终卡片中，工具执行和过程思考收入折叠面板，
+    最后一个 Agent 回复留在面板外作为最终答案。
     """
     from .cells import AgentMarkdownCell, AgentMessageCell
 
+    # 找最后一个 AgentMarkdownCell 的位置
+    last_agent_idx: int | None = None
+    for i in range(len(state.transcript_cells) - 1, -1, -1):
+        if isinstance(state.transcript_cells[i], AgentMarkdownCell):
+            last_agent_idx = i
+            break
+
     blocks: list[str] = []
-    for cell in state.transcript_cells:
-        if isinstance(cell, (AgentMessageCell, AgentMarkdownCell)):
-            continue
+    for i, cell in enumerate(state.transcript_cells):
+        if last_agent_idx is not None and i == last_agent_idx:
+            continue  # 跳过最后一个 AgentMarkdownCell
+        if isinstance(cell, AgentMessageCell):
+            continue  # AgentMessageCell 应该已被 consolidate
         rendered = _render_one_cell(cell, running=False, spinner_frame=0)
         if rendered:
             blocks.append(rendered)
@@ -131,17 +110,15 @@ def render_final_transcript(state: TurnV2State) -> str:
 
 
 def _extract_final_answer(state: TurnV2State) -> str:
-    """从 transcript_cells 中提取最终 reply 文本。"""
+    """从 transcript_cells 中提取最后一个 Agent 回复文本。"""
     from .cells import AgentMarkdownCell, AgentMessageCell
 
     for cell in reversed(state.transcript_cells):
         if isinstance(cell, AgentMarkdownCell):
             return cell.source.strip()
-    # fallback: 可能只有单个 AgentMessageCell 没被 consolidate
     for cell in reversed(state.transcript_cells):
         if isinstance(cell, AgentMessageCell):
             return cell.source_line.strip()
-    # last resort: stream_controller 残留
     raw = state.stream_controller.raw_source.strip()
     if raw:
         return raw
