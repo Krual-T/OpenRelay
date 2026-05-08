@@ -29,6 +29,7 @@ from .events import (
     UsageUpdatedEvent,
 )
 from .models import BackendEventRecord, CommentaryRecord, LiveTurnViewModel, TerminalInteraction, ToolState
+from .output_limits import append_bounded_tool_output_detail, bound_tool_output_detail
 
 
 class LiveTurnReducer:
@@ -133,13 +134,13 @@ class LiveTurnReducer:
                 tools[index] = replace(
                     tool,
                     preview=tool.preview or existing.preview,
-                    detail=tool.detail or existing.detail,
+                    detail=bound_tool_output_detail(tool.detail or existing.detail),
                     exit_code=tool.exit_code if tool.exit_code is not None else existing.exit_code,
                     provider_payload=merged_provider_payload,
                 )
                 self.state.tools = tuple(tools)
                 return
-        tools.append(tool)
+        tools.append(replace(tool, detail=bound_tool_output_detail(tool.detail)))
         self.state.tools = tuple(tools)
 
     def _update_tool_detail(self, tool_id: str, detail: str) -> None:
@@ -149,7 +150,7 @@ class LiveTurnReducer:
         for index, existing in enumerate(tools):
             if existing.tool_id != tool_id:
                 continue
-            merged_detail = f"{existing.detail}{detail}" if existing.detail and detail else (detail or existing.detail)
+            merged_detail = append_bounded_tool_output_detail(existing.detail, detail)
             tools[index] = replace(existing, detail=merged_detail)
             self.state.tools = tuple(tools)
             return

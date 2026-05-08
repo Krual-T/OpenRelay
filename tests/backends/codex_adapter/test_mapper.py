@@ -131,6 +131,40 @@ def test_codex_mapper_maps_tool_lifecycle_and_usage() -> None:
     assert usage[0].usage.context_window == 200000
 
 
+def test_codex_mapper_bounds_command_output_detail() -> None:
+    mapper = CodexProtocolMapper(session_id="relay-1", native_session_id="thread_1", turn_id="turn_1")
+    state = CodexTurnState()
+    large_output = f"{'x' * 70_000}\nimportant tail"
+
+    progress = mapper.map_notification(
+        "item/commandExecution/outputDelta",
+        {"threadId": "thread_1", "turnId": "turn_1", "itemId": "cmd_large", "delta": large_output},
+        state,
+    )
+    completed = mapper.map_notification(
+        "item/completed",
+        {
+            "threadId": "thread_1",
+            "turnId": "turn_1",
+            "item": {
+                "id": "cmd_large",
+                "type": "commandExecution",
+                "command": "noisy command",
+                "aggregatedOutput": large_output,
+                "exitCode": 0,
+            },
+        },
+        state,
+    )
+
+    assert len(state.command_output_by_id["cmd_large"]) <= 65_536
+    assert len(progress[0].detail) <= 65_536
+    assert len(completed[0].tool.detail) <= 65_536
+    assert "output truncated" in completed[0].tool.detail
+    assert "important tail" in completed[0].tool.detail
+    assert not completed[0].tool.detail.startswith("x" * 100)
+
+
 def test_codex_mapper_maps_terminal_interaction_event() -> None:
     mapper = CodexProtocolMapper(session_id="relay-1", native_session_id="thread_1", turn_id="turn_1")
     state = CodexTurnState()

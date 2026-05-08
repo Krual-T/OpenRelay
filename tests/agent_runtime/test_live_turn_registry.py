@@ -204,6 +204,36 @@ def test_live_turn_registry_ignores_unknown_event_and_merges_terminal_state() ->
     assert state.error_message == "boom"
 
 
+def test_live_turn_registry_bounds_tool_output_detail() -> None:
+    registry = LiveTurnRegistry()
+    registry.apply(TurnStartedEvent(backend="codex", session_id="s-output", turn_id="t-output", event_type="turn.started"))
+    registry.apply(
+        ToolStartedEvent(
+            backend="codex",
+            session_id="s-output",
+            turn_id="t-output",
+            event_type="tool.started",
+            tool=ToolState(tool_id="cmd_large", kind="command", title="Run noisy command", status="running"),
+        )
+    )
+
+    state = registry.apply(
+        ToolProgressEvent(
+            backend="codex",
+            session_id="s-output",
+            turn_id="t-output",
+            event_type="tool.progress",
+            tool_id="cmd_large",
+            detail=f"{'x' * 70_000}\nimportant tail",
+        )
+    )
+
+    assert len(state.tools[0].detail) <= 65_536
+    assert "output truncated" in state.tools[0].detail
+    assert "important tail" in state.tools[0].detail
+    assert not state.tools[0].detail.startswith("x" * 100)
+
+
 def test_live_turn_registry_separates_commentary_phase_from_assistant_text() -> None:
     registry = LiveTurnRegistry()
     registry.apply(TurnStartedEvent(backend="codex", session_id="s3", turn_id="t3", event_type="turn.started"))

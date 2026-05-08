@@ -4,6 +4,7 @@ import logging
 from typing import Any
 
 from openrelay.agent_runtime import PlanStep, ToolState, UsageSnapshot
+from openrelay.agent_runtime.output_limits import append_bounded_tool_output_detail, bound_tool_output_detail
 
 from .event_registry import CodexEventDescriptor
 from .semantic_events import CodexRawEventEnvelope, CodexSemanticEvent
@@ -307,14 +308,15 @@ class CodexSemanticMapper:
             )
         storage = state.file_change_output_by_id if envelope.method == "item/fileChange/outputDelta" else state.command_output_by_id
         delta = self._delta(envelope.params)
-        storage[envelope.item_id] = f"{storage.get(envelope.item_id, '')}{delta}"
+        bounded_delta = bound_tool_output_detail(delta)
+        storage[envelope.item_id] = append_bounded_tool_output_detail(storage.get(envelope.item_id, ""), delta)
         if envelope.method == "item/fileChange/outputDelta":
             LOGGER.info(
                 "file change output delta thread_id=%s turn_id=%s item_id=%s delta=%r aggregated=%r",
                 envelope.thread_id,
                 envelope.turn_id,
                 envelope.item_id,
-                delta,
+                bounded_delta,
                 storage[envelope.item_id],
             )
         return CodexSemanticEvent(
@@ -325,8 +327,8 @@ class CodexSemanticMapper:
             thread_id=envelope.thread_id,
             turn_id=envelope.turn_id,
             tool_id=envelope.item_id,
-            detail=delta,
-            dedupe_key=f"tool.progress:{envelope.thread_id}:{envelope.turn_id}:{envelope.item_id}:{delta}",
+            detail=bounded_delta,
+            dedupe_key=f"tool.progress:{envelope.thread_id}:{envelope.turn_id}:{envelope.item_id}:{bounded_delta}",
         )
 
     def _map_approval_resolved(self, envelope: CodexRawEventEnvelope, descriptor: CodexEventDescriptor) -> CodexSemanticEvent:
@@ -763,7 +765,7 @@ class CodexSemanticMapper:
         item_id = str(item.get("id") or "")
         if item_type == "commandExecution":
             command = str(item.get("command") or "")
-            aggregated_output = str(item.get("aggregatedOutput") or state.command_output_by_id.get(item_id, ""))
+            aggregated_output = bound_tool_output_detail(item.get("aggregatedOutput") or state.command_output_by_id.get(item_id, ""))
             return ToolState(
                 tool_id=item_id,
                 kind="command",
@@ -791,7 +793,7 @@ class CodexSemanticMapper:
                 title="File changes",
                 status=status,  # type: ignore[arg-type]
                 preview=self._summarize_file_changes(item),
-                detail=state.file_change_output_by_id.get(item_id, ""),
+                detail=bound_tool_output_detail(state.file_change_output_by_id.get(item_id, "")),
                 provider_payload={"item_type": item_type, "changes": item.get("changes"), "status": item.get("status")},
             )
         if item_type == "collabAgentToolCall":
