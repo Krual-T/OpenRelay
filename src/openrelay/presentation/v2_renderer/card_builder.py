@@ -86,7 +86,7 @@ def render_final_transcript(state: TurnV2State) -> str:
     """
     from .cells import AgentMarkdownCell, AgentMessageCell
 
-    # 找最后一个 AgentMarkdownCell 的位置
+    # 找最后一个 AgentMarkdownCell — 这是最终回复，放 panel 外
     last_agent_idx: int | None = None
     for i in range(len(state.transcript_cells) - 1, -1, -1):
         if isinstance(state.transcript_cells[i], AgentMarkdownCell):
@@ -96,9 +96,8 @@ def render_final_transcript(state: TurnV2State) -> str:
     blocks: list[str] = []
     for i, cell in enumerate(state.transcript_cells):
         if last_agent_idx is not None and i == last_agent_idx:
-            continue  # 跳过最后一个 AgentMarkdownCell
-        if isinstance(cell, AgentMessageCell):
-            continue  # AgentMessageCell 应该已被 consolidate
+            continue  # 最后一个 AgentMarkdownCell → 放 panel 外做最终回复
+        # 其他 AgentMessageCell/AgentMarkdownCell（被工具隔开的中间文本）→ 进 Execution Log
         rendered = _render_one_cell(cell, running=False, spinner_frame=0)
         if rendered:
             blocks.append(rendered)
