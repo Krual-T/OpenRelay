@@ -97,27 +97,29 @@ class TurnV2State:
         self.agent_turn_running = False
 
     def consolidate_agent_message(self) -> None:
-        """将 transcript_cells 中的每组连续 AgentMessageCell 分别合并。
+        """合并 transcript 末尾连续的一组 AgentMessageCell → AgentMarkdownCell。
 
-        对齐官方 TUI：只合并相邻的 AgentMessageCell，中间有其他 cell
-        （如工具执行）时各自独立成组。
+        对齐官方 TUI trailing_run_start + ConsolidateAgentMessage：
+        只合并最末尾连续的一段，不碰中间被其他 cell 隔开的。
         """
-        new_cells: list[Cell] = []
-        i = 0
-        while i < len(self.transcript_cells):
-            cell = self.transcript_cells[i]
-            if isinstance(cell, AgentMessageCell):
-                # 收集连续的一段 AgentMessageCell
-                group: list[AgentMessageCell] = []
-                while i < len(self.transcript_cells) and isinstance(self.transcript_cells[i], AgentMessageCell):
-                    group.append(self.transcript_cells[i])  # type: ignore[arg-type]
-                    i += 1
-                source = "\n".join(c.source_line for c in group)
-                new_cells.append(AgentMarkdownCell(source=source))
+        # 从末尾往前找最后一个 AgentMessageCell 的连续段
+        end = len(self.transcript_cells)
+        start = end
+        for i in range(end - 1, -1, -1):
+            if isinstance(self.transcript_cells[i], AgentMessageCell):
+                start = i
             else:
-                new_cells.append(cell)
-                i += 1
-        self.transcript_cells = new_cells
+                break
+
+        if start >= end:
+            return
+
+        group = self.transcript_cells[start:end]
+        source = "\n".join(c.source_line for c in group)  # type: ignore[attr-defined]
+        consolidated = AgentMarkdownCell(source=source)
+
+        # splice: 替换 start..end 为一个 AgentMarkdownCell
+        self.transcript_cells[start:end] = [consolidated]
 
     def finalize_with_error(self, message: str) -> None:
         """错误结束 turn：flush active_cell 为 failed + ErrorCell + FinalSeparator。"""
