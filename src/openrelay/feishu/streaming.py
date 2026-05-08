@@ -324,6 +324,64 @@ class FeishuStreamingSession:
                 self.state["card_signature"] = next_signature
             self.state["current_content"] = next_content
 
+    async def update_v2(self, content: str, card_json: dict[str, Any]) -> None:
+        """v2 rendering path: 接受预构建的 content + card JSON。
+
+        TurnV2Renderer 直接产出 content string 和 CardKit JSON，
+        绕过 reply_card.py 的内容构建层。
+        飞书 API 协议层（throttle / dedup / streaming window）保持不变。
+        """
+        if self.state is None or self.closed:
+            return
+        if self.streaming_mode_enabled and self._streaming_window_elapsed():
+            await self._freeze_v2(content)
+            return
+        if not self.streaming_mode_enabled:
+            return
+
+        current_content = str(self.state.get("current_content") or "")
+        if content == current_content:
+            return
+
+        now_ms = time.time() * 1000
+        if now_ms - self.last_update_time < self.update_throttle_ms:
+            self.pending_content = content
+            remaining_ms = max(0.0, self.update_throttle_ms - (now_ms - self.last_update_time))
+            self._schedule_pending_flush(remaining_ms / 1000)
+            return
+
+        self.pending_content = ""
+        self._cancel_pending_flush_task()
+
+        async with self._lock:
+            if self.state is None or self.closed:
+                return
+            current_content = str(self.state.get("current_content") or "")
+            if content == current_content:
+                return
+            if current_content and not content.startswith(current_content):
+                await self.update_card_json(card_json)
+            else:
+                await self.update_card_content(content)
+            self.state["current_content"] = content
+
+    async def _freeze_v2(self, content: str) -> None:
+        """v2 path: streaming window 超时时冻结卡片。"""
+        if self.state is None or self.closed or not self.streaming_mode_enabled:
+            return
+        self._cancel_pending_flush_task()
+        async with self._lock:
+            if self.state is None or self.closed or not self.streaming_mode_enabled:
+                return
+            await self.flush_pending_content()
+            await self._disable_streaming_mode()
+            waiting_card = build_complete_card(
+                STREAMING_TIMEOUT_NOTICE,
+                transcript_markdown=content,
+            )
+            await self.update_card_json(waiting_card)
+            self.state["current_content"] = ""
+
     async def close(self, final_card: dict[str, Any] | None = None) -> None:
         if self.state is None or self.closed:
             return
