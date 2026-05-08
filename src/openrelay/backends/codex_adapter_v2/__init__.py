@@ -1,6 +1,7 @@
 """Codex app-server adapter v2.
 
-JSON-RPC layer + typed server notifications/requests + thread routing + event buffering.
+JSON-RPC layer + typed server notifications/requests + thread routing + event buffering
++ connection management (client/session/pool).
 """
 
 from .app_events import (
@@ -44,6 +45,9 @@ from .routing import (
     ThreadId,
     app_server_event_target,
 )
+from .client import CodexV2Client, CodexV2ClientError, ConnectionClosedError
+from .pool import ConnectionPool, PoolFullError
+from .session import CodexV2Session
 from .thread_events import (
     FeedbackThreadEvent,
     ThreadBufferedEvent,
@@ -93,4 +97,13 @@ __all__ = [
     "ThreadBufferedEvent",
     "ThreadEventSnapshot",
     "ThreadEventStore",
+    # client
+    "CodexV2Client",
+    "CodexV2ClientError",
+    "ConnectionClosedError",
+    # session
+    "CodexV2Session",
+    # pool
+    "ConnectionPool",
+    "PoolFullError",
 ]
