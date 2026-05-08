@@ -19,6 +19,8 @@ Codex v2 渲染器。
 
 from __future__ import annotations
 
+import logging
+
 from openrelay.backends.codex_adapter_v2.notifications import (
     AgentMessageDeltaNotification,
     ItemCompletedNotification,
@@ -44,6 +46,8 @@ from .cells import (
 )
 from .state import TurnV2State
 
+LOGGER = logging.getLogger("openrelay.presentation.v2_renderer")
+
 
 class TurnV2Renderer:
     """Codex v2 轮次渲染器，对应官方 ChatWidget。"""
@@ -65,6 +69,7 @@ class TurnV2Renderer:
         method_name = f"_handle_{_camel_to_snake(variant)}"
         handler = getattr(self, method_name, None)
         if handler is not None:
+            LOGGER.debug("v2 notification variant=%s method=%s", variant, notification.method)
             handler(notification)
         # 未知 variant 静默忽略（对齐官方 ignored 分支）
 
@@ -101,6 +106,15 @@ class TurnV2Renderer:
             turn = notification.params.get("turn") if isinstance(notification.params.get("turn"), dict) else {}
         else:
             return
+
+        # debug: log transcript state
+        cell_types = [type(c).__name__ for c in self.state.transcript_cells]
+        LOGGER.info(
+            "turn_completed status=%s transcript_count=%d cell_types=%s",
+            str(turn.get("status") or ""),
+            len(cell_types),
+            cell_types[-20:],  # last 20
+        )
 
         raw_status = str(turn.get("status") or "")
         if raw_status == "completed":
