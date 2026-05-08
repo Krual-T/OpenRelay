@@ -50,38 +50,61 @@ PROCESS_LOG_PANEL_TITLE = "Execution Log"
 
 
 def render_transcript(state: TurnV2State) -> str:
-    """将 transcript_cells + active_cell 渲染为 markdown 字符串。"""
-    blocks: list[str] = []
+    """将 transcript_cells + active_cell 渲染为 streaming markdown。
+
+    AgentMessageCell（回复文本）和思考/工具过程分开：
+    - 上半部分：工具执行 + 推理思考（过程日志）
+    - 下半部分：Agent 回复文本（最终答案）
+    """
+    from .cells import AgentMarkdownCell, AgentMessageCell
+
+    process_blocks: list[str] = []
+    answer_lines: list[str] = []
 
     # 历史 cells（最近 12 条）
     for cell in state.transcript_cells[-12:]:
-        rendered = _render_one_cell(cell, running=False, spinner_frame=state.spinner_frame)
-        if rendered:
-            blocks.append(rendered)
+        if isinstance(cell, (AgentMessageCell, AgentMarkdownCell)):
+            text = cell.source_line if isinstance(cell, AgentMessageCell) else cell.source
+            if text.strip():
+                answer_lines.append(text.strip())
+        else:
+            rendered = _render_one_cell(cell, running=False, spinner_frame=state.spinner_frame)
+            if rendered:
+                process_blocks.append(rendered)
 
     # 当前 active_cell
     if state.active_cell is not None:
         rendered = _render_one_cell(state.active_cell, running=True, spinner_frame=state.spinner_frame)
         if rendered:
-            blocks.append(rendered)
+            process_blocks.append(rendered)
 
     # active_hook_cell
     if state.active_hook_cell is not None:
         rendered = _render_one_cell(state.active_hook_cell, running=True, spinner_frame=state.spinner_frame)
         if rendered:
-            blocks.append(rendered)
+            process_blocks.append(rendered)
 
     # reasoning buffer
     if state.reasoning_buffer.strip():
-        blocks.append(f"💭 **Thinking...**\n\n{state.reasoning_buffer.strip()}")
+        process_blocks.append(f"💭 **Thinking...**\n\n{state.reasoning_buffer.strip()}")
 
-    content = "\n\n".join(b for b in blocks if b).strip()
+    # 拼接
+    parts: list[str] = []
+    process = "\n\n".join(b for b in process_blocks if b).strip()
+    if process:
+        parts.append(process)
+
+    answer = "\n\n".join(answer_lines).strip()
+    if answer:
+        if parts:
+            parts.append("---")
+        parts.append(answer)
+
+    content = "\n\n".join(parts).strip()
 
     # 如果没有任何内容，显示状态栏 + spinner
     if not content:
-        header = state.status_header or "Working"
-        spinner = SPINNER_FRAMES[state.spinner_frame % 3]
-        content = f"{header} {spinner}"
+        content = f"{state.status_header or 'Working'} {SPINNER_FRAMES[state.spinner_frame % 3]}"
 
     return content
 
