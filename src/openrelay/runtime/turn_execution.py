@@ -83,6 +83,12 @@ class RuntimeTurnExecutionService:
             return
 
         streaming = ctx.streaming_session_factory(ctx.messenger)
+        route = ctx.streaming_route_for_message(message)
+        await streaming.start(
+            message.chat_id,
+            reply_to_message_id=route.reply_to_message_id,
+            root_id=route.root_id,
+        )
         try:
             await v2_session.run_turn(
                 user_text,
