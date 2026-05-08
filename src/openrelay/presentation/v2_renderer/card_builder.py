@@ -109,12 +109,21 @@ def render_final_transcript(state: TurnV2State) -> str:
 
 
 def _extract_final_answer(state: TurnV2State) -> str:
-    """从 transcript_cells 中提取最后一个 Agent 回复文本。"""
+    """从 transcript_cells 中提取最后一个 Agent 回复文本。
+
+    如果文本中有 <thinking> 标签，只取标签后的内容作为最终回复。
+    """
+    import logging
+    _log = logging.getLogger("openrelay.presentation.v2_renderer")
+
     from .cells import AgentMarkdownCell, AgentMessageCell
 
     for cell in reversed(state.transcript_cells):
         if isinstance(cell, AgentMarkdownCell):
-            return cell.source.strip()
+            source = cell.source.strip()
+            _log.info("final_answer raw len=%d has_thinking=%s preview=%s",
+                      len(source), "<thinking>" in source.lower(), source[:200])
+            return source
     for cell in reversed(state.transcript_cells):
         if isinstance(cell, AgentMessageCell):
             return cell.source_line.strip()
