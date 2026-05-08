@@ -66,6 +66,13 @@ class TurnV2Renderer:
         按 notification.variant 分发到对应的 on_* 方法。
         """
         variant = notification.variant
+        # 非 AgentMessageDelta 的通知到达时，先 flush 积压的 Agent 文本
+        # 保证工具/推理 cell 插入在已到达的 Agent 文本之后（保持时间线顺序）
+        if variant != "AgentMessageDelta":
+            flushed = self.state.stream_controller.flush_partial()
+            for cell in flushed:
+                self.state.add_to_history(cell)
+
         method_name = f"_handle_{_camel_to_snake(variant)}"
         handler = getattr(self, method_name, None)
         if handler is not None:

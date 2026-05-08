@@ -82,7 +82,8 @@ class TurnV2State:
         for cell in remaining_cells:
             self.add_to_history(cell)
 
-        # consolidate AgentMessageCell 片段 → AgentMarkdownCell
+        # consolidate AgentMessageCell 只在每组连续末尾 → AgentMarkdownCell
+        # 这样中间被工具隔开的 Agent 文本保持原位，只有最后一段变 MarkdownCell
         self.consolidate_agent_message()
 
         # finalize plan stream controller

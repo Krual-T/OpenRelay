@@ -33,12 +33,23 @@ class StreamController:
         if not delta:
             return []
         self.raw_source += delta
+        return self._emit_complete_lines()
 
-        # 找到从 emitted_len 开始到当前 raw_source 末尾之间的完整行
+    def flush_partial(self) -> list[AgentMessageCell]:
+        """强制 flush 当前未完成的行（即时有换行才完整）。"""
+        cells = self._emit_complete_lines()
+        # 如果还有未 emit 的内容（不完整行），也一起 emit
+        pending = self.raw_source[self.emitted_len :].strip()
+        if pending:
+            cells.append(AgentMessageCell(source_line=pending, is_first=self.is_first))
+            self.is_first = False
+            self.emitted_len = len(self.raw_source)
+        return cells
+
+    def _emit_complete_lines(self) -> list[AgentMessageCell]:
+        """Emit 完整的行（以换行符结尾的）。"""
         pending = self.raw_source[self.emitted_len :]
         lines = pending.split("\n")
-
-        # 最后一段可能是不完整的行（没有尾随换行），保留不 emit
         complete_lines = lines[:-1] if len(lines) > 1 else []
 
         cells: list[AgentMessageCell] = []
