@@ -72,10 +72,15 @@ def render_transcript(state: TurnV2State) -> str:
             blocks.append(rendered)
 
     content = "\n\n".join(b for b in blocks if b).strip()
-    if not content:
-        content = f"{state.status_header or 'Working'} {SPINNER_FRAMES[state.spinner_frame % 3]}"
 
-    return content
+    # 状态栏始终在顶部
+    header = state.status_header or "Working"
+    spinner = SPINNER_FRAMES[state.spinner_frame % 3]
+    status_line = f"{header} {spinner}"
+
+    if content:
+        return f"{status_line}\n\n---\n\n{content}"
+    return status_line
 
 
 def render_final_transcript(state: TurnV2State) -> str:
