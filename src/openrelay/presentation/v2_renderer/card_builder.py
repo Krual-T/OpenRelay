@@ -87,9 +87,16 @@ def render_transcript(state: TurnV2State) -> str:
 
 
 def render_final_transcript(state: TurnV2State) -> str:
-    """将全部 transcript_cells 渲染为 final card 的执行日志 markdown。"""
+    """将工具执行相关的 transcript_cells 渲染为执行日志 markdown。
+
+    排除 AgentMessageCell / AgentMarkdownCell（这些是最终回复，放 panel 外）。
+    """
+    from .cells import AgentMarkdownCell, AgentMessageCell
+
     blocks: list[str] = []
     for cell in state.transcript_cells:
+        if isinstance(cell, (AgentMessageCell, AgentMarkdownCell)):
+            continue
         rendered = _render_one_cell(cell, running=False, spinner_frame=0)
         if rendered:
             blocks.append(rendered)
@@ -98,6 +105,20 @@ def render_final_transcript(state: TurnV2State) -> str:
         blocks.append(f"💭 **Thought**\n\n{state.reasoning_buffer.strip()}")
 
     return "\n\n".join(b for b in blocks if b).strip()
+
+
+def _extract_final_answer(state: TurnV2State) -> str:
+    """从 transcript_cells 中提取最终 reply 文本。"""
+    from .cells import AgentMarkdownCell
+
+    for cell in reversed(state.transcript_cells):
+        if isinstance(cell, AgentMarkdownCell):
+            return cell.source.strip()
+    # fallback: 从 stream_controller 的 raw_source 取
+    raw = state.stream_controller.raw_source.strip()
+    if raw:
+        return raw
+    return ""
 
 
 def _render_one_cell(cell, *, running: bool, spinner_frame: int) -> str:
@@ -225,9 +246,3 @@ def build_final_card_json(state: TurnV2State, *, fallback_text: str = "") -> dic
         "body": {"elements": elements},
     }
 
-
-def _extract_final_answer(state: TurnV2State) -> str:
-    for cell in reversed(state.transcript_cells):
-        if isinstance(cell, AgentMarkdownCell):
-            return cell.source.strip()
-    return ""
