@@ -125,8 +125,8 @@ def render_exec_cell(cell: ExecCell, *, running: bool, spinner_frame: int = 0) -
     if not running and cell.exit_code is not None and cell.exit_code != 0:
         lines.append(f"  {_dim(f'exit {cell.exit_code}')}")
 
-    # output
-    if cell.output.strip():
+    # output — 只在 completed 后一次性展示，不在流式过程中逐行更新
+    if not running and cell.output.strip():
         output_lines = cell.output.splitlines()
         visible = [ln.rstrip() for ln in output_lines if ln.strip()]
         max_lines = TOOL_OUTPUT_MAX_LINES if not cell.exploration else USER_SHELL_MAX_LINES
@@ -157,7 +157,7 @@ def render_mcp_tool_call_cell(cell: McpToolCallCell, *, running: bool, spinner_f
     invocation = f"{_blue(cell.server)}.{_blue(cell.tool)}" if cell.server and cell.tool else cell.server or cell.tool or "MCP"
     lines = [f"{bullet} {_bold(status_text)} {invocation}"]
 
-    if cell.result:
+    if not running and cell.result:
         result_lines = str(cell.result).splitlines()
         visible = [ln.rstrip() for ln in result_lines if ln.strip()]
         hidden = max(0, len(visible) - TOOL_OUTPUT_MAX_LINES)
@@ -201,9 +201,9 @@ def render_patch_history_cell(cell: PatchHistoryCell, *, running: bool, spinner_
             else:
                 lines.append(f"    {_file_change_tag('orange', 'Edit')} {_code(path)}")
 
-    # diff output
+    # diff output — 只在 completed 后展示
     detail = cell.diff or cell.output
-    if detail.strip():
+    if not running and detail.strip():
         detail_lines = detail.splitlines()
         visible = [ln.rstrip() for ln in detail_lines if ln.strip()]
         hidden = max(0, len(visible) - TOOL_OUTPUT_MAX_LINES)
