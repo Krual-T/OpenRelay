@@ -143,6 +143,15 @@ class TurnV2State:
         self.warning_display_state.add(message)
         return True
 
+    @property
+    def assistant_text(self) -> str:
+        """从 transcript_cells 提取最终 assistant 文本。"""
+        for cell in reversed(self.transcript_cells):
+            from .cells import AgentMarkdownCell
+            if isinstance(cell, AgentMarkdownCell):
+                return cell.source.strip()
+        return ""
+
     # ---- reset -----------------------------------------------------------
 
     def reset_for_new_turn(self, thread_id: str, turn_id: str) -> None:

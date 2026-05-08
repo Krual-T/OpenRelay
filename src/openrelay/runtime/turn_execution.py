@@ -18,6 +18,8 @@ from .turn_application import TurnApplicationService
 from .turn_run_controller import TurnRunController
 from .turn_runtime_event_bridge import TurnRuntimeEventBridge
 
+LOGGER = logging.getLogger("openrelay.runtime")
+
 
 @dataclass(slots=True)
 class RuntimeTurnExecutionService:
