@@ -23,7 +23,7 @@ __pycache__/
 .harness/rwp/artifacts/
 .openharness/
 data/
-
+CLAUDE.md
 .worktrees/
 .agents/skills/**/__pycache__/
 .agents/skills/**/*.pyc
