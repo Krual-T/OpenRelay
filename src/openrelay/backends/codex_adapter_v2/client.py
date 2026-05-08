@@ -201,11 +201,12 @@ class CodexV2Client:
         return env
 
     def _build_init_params(self) -> dict[str, Any]:
-        params: dict[str, Any] = {"cwd": str(self.workspace_root)}
-        if self.model:
-            params["model"] = self.model
-        params["sandbox"] = self.safety_mode
-        return params
+        return {
+            "clientInfo": {"name": "openrelay", "version": "0.1.0"},
+            "cwd": str(self.workspace_root),
+            **({"model": self.model} if self.model else {}),
+            "sandbox": self.safety_mode,
+        }
 
     # ---- stdout / stderr ----
 
