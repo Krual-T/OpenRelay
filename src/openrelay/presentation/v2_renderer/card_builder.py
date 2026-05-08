@@ -73,10 +73,12 @@ def render_transcript(state: TurnV2State) -> str:
 
     content = "\n\n".join(b for b in blocks if b).strip()
 
-    # 状态栏始终在底部
+    # 状态栏始终在底部：Working + spinner + 已工作时长
+    import time as _time
     header = state.status_header or "Working"
     spinner = SPINNER_FRAMES[state.spinner_frame % 3]
-    status_line = f"---\n\n{header} {spinner}"
+    elapsed = _time.monotonic() - state.turn_started_at if state.turn_started_at > 0 else 0.0
+    status_line = f"---\n\n{header} {spinner} ({_format_duration(elapsed)})"
 
     if content:
         return f"{content}\n\n{status_line}"

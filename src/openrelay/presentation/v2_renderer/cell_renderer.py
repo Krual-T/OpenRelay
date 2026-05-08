@@ -97,9 +97,20 @@ def _command_bullet(cell: ExecCell, *, running: bool, spinner_frame: int) -> str
 def _format_duration(seconds: float) -> str:
     if seconds < 60:
         return f"{seconds:.0f}s"
-    minutes = int(seconds // 60)
-    secs = int(seconds % 60)
-    return f"{minutes}m {secs}s"
+    total = int(seconds)
+    days, rem = divmod(total, 86400)
+    hours, rem = divmod(rem, 3600)
+    minutes, secs = divmod(rem, 60)
+    parts: list[str] = []
+    if days:
+        parts.append(f"{days}d")
+    if hours:
+        parts.append(f"{hours}h")
+    if minutes:
+        parts.append(f"{minutes}m")
+    if secs or not parts:
+        parts.append(f"{secs}s")
+    return " ".join(parts)
 
 
 # ---- exec cell ------------------------------------------------------------
