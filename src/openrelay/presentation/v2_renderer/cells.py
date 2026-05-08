@@ -209,6 +209,14 @@ class ProposedPlanCell:
 
 
 @dataclass(slots=True)
+class SeparatorCell:
+    """Agent 消息组之间的分割线 cell。流式卡片中的视觉分隔。
+
+    丢弃规则：最终卡片中，紧邻最后一个 AgentMarkdownCell 之前的 SeparatorCell 被丢弃。
+    """
+
+
+@dataclass(slots=True)
 class WarningCell:
     """警告 cell。对应官方 WarningEvent。
 
@@ -262,6 +270,7 @@ Cell: TypeAlias = (
     | HookCell
     | PlanUpdateCell
     | ProposedPlanCell
+    | SeparatorCell
     | WarningCell
     | ErrorCell
     | FinalSeparatorCell

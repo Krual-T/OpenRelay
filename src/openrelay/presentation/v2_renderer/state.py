@@ -53,6 +53,9 @@ class TurnV2State:
     spinner_frame: int = 0
     turn_started_at: float = 0.0
 
+    # Agent 文本分组 — 第一段不加分隔线，后续每段前加 SeparatorCell
+    _agent_group_seen: bool = False
+
     # 警告去重
     warning_display_state: set[str] = field(default_factory=set)
 

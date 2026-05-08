@@ -66,10 +66,13 @@ class TurnV2Renderer:
         按 notification.variant 分发到对应的 on_* 方法。
         """
         variant = notification.variant
+
         # 非 AgentMessageDelta 的通知到达时，先 flush 积压的 Agent 文本
-        # 保证工具/推理 cell 插入在已到达的 Agent 文本之后（保持时间线顺序）
+        # 保证 cell 时间线顺序
         if variant != "AgentMessageDelta":
             flushed = self.state.stream_controller.flush_partial()
+            if flushed:
+                self._maybe_add_separator()
             for cell in flushed:
                 self.state.add_to_history(cell)
 
@@ -79,6 +82,14 @@ class TurnV2Renderer:
             LOGGER.debug("v2 notification variant=%s method=%s", variant, notification.method)
             handler(notification)
         # 未知 variant 静默忽略（对齐官方 ignored 分支）
+
+    def _maybe_add_separator(self) -> None:
+        """如果这不是第一段 agent 文本，插入分隔线 cell。"""
+        from .cells import SeparatorCell
+
+        if self.state._agent_group_seen:
+            self.state.add_to_history(SeparatorCell())
+        self.state._agent_group_seen = True
 
     def handle_server_request(self, request: ServerRequest) -> None:
         """ServerRequest — 入站审批请求，推入 transcript_cells，等待用户交互。"""
@@ -178,6 +189,7 @@ class TurnV2Renderer:
         cells = self.state.stream_controller.push(delta)
         if cells:
             LOGGER.info("v2 cell ← %d AgentMessageCell(s)", len(cells))
+            self.state._agent_group_seen = True
         for cell in cells:
             self.state.add_to_history(cell)
         if self.state.status_header == "":

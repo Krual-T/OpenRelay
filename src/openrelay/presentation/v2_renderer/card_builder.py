@@ -93,11 +93,19 @@ def render_final_transcript(state: TurnV2State) -> str:
             last_agent_idx = i
             break
 
+    # 找倒数第二个 cell 中是否为 SeparatorCell，如果是则丢弃
+    from .cells import SeparatorCell
+    discard_before_last: int | None = None
+    if last_agent_idx is not None and last_agent_idx > 0:
+        if isinstance(state.transcript_cells[last_agent_idx - 1], SeparatorCell):
+            discard_before_last = last_agent_idx - 1
+
     blocks: list[str] = []
     for i, cell in enumerate(state.transcript_cells):
+        if i == discard_before_last:
+            continue  # 丢弃紧邻最后一个 Agent 前的分隔线
         if last_agent_idx is not None and i == last_agent_idx:
             continue  # 最后一个 AgentMarkdownCell → 放 panel 外做最终回复
-        # 其他 AgentMessageCell/AgentMarkdownCell（被工具隔开的中间文本）→ 进 Execution Log
         rendered = _render_one_cell(cell, running=False, spinner_frame=0)
         if rendered:
             blocks.append(rendered)
